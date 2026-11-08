@@ -1,0 +1,14 @@
+把 .gguf 模型文件放在这个目录里。
+
+推荐（按内存从紧到宽）：
+  1.7B   Qwen3-1.7B-Q4_K_M.gguf        约 1 GB
+  3B     Qwen2.5-3B-Instruct-Q4_K_M.gguf  约 2 GB
+  4B     Qwen3-4B-Instruct-2507-Q4_K_M.gguf  约 2.4 GB  ← 推荐
+  7-8B   （需要 8 GB 以上内存）
+
+下载地址：
+  https://hf-mirror.com/bartowski/Qwen3-4B-Instruct-2507-GGUF
+
+下好之后双击「切换模型.bat」，或者改 config.json 里的 model 字段。
+
+注意：换模型后如果内存不够，用「切换模型.bat」会自动帮你降上下文。

@@ -1,0 +1,15 @@
+﻿这是工作目录。
+
+模型默认只能在这个目录里读写文件。你可以往这里放要处理的文件，
+也可以让模型在这里生成东西。
+
+里面已经放了几个示例：
+  stream.ps1          示例脚本（逐行处理 jsonl）
+  data/orders.jsonl   示例数据（27 条订单）
+  data/smoke-test.txt 示例文本
+  tools/analyze.ps1   示例工具脚本
+
+试试跟它说：
+  "data 目录里有几个文件"
+  "统计 orders.jsonl 里金额的总和"
+  "stream.ps1 这个脚本是干什么的"

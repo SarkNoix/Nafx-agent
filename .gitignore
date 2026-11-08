@@ -1,0 +1,15 @@
+# 模型文件太大，不进仓库
+models/*.gguf
+
+# 运行时产生的东西
+agent/logs/
+agent/state.json
+agent/queue.json
+agent/session.jsonl
+agent/panel.pid
+logs/
+workspace/*.tmp
+
+# 系统
+Thumbs.db
+desktop.ini

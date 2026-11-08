@@ -1,0 +1,220 @@
+{
+  "_说明": "流程模板。核心原则：能用一条命令直接算出结果的，就直接跑，别绕。命令搞不定再查技能库。",
+
+  "version": 3,
+
+  "_优先级": "① 一条命令能解决的 → 直接 run_cmd。② 命令不方便的 → skill 查现成脚本。③ 都没有 → 自己写。多绕一步就多几十秒。",
+
+  "flows": [
+    {
+      "id": "count",
+      "tools": ["run_cmd","list_dir","skill","read_file","finish"],
+      "name": "数数量 / 统计",
+      "match": ["多少", "几个", "几条", "几行", "数量", "统计", "总数", "一共"],
+      "goal": "拿到工具算出的真实数字，并说清这个数字是什么",
+      "suggest_tools": ["run_cmd", "skill count_ext", "list_dir", "skill text_stats"],
+      "reject_tools": ["find_duplicates", "batch_rename", "archive_by_date", "unzip_all", "write_file"],
+      "steps": [
+        { "n": 1, "do": "先想：能不能一条命令直接算出来？能就直接 run_cmd，别绕", "need": "命令真跑过，返回里有数字" },
+        { "n": 2, "do": "一条命令搞不定，才 skill(command=\"list\") 找现成脚本", "need": "确认技能库里有没有" },
+        { "n": 3, "do": "把工具返回的数字原样写进 finish 的 answer", "need": "answer 里的数字和工具输出一致" }
+      ],
+      "cheatsheet": [
+        "数某个目录有几个文件：run_cmd(dir /b \"data\" | find /c /v \"\")",
+        "数文件有几行：run_cmd(find /c /v \"\" data\\x.txt)",
+        "按扩展名分类统计：skill(count_ext -Path data)",
+        "整个目录所有文本多少行：skill(text_stats -Path data)",
+        "jsonl 有多少条：run_cmd(find /c /v \"\" data\\x.jsonl)"
+      ],
+      "forbid": [
+        "没跑工具就直接报数字",
+        "数字凭印象或凭经验写",
+        "一条命令能搞定却先去查技能库（多绕一步就多几十秒）"
+      ],
+      "example": "任务：data 目录里有几个文件\n→ run_cmd(dir /b data | find /c /v \"\") 返回 2\n→ finish(answer=\"data 里有 2 个文件\")"
+    },
+    {
+      "id": "lookup",
+      "tools": ["read_file","list_dir","skill","run_cmd","finish"],
+      "name": "查东西 / 找某个值",
+      "match": ["在哪", "是什么", "查一下", "某个", "谁", "哪一行", "内容是什么", "读一下", "是多少"],
+      "goal": "找到那个东西，把它的实际内容或位置说出来",
+      "suggest_tools": ["read_file", "list_dir", "skill csv_query", "skill search_text", "run_cmd"],
+      "reject_tools": ["find_duplicates", "batch_rename", "unzip_all"],
+      "steps": [
+        { "n": 1, "do": "直接读/查。知道文件就直接 read_file，不知道在哪就 list_dir 或 search_text", "need": "拿到实际内容" },
+        { "n": 2, "do": "表格里查某人的某项用 skill(csv_query -Path 表格 -Find 姓名 -Field 字段)", "need": "拿到那个值" },
+        { "n": 3, "do": "finish 说清找到的是什么，找不到也要说明找过哪里", "need": "答案基于实际内容" }
+      ],
+      "cheatsheet": [
+        "读文件：read_file(path=\"data/x.txt\")",
+        "看目录：list_dir(path=\"data\")",
+        "表格查某人某项：skill(csv_query -Path staff.csv -Find 张三 -Field 金额)",
+        "哪个文件里有某词：skill(search_text -Pattern 关键词 -Path .)",
+        "文件里某行：run_cmd(findstr /n \"关键词\" data\\x.txt)"
+      ],
+      "forbid": [
+        "没读就编内容",
+        "找不到还说找到了",
+        "把整个文件原样贴进 answer"
+      ],
+      "example": "任务：张三的金额是多少\n→ skill(csv_query -Path staff.csv -Find 张三 -Field 金额)\n→ finish(answer=\"张三的金额是 1500 和 700\")"
+    },
+    {
+      "id": "create",
+      "tools": ["write_file","read_file","make_dir","finish"],
+      "name": "创建文件 / 写内容",
+      "match": ["创建", "新建", "写一个", "写个", "生成一个", "建个", "写入"],
+      "goal": "文件真的建出来了，内容对得上，并且验证过",
+      "suggest_tools": ["write_file", "read_file"],
+      "reject_tools": ["find_duplicates", "archive_by_date", "batch_rename", "unzip_all"],
+      "steps": [
+        { "n": 1, "do": "write_file 写文件，路径严格照任务给的写（任务说 x.txt 就写 x.txt，别加子目录）", "need": "工具返回写入成功" },
+        { "n": 2, "do": "验证：read_file 读回来，确认内容对", "need": "读回来的内容跟要求一致" },
+        { "n": 3, "do": "finish 说明建了什么文件、内容是什么", "need": "答案里有文件名和关键内容" }
+      ],
+      "cheatsheet": [
+        "写文件：write_file(path=\"hello.txt\", content=\"你好\")",
+        "读回来验证：read_file(path=\"hello.txt\")",
+        "建目录：make_dir(path=\"mydir\")"
+      ],
+      "forbid": [
+        "写完不验证",
+        "任务说 a.txt 却写到 data/a.txt",
+        "多建任务没要求的目录或文件"
+      ],
+      "example": "任务：创建 hello.txt 写入你好\n→ write_file(hello.txt, 你好)\n→ read_file(hello.txt) 确认\n→ finish"
+    },
+    {
+      "id": "modify",
+      "tools": ["read_file","replace_in_file","write_file","append_file","finish"],
+      "name": "改内容 / 替换",
+      "match": ["改成", "修改", "修改成", "替换", "换成", "换掉", "改掉", "更新", "删掉里面", "改一下", "改为"],
+      "goal": "原文改对了，没把别的部分弄坏",
+      "suggest_tools": ["read_file", "replace_in_file", "write_file"],
+      "reject_tools": ["find_duplicates", "batch_rename", "unzip_all"],
+      "steps": [
+        { "n": 1, "do": "先 read_file 读原文，确认要改的那段确实存在", "need": "看到原文" },
+        { "n": 2, "do": "用 replace_in_file 局部改（别整个重写）", "need": "工具返回成功" },
+        { "n": 3, "do": "再 read_file 确认改对了，其他部分没动", "need": "看到改后的内容" },
+        { "n": 4, "do": "finish 说明改了什么", "need": "答案里说清改了哪处" }
+      ],
+      "cheatsheet": [
+        "局部替换：replace_in_file(path=\"a.txt\", find=\"old\", replace=\"new\")",
+        "确认原文：read_file(path=\"a.txt\")",
+        "末尾追加：append_file(path=\"a.txt\", content=\"...\")"
+      ],
+      "forbid": [
+        "不读原文直接整个重写",
+        "改完不验证",
+        "顺手改了任务没提到的部分"
+      ],
+      "example": "任务：把 a.txt 里的 old 改成 new\n→ read_file(a.txt)\n→ replace_in_file(a.txt, old, new)\n→ read_file(a.txt) 确认\n→ finish"
+    },
+    {
+      "id": "convert",
+      "tools": ["skill","read_file","list_dir","run_cmd","finish"],
+      "name": "格式转换",
+      "match": ["转成", "转换成", "导出", "变成csv", "变成json", "转csv", "转json"],
+      "goal": "新格式的文件生成出来，能打开，数据没丢",
+      "suggest_tools": ["skill csv_to_jsonl", "skill jsonl_to_csv", "skill xlsx_to_csv"],
+      "reject_tools": ["find_duplicates", "text_stats", "batch_rename"],
+      "steps": [
+        { "n": 1, "do": "直接调对应的转换技能（csv_to_jsonl / jsonl_to_csv / xlsx_to_csv）", "need": "工具返回转换成功" },
+        { "n": 2, "do": "确认输出文件存在、行数对得上", "need": "实际查过输出文件" },
+        { "n": 3, "do": "finish 说明转了什么、多少条、存哪了", "need": "答案里有条数和路径" }
+      ],
+      "cheatsheet": [
+        "csv 转 jsonl：skill(csv_to_jsonl -Path data.csv -Out data.jsonl)",
+        "jsonl 转 csv：skill(jsonl_to_csv -Path data.jsonl -Out data.csv)",
+        "xlsx 转 csv：skill(xlsx_to_csv -Path data.xlsx -Out data.csv)"
+      ],
+      "forbid": [
+        "手工拼字符串假装转换了",
+        "没确认输出文件就报成功"
+      ],
+      "example": "任务：把这个 xlsx 转成 csv\n→ skill(xlsx_to_csv -Path data.xlsx -Out data.csv)\n→ 确认 data.csv 存在\n→ finish"
+    },
+    {
+      "id": "search",
+      "tools": ["skill","run_cmd","list_dir","read_file","finish"],
+      "name": "搜索 / 找关键词",
+      "match": ["搜索", "搜一下", "查找", "哪里写了", "哪个文件里", "包含", "含有", "关键字"],
+      "goal": "列出命中的文件和位置，没命中就明确说没找到",
+      "suggest_tools": ["skill search_text", "run_cmd", "skill log_errors"],
+      "reject_tools": ["find_duplicates", "batch_rename", "unzip_all"],
+      "steps": [
+        { "n": 1, "do": "直接搜：skill(search_text -Pattern 词 -Path 目录) 或 run_cmd(findstr /s /i \"词\" *.txt)", "need": "工具返回命中结果" },
+        { "n": 2, "do": "finish 列出命中的文件，或者说明搜了哪些地方没找到", "need": "答案里有具体文件名" }
+      ],
+      "cheatsheet": [
+        "全目录搜：skill(search_text -Pattern 关键词 -Path .)",
+        "只搜某类文件：skill(search_text -Pattern 关键词 -Path . -Ext .log)",
+        "cmd 版：run_cmd(findstr /s /i \"关键词\" *.txt)",
+        "日志找错误：skill(log_errors -Path app.log)"
+      ],
+      "forbid": [
+        "没搜就说找到了",
+        "只搜一个文件就下结论",
+        "把搜到的所有内容整段贴出来"
+      ],
+      "example": "任务：哪里写了 ERROR\n→ skill(search_text -Pattern ERROR -Path . -Ext .log)\n→ finish(answer=\"app.log 第 3 行有 ERROR\")"
+    },
+    {
+      "id": "build",
+      "tools": ["plan","write_file","read_file","run_ps1","list_dir","skill","replace_in_file","finish"],
+      "name": "写脚本 / 做工具",
+      "match": ["写个工具", "写个脚本", "做个", "实现一个", "开发", "帮我写个程序"],
+      "goal": "产出一个能独立跑的 .ps1 文件，并且真的跑通了",
+      "suggest_tools": ["plan", "skill list", "write_file", "run_ps1"],
+      "reject_tools": [],
+      "steps": [
+        { "n": 1, "do": "plan 列步骤。每步要写清用什么命令/函数", "need": "清单里每步都有具体方法" },
+        { "n": 2, "do": "skill(command=\"list\") 看有没有现成的。有就直接用，别自己写", "need": "确认过技能库里没有" },
+        { "n": 3, "do": "write_file 写 .ps1 脚本（带 param、错误处理、输出）", "need": "文件写成功" },
+        { "n": 4, "do": "run_ps1 跑一遍，看输出对不对", "need": "真的跑过，看到输出" },
+        { "n": 5, "do": "跑错了就改，改完再跑。最多改 3 次", "need": "最终跑通" },
+        { "n": 6, "do": "finish 说明脚本叫什么、怎么用、跑出什么结果", "need": "答案里有文件名和运行结果" }
+      ],
+      "cheatsheet": [
+        "写脚本：write_file(path=\"tool.ps1\", content=\"param(...)...\")",
+        "跑脚本：run_ps1(path=\"tool.ps1\")",
+        "带参数跑：run_ps1(path=\"tool.ps1\", command=\"-Path data\")"
+      ],
+      "forbid": [
+        "说写脚本却一个个手动处理文件",
+        "写完不跑就说完成",
+        "同一个脚本原样重跑（改了才跑）"
+      ],
+      "example": "任务：写个工具统计扩展名\n→ plan\n→ skill(list) 看到有 count_ext，直接用\n→ finish"
+    },
+    {
+      "id": "organize",
+      "tools": ["list_dir","skill","read_file","run_cmd","finish"],
+      "name": "整理 / 批量处理",
+      "match": ["整理", "分类", "归档", "批量", "重命名", "清理", "重复", "去重", "一样的文件"],
+      "goal": "批量操作做对了，而且没有误伤别的文件",
+      "suggest_tools": ["skill find_duplicates", "skill batch_rename", "skill archive_by_date", "skill clean_empty_dirs", "list_dir"],
+      "reject_tools": ["write_file"],
+      "steps": [
+        { "n": 1, "do": "先 list_dir 看清有哪些文件", "need": "知道要处理哪些" },
+        { "n": 2, "do": "调对应的现成技能（find_duplicates / batch_rename / archive_by_date / clean_empty_dirs）", "need": "找到能用的" },
+        { "n": 3, "do": "会用 -Apply 的技能，先不加 -Apply 预览一遍", "need": "看到预览清单" },
+        { "n": 4, "do": "确认没问题再加 -Apply 真执行", "need": "工具返回实际处理数量" },
+        { "n": 5, "do": "finish 说明动了多少个文件、动了什么", "need": "答案里有数量" }
+      ],
+      "cheatsheet": [
+        "找重复文件：skill(find_duplicates -Path test)",
+        "批量加前缀：skill(batch_rename -Path test -AddPrefix bak_)",
+        "按日期归档：skill(archive_by_date -Path downloads -Apply)",
+        "清空目录：skill(clean_empty_dirs -Path . -Apply)"
+      ],
+      "forbid": [
+        "不预览直接动手",
+        "任务没要求删的也删",
+        "批量操作后用 list_dir 反复确认超过两次"
+      ],
+      "example": "任务：把 test 里的重复文件找出来\n→ skill(find_duplicates -Path test)\n→ finish(answer=\"找到 2 组重复\")"
+    }
+  ]
+}

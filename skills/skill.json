@@ -1,0 +1,182 @@
+{
+  "version": 3,
+  "note": "每个技能是一个验证过能跑的 .ps1。模型只需要判断该用哪个，不需要自己写代码。写着「默认预览」的技能要加 -Apply 才真动手，这是保护数据。",
+  "skills": [
+    {
+      "name": "find_duplicates",
+      "title": "找重复文件",
+      "desc": "找出目录里内容重复的文件（按哈希判断，不看文件名）",
+      "triggers": ["重复文件", "重复的", "一样的文件", "内容相同", "去重", "重复内容"],
+      "params": "-Path <目录，默认当前目录>",
+      "example": "skill(command=\"find_duplicates -Path test\")"
+    },
+    {
+      "name": "count_ext",
+      "title": "按扩展名统计",
+      "desc": "统计目录里每种扩展名各有多少个文件",
+      "triggers": ["扩展名", "按类型统计", "各种格式", "文件类型", "有几类", "每种类型", "类型各有多少", "几种文件", "各有多少个"],
+      "params": "-Path <目录，默认当前目录>",
+      "example": "skill(command=\"count_ext -Path test\")"
+    },
+    {
+      "name": "sum_field",
+      "title": "字段求和",
+      "desc": "对 jsonl / csv / xlsx 里某个数值字段求和、求平均、求最大最小",
+      "triggers": ["求和", "总和", "合计", "加起来", "一共多少钱", "平均值", "最大", "最小", "总计"],
+      "params": "-Path <文件> -Field <字段名，默认 amount>",
+      "example": "skill(command=\"sum_field -Path data/orders.jsonl -Field amount\")"
+    },
+    {
+      "name": "find_large",
+      "title": "找大文件",
+      "desc": "列出目录里最大的 N 个文件",
+      "triggers": ["大文件", "占空间", "最大的文件", "占用最多", "空间不够", "哪个文件大", "最大的是哪"],
+      "params": "-Path <目录，默认当前目录> -Top <几个，默认10>",
+      "example": "skill(command=\"find_large -Path . -Top 5\")"
+    },
+    {
+      "name": "batch_rename",
+      "title": "批量改名",
+      "desc": "给目录里文件加前缀/后缀，或替换名字里的一段。默认只预览，加 -Apply 才真改",
+      "triggers": ["批量改名", "重命名", "加前缀", "改文件名", "统一改名"],
+      "params": "-Path <目录> -AddPrefix <前缀> 或 -AddSuffix <后缀> 或 -Replace <旧>=<新> [-Apply]",
+      "example": "skill(command=\"batch_rename -Path test -AddPrefix bak_\")"
+    },
+    {
+      "name": "text_stats",
+      "title": "文本统计",
+      "desc": "统计文件的行数、字数、字符数；目录则统计所有文本合计",
+      "triggers": ["多少行", "行数", "字数", "字符数", "统计文本", "几行"],
+      "params": "-Path <文件或目录>",
+      "example": "skill(command=\"text_stats -Path data/orders.jsonl\")"
+    },
+    {
+      "name": "compare_files",
+      "title": "比较两个文件",
+      "desc": "判断两个文件内容是否完全相同（先比大小再比哈希）",
+      "triggers": ["比较文件", "两个文件一样吗", "对比文件", "是否相同", "有区别吗"],
+      "params": "-Path <文件A> -With <文件B>",
+      "example": "skill(command=\"compare_files -Path a.txt -With b.txt\")"
+    },
+    {
+      "name": "search_text",
+      "title": "搜关键词",
+      "desc": "在文件或整个目录里搜一段文字，返回命中的文件和行号",
+      "triggers": ["搜索", "查找", "哪些文件里有", "包含", "含有", "找一下这个词", "关键字"],
+      "params": "-Pattern <要找什么> -Path <文件或目录> [-Ext .txt,.log] [-IgnoreCase]",
+      "example": "skill(command=\"search_text -Pattern 错误 -Path . -Ext .log\")"
+    },
+    {
+      "name": "replace_text",
+      "title": "批量替换文字",
+      "desc": "把文件里的某段文字换成另一段。默认只预览，加 -Apply 才真改",
+      "triggers": ["替换", "换成", "改成", "批量修改文字", "全部改"],
+      "params": "-Path <文件或目录> -Find <旧> -Replace <新> [-Ext .txt] [-Apply]",
+      "example": "skill(command=\"replace_text -Path test -Find old -Replace new -Apply\")"
+    },
+    {
+      "name": "tree",
+      "title": "目录树",
+      "desc": "把目录结构打印成树形，带文件大小和数量",
+      "triggers": ["目录结构", "树形", "整个目录", "都有什么", "结构图", "展开目录"],
+      "params": "-Path <目录> [-Depth <层数，默认3>]",
+      "example": "skill(command=\"tree -Path . -Depth 3\")"
+    },
+    {
+      "name": "merge_files",
+      "title": "合并文件",
+      "desc": "把目录里同类型的多个文件按名字顺序合并成一个",
+      "triggers": ["合并", "合起来", "拼成一个", "汇总到一个文件"],
+      "params": "-Path <目录> -Ext <.txt> -Out <输出文件> [-WithName]",
+      "example": "skill(command=\"merge_files -Path logs -Ext .log -Out all.log -WithName\")"
+    },
+    {
+      "name": "dedupe_lines",
+      "title": "重复行去重",
+      "desc": "去掉文件里重复的行。默认输出到 _deduped 新文件，加 -Apply 才覆盖原文件",
+      "triggers": ["去重", "重复行", "删掉重复", "只留一份"],
+      "params": "-Path <文件> [-Apply]",
+      "example": "skill(command=\"dedupe_lines -Path list.txt\")"
+    },
+    {
+      "name": "csv_to_jsonl",
+      "title": "CSV 转 jsonl",
+      "desc": "把 CSV 表格转成一行一个 JSON 的 jsonl，数字自动识别",
+      "triggers": ["csv转", "转jsonl", "表格转json", "csv变成"],
+      "params": "-Path <csv文件> [-Out <输出>]",
+      "example": "skill(command=\"csv_to_jsonl -Path data.csv\")"
+    },
+    {
+      "name": "jsonl_to_csv",
+      "title": "jsonl 转 CSV",
+      "desc": "把 jsonl 转回 CSV 表格",
+      "triggers": ["jsonl转", "转csv", "json转表格"],
+      "params": "-Path <jsonl文件> [-Out <输出>]",
+      "example": "skill(command=\"jsonl_to_csv -Path data/orders.jsonl\")"
+    },
+    {
+      "name": "clean_empty_dirs",
+      "title": "清理空文件夹",
+      "desc": "找出目录下所有空文件夹。默认只列出，加 -Apply 才删",
+      "triggers": ["空文件夹", "空的目录", "清理目录", "删空目录"],
+      "params": "-Path <目录> [-Apply]",
+      "example": "skill(command=\"clean_empty_dirs -Path .\")"
+    },
+    {
+      "name": "log_errors",
+      "title": "日志提错误",
+      "desc": "从日志文件里挑出报错的行（默认认 error/错误/exception/fail 等词）",
+      "triggers": ["日志", "报错", "错误行", "log里有", "出什么错了"],
+      "params": "-Path <日志文件> [-Keyword \"error,错误,fail\"]",
+      "example": "skill(command=\"log_errors -Path app.log\")"
+    },
+    {
+      "name": "archive_by_date",
+      "title": "按日期归档",
+      "desc": "按文件修改日期分到 年-月 子目录里。默认只预览，加 -Apply 才移动",
+      "triggers": ["按日期", "归档", "分类整理", "按月份", "整理文件"],
+      "params": "-Path <目录> [-Apply]",
+      "example": "skill(command=\"archive_by_date -Path downloads -Apply\")"
+    },
+    {
+      "name": "unzip_all",
+      "title": "批量解压",
+      "desc": "把目录里所有压缩包各解到同名子目录（zip/tar/gz/7z/rar）",
+      "triggers": ["批量解压", "全部解压", "解开所有", "解压目录"],
+      "params": "-Path <目录> [-Out <解到哪>]",
+      "example": "skill(command=\"unzip_all -Path downloads\")"
+    },
+    {
+      "name": "csv_stats",
+      "title": "表格统计",
+      "desc": "表格整体统计：多少行列、数值列的总和/平均/最大最小、文本列各值次数。支持 csv 和 xlsx",
+      "triggers": ["表格统计", "统计表格", "这个表怎么样", "算一下这表", "数据分析", "列统计", "表里有什么", "excel统计", "这张表"],
+      "params": "-Path <csv文件>",
+      "example": "skill(command=\"csv_stats -Path staff.csv\")"
+    },
+    {
+      "name": "csv_query",
+      "title": "查某个人的某项",
+      "desc": "在表格里按名字/关键词找到某行，取出它的某一列。不指定字段就整行列出。支持 csv 和 xlsx",
+      "triggers": ["查某人", "某个人的", "这个人的", "他有多少", "她有多少", "某人", "查一下这个人", "找这个人", "查一下", "的金额", "多少钱", "查查"],
+      "params": "-Path <csv文件> -Find <姓名或关键词> [-Field <要取哪列>]",
+      "example": "skill(command=\"csv_query -Path staff.csv -Find 张三 -Field 金额\")"
+    },
+    {
+      "name": "xlsx_to_csv",
+      "title": "Excel 转 CSV",
+      "desc": "把 .xlsx 转成 csv（纯 PowerShell 解压解析，不需要装 Excel）。老的 .xls 要先另存为 xlsx",
+      "triggers": ["excel转", "xlsx转", "转csv", "表格转文本", "读excel", "打开excel", "这个excel"],
+      "params": "-Path <xlsx文件> [-Sheet <第几张表，默认1>] [-Out <输出csv>]",
+      "example": "skill(command=\"xlsx_to_csv -Path data.xlsx -Out data.csv\")"
+    },
+    {
+      "name": "web_fetch_text",
+      "title": "抓网页正文",
+      "desc": "下载网页并提取纯文字（去掉标签和脚本）。可以存成 txt",
+      "triggers": ["抓网页", "网页内容", "抓取", "这个链接", "读一下这个网址", "网页文字", "扒下来", "抓一下", "这个网页", "网页"],
+      "params": "-Url <网址> [-Out <存到哪>] [-Max <显示多少字>]",
+      "example": "skill(command=\"web_fetch_text -Url https://example.com -Out page.txt\")"
+    }
+  ]
+}
