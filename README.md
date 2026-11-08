@@ -239,14 +239,71 @@ Write-Output ("这里有 " + $files.Count + " 个文件")
 
 ## 面板
 
+浏览器打开 `http://127.0.0.1:8090`，一个面板：
+
 - 左边：配置、上下文占用、工作区文件、工具列表
-- 中间：对话流，能看到它每一步在想什么、做什么、结果是什么
+- 中间：对话流，每一步在想什么、做什么、结果是什么，全都看得到
 - 三套主题：浅色 / 深色 / 液态玻璃
 
 顶栏点 `Nafx` 那个字有彩蛋。
 
----
+### 右下角那个 ∑
 
+面板右下角有个半透明的 `∑` 按钮，点开是个后门面板：
+
+**看 token 用量**
+
+```
+总容量      6144 tok
+提示词      2568 tok
+工具定义    1351 tok
+对话可用    2225 tok
+[进度条，超 85% 变红]
+```
+
+还有本次任务的状态、步数、耗时、工具调用统计。
+
+**装补丁 —— 这个能改界面**
+
+面板最底下是「插件 / 补丁」。点「+ 新建补丁」，粘一段 CSS 或 JS，保存即刻生效。
+
+补丁存在浏览器本地（localStorage），不上传，刷新还在。
+
+**CSS 补丁示例**：把气泡改成方角
+
+```css
+.msg .bubble{ border-radius:4px !important; }
+```
+
+**CSS 补丁示例**：标题换成渐变字
+
+```css
+.brand span:last-child{
+  background:linear-gradient(90deg,#ff6ec7,#7b61ff);
+  -webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;
+}
+```
+
+**JS 补丁示例**：加个 Ctrl+Enter 发送快捷键
+
+```js
+document.addEventListener('keydown', function(e){
+  if (e.ctrlKey && e.key === 'Enter') document.getElementById('send').click();
+});
+```
+
+**JS 补丁示例**：让它每分钟自己说句话
+
+```js
+setInterval(function(){ document.getElementById('brandEgg').click(); }, 60000);
+```
+
+每个补丁都能单独停用/启用/删除。JS 补丁包在 try/catch 里，写错了只进控制台，不会把面板搞崩。
+
+**有什么用**：改了界面不用等我更新，自己补丁就行。做好的补丁能分享给别人。
+
+---
 ## 已知的限制
 
 说实话：

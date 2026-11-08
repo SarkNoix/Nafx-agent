@@ -171,6 +171,12 @@ header{position:relative;z-index:1;display:flex;align-items:center;gap:14px;padd
   backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);
 }
 .egg-bubble.on{opacity:1;transform:translateY(0) scale(1)}
+.egg-bubble.rare{
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  color:#fff;border-color:transparent;font-weight:600;
+  box-shadow:0 0 20px rgba(110,168,254,.5), var(--shadow);
+}
+[data-theme="glass"] .egg-bubble.rare{background:linear-gradient(135deg,rgba(255,255,255,.9),rgba(255,214,240,.85));color:#5c2d80}
 .egg-bubble::before{
   content:'';position:absolute;left:-5px;top:50%;transform:translateY(-50%);
   width:0;height:0;border:5px solid transparent;border-right-color:var(--line2);
@@ -418,6 +424,100 @@ textarea::placeholder{color:var(--faint)}
   .composer-inner{flex-direction:column;align-items:stretch}
   .composer-inner button{width:100%}
 }
+
+/* ---------- 右下角系统面板 ---------- */
+#sysBtn{
+  position:fixed;right:18px;bottom:18px;z-index:60;
+  width:40px;height:40px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--panel3);border:1px solid var(--line2);
+  color:var(--dim);font-size:15px;font-weight:600;
+  cursor:pointer;user-select:none;
+  opacity:.55;transition:.22s cubic-bezier(.34,1.56,.64,1);
+  box-shadow:var(--shadow);
+  backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);
+}
+#sysBtn:hover{opacity:1;transform:scale(1.12) rotate(9deg);border-color:var(--accent);color:var(--accent)}
+#sysBtn.on{opacity:1;background:var(--accent);color:#08101f;border-color:transparent}
+[data-theme="glass"] #sysBtn.on{background:rgba(255,255,255,.9);color:#5c2d80}
+
+#sysPanel{
+  position:fixed;right:18px;bottom:70px;z-index:59;
+  width:min(380px,calc(100vw - 36px));
+  max-height:min(70vh,620px);
+  display:flex;flex-direction:column;
+  background:var(--panel);border:1px solid var(--line2);
+  border-radius:var(--radius-lg);box-shadow:var(--shadow);
+  backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);
+  opacity:0;transform:translateY(14px) scale(.96);pointer-events:none;
+  transition:.24s cubic-bezier(.34,1.56,.64,1);
+}
+#sysPanel.on{opacity:1;transform:translateY(0) scale(1);pointer-events:auto}
+
+.sys-head{
+  display:flex;align-items:center;gap:8px;padding:12px 14px;
+  border-bottom:1px solid var(--line);flex-shrink:0;
+}
+.sys-head b{flex:1;font-size:13px;font-weight:600}
+.sys-head button{
+  padding:3px 9px;font-size:12px;border-radius:7px;
+  background:var(--panel2);border:1px solid var(--line);color:var(--dim);
+}
+.sys-body{flex:1;overflow-y:auto;padding:12px 14px}
+.sys-body::-webkit-scrollbar{width:7px}
+.sys-body::-webkit-scrollbar-thumb{background:var(--line2);border-radius:7px}
+
+.sys-tit{
+  font-size:10.5px;color:var(--faint);letter-spacing:1px;
+  margin:14px 0 8px;display:flex;align-items:center;gap:6px;
+}
+.sys-tit:first-child{margin-top:0}
+.sys-tit::after{content:'';flex:1;height:1px;background:var(--line)}
+
+.sys-row{
+  display:flex;justify-content:space-between;gap:10px;
+  padding:5px 0;font-size:12px;border-bottom:1px solid var(--line);
+}
+.sys-row:last-child{border-bottom:none}
+.sys-row span:first-child{color:var(--dim)}
+.sys-row span:last-child{color:var(--fg);font-family:ui-monospace,Consolas,monospace;font-size:11.5px}
+
+.sys-bar{height:6px;background:var(--panel3);border-radius:6px;overflow:hidden;margin:6px 0 10px}
+.sys-bar > i{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .4s}
+[data-theme="glass"] .sys-bar > i{background:linear-gradient(90deg,#fff,#ffd6f0)}
+.sys-bar > i.warn{background:linear-gradient(90deg,var(--warn),var(--err))}
+
+.sys-note{font-size:11px;color:var(--faint);line-height:1.6;margin-top:4px}
+
+/* 插件/补丁 */
+.patch-item{
+  border:1px solid var(--line);border-radius:9px;
+  padding:8px 10px;margin-bottom:7px;background:var(--panel2);
+  display:flex;align-items:center;gap:8px;
+}
+.patch-item .nm{flex:1;font-size:12px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.patch-item .tp{font-size:10px;padding:1px 6px;border-radius:5px;background:var(--panel3);color:var(--faint);flex-shrink:0}
+.patch-item button{padding:2px 7px;font-size:10.5px;border-radius:6px;background:var(--panel3);border:1px solid var(--line);color:var(--dim)}
+.patch-item button:hover{color:var(--fg)}
+.patch-item.off .nm{opacity:.45;text-decoration:line-through}
+
+.patch-add{
+  width:100%;padding:8px;font-size:12px;border-radius:9px;
+  background:transparent;border:1px dashed var(--line2);color:var(--dim);
+}
+.patch-add:hover{border-color:var(--accent);color:var(--accent)}
+
+#patchEditor{display:none;margin-top:8px}
+#patchEditor.on{display:block}
+#patchEditor input,#patchEditor textarea{
+  width:100%;background:var(--panel2);border:1px solid var(--line);
+  border-radius:8px;color:var(--fg);font-family:ui-monospace,Consolas,monospace;
+  font-size:11.5px;padding:7px 9px;outline:none;margin-bottom:6px;
+}
+#patchEditor textarea{height:110px;resize:vertical;line-height:1.5}
+#patchEditor input:focus,#patchEditor textarea:focus{border-color:var(--accent)}
+#patchEditor .row{display:flex;gap:6px;margin-top:2px}
+#patchEditor .row button{flex:1;padding:6px;font-size:11.5px;border-radius:7px}
 </style>
 </head>
 <body>
@@ -522,11 +622,59 @@ textarea::placeholder{color:var(--faint)}
   <div class="drawer-body" id="settingsBody"></div>
 </div>
 
+<div id="sysBtn" title="系统信息 / 插件">∑</div>
+
+<div id="sysPanel">
+  <div class="sys-head">
+    <b>系统信息</b>
+    <button id="sysClose">关闭</button>
+  </div>
+  <div class="sys-body">
+    <div class="sys-tit">上下文</div>
+    <div class="sys-row"><span>总容量</span><span id="sysCtx">—</span></div>
+    <div class="sys-row"><span>提示词</span><span id="sysPrompt">—</span></div>
+    <div class="sys-row"><span>工具定义</span><span id="sysTools">—</span></div>
+    <div class="sys-row"><span>对话可用</span><span id="sysFree">—</span></div>
+    <div class="sys-bar"><i id="sysBar" style="width:0%"></i></div>
+
+    <div class="sys-tit">本次任务</div>
+    <div class="sys-row"><span>状态</span><span id="sysStatus">—</span></div>
+    <div class="sys-row"><span>已走步数</span><span id="sysSteps">—</span></div>
+    <div class="sys-row"><span>耗时</span><span id="sysElapsed">—</span></div>
+    <div class="sys-row"><span>工具调用</span><span id="sysToolsUsed">—</span></div>
+
+    <div class="sys-tit">模型</div>
+    <div class="sys-row"><span>名称</span><span id="sysModel">—</span></div>
+    <div class="sys-row"><span>工具数</span><span id="sysToolCount">—</span></div>
+    <div class="sys-row"><span>意图</span><span id="sysIntent">—</span></div>
+
+    <div class="sys-tit">插件 / 补丁</div>
+    <div class="sys-note">
+      补丁直接改这个页面。CSS 换个颜色，JS 加点功能，都行。
+      存在浏览器本地，不上传。
+    </div>
+    <div id="patchList" style="margin-top:10px"></div>
+    <button class="patch-add" id="patchAddBtn">+ 新建补丁</button>
+    <div id="patchEditor">
+      <input id="patchName" placeholder="名字，比如 深色按钮 / 快捷键">
+      <textarea id="patchCode" placeholder="CSS 补丁示例：&#10;.msg .bubble{border-radius:4px}&#10;&#10;JS 补丁示例：&#10;console.log('loaded')"></textarea>
+      <div class="row">
+        <button id="patchTypeCSS" style="background:var(--panel3);border:1px solid var(--line)">CSS</button>
+        <button id="patchTypeJS" style="background:var(--panel3);border:1px solid var(--line)">JS</button>
+      </div>
+      <div class="row">
+        <button id="patchSave" style="background:var(--accent);color:var(--primary-fg);border:none">保存并启用</button>
+        <button id="patchCancel">取消</button>
+      </div>
+    </div>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 
 <script>
 var $ = function(id){ return document.getElementById(id); };
 var thread = $('thread'), input = $('input'), send = $('send'), dot = $('dot');
+var curState = null;
 var pollTimer = null, lastSig = '', fileSig = '';
 var curSession = [];
 
@@ -831,7 +979,7 @@ function liveBox(st){
 }
 
 function renderFlow(sess, st){
-  if (st){
+  if (st){ curState = st;
     var status = st.status || 'idle';
     dot.className = 'dot ' + status;
     $('hintStatus').textContent = (st.phase ? '· ' + st.phase : (STATUS_TEXT[status] || ''));
@@ -945,7 +1093,7 @@ function tick(){
   Promise.all([fetchJson('/api/state'), fetchJson('/api/system'), fetchJson('/api/session')])
     .then(function(res){
       var st = res[0], sys = res[1], sess = res[2];
-      if (sys) renderSystem(sys);
+      if (sys) { renderSystem(sys); window.__lastSys = sys; }
       renderFlow(sess, st);
       loadFiles();
       var busy = (st && st.status === 'running');
@@ -1150,58 +1298,336 @@ input.onkeydown = function(e){
 };
 send.onclick = submit;
 
-/* ---------- 彩蛋：点 Nafx 大字冒个小泡 ---------- */
-var EGG_LINES = [
+/* ---------- 彩蛋：点 Nafx 大字，它会说话 ---------- */
+var EGG_NORMAL = [
+  'token来',
   '我没见过你这样的脑袋',
   '我···我不要把222改成333···',
-  'token来',
   '再点我可就不理你了',
   '我在想。别催。',
-  '这个任务有点重，让我缓缓',
   '我的显存呢？我的显存呢？',
   '4B 也挺好的嘛…别嫌弃我',
-  '你刚才那个需求，我记着呢',
-  '别点了，我一次只想一件事',
   '嗯？',
   '算得准，就是慢了点',
+  '技能库里 22 个，够用了',
+  '我不用显卡，我用 CPU',
+  '本地跑的，数据不出门',
+  '别戳了，我在想呢',
+  '你可以去泡杯茶，这步要 60 秒',
+  '我不是不会，我是慢',
+  '四核跑 4B，你还能要求什么',
   '这活儿得写脚本，我看看…',
-  '我尽力了，真的',
-  '要不你先去喝口水？'
+  '我尽力了，真的'
 ];
+var EGG_RUNNING = [
+  '正在想，别催',
+  '这一步有点慢，CPU 在努力',
+  '你盯着我也快不了',
+  '快了快了…吧',
+  '要不你先去喝口水？',
+  '正在 prefill，大概还要几十秒',
+  '别催，再催就出错'
+];
+var EGG_FAILED = [
+  '刚才那个…我尽力了',
+  '下次我记住了',
+  '这不怪我，是网络',
+  '再给我一次机会',
+  '我已经把教训记下来了'
+];
+var EGG_DONE = [
+  '好了吧？',
+  '看，我说行吧',
+  '下次还找我',
+  '这活儿挺简单的其实'
+];
+var EGG_SPAM = [
+  '别戳了！我是模型不是按钮',
+  '再点我就罢工了',
+  '痒',
+  '你有这功夫不如给我加个内存条',
+  '手不酸吗',
+  '我不是按钮！！',
+  '点够了没，我还有活儿要干'
+];
+var EGG_NIGHT = [
+  '这么晚还不睡？',
+  '我也困了，但我不需要睡觉',
+  '要不休息一下吧，明天再折腾',
+  '凌晨的效率，你懂的'
+];
+var EGG_RARE = [
+  '其实我是 0.6B 化的 4B',
+  '你知道吗，把我做出来的是个初中生',
+  '如果能加根内存条，我能快三倍',
+  '我偷偷存了 22 个技能，你才用了几个',
+  '别告诉别人，我其实不会自己想事情'
+];
+
 var eggEl = null, eggTimer = null, eggLast = -1;
+var eggClicks = [], eggRareShown = false;
+
+function pickLine(arr){
+  if (!arr || arr.length === 0) return '';
+  var i = Math.floor(Math.random() * arr.length);
+  if (arr.length > 1 && i === eggLast) { i = (i + 1) % arr.length; }
+  eggLast = i;
+  return arr[i];
+}
 
 function showEgg(){
   var brand = $('brandEgg');
   if (!brand) return;
+
   if (!eggEl){
     eggEl = document.createElement('div');
     eggEl.className = 'egg-bubble';
     document.body.appendChild(eggEl);
   }
-  var i = Math.floor(Math.random() * EGG_LINES.length);
-  if (EGG_LINES.length > 1 && i === eggLast) { i = (i + 1) % EGG_LINES.length; }
-  eggLast = i;
+
+  // 连点检测：3 秒内点 4 次以上
+  var now = Date.now();
+  eggClicks.push(now);
+  eggClicks = eggClicks.filter(function(t){ return now - t < 3000; });
+
+  var line = '';
+  var isRare = false;
+
+  if (eggClicks.length >= 4){
+    line = pickLine(EGG_SPAM);
+    // 抖一下
+    brand.style.transition = 'none';
+    brand.style.transform = 'translateX(3px)';
+    setTimeout(function(){ brand.style.transform = 'translateX(-3px)'; }, 50);
+    setTimeout(function(){ brand.style.transform = ''; brand.style.transition = ''; }, 110);
+  } else if (Math.random() < 0.02 && !eggRareShown){
+    line = pickLine(EGG_RARE);
+    isRare = true;
+    eggRareShown = true;
+  } else {
+    // 按当前状态挑台词
+    var st = (curState && curState.status) ? curState.status : 'idle';
+    var h = new Date().getHours();
+    var pool = EGG_NORMAL;
+    if (st === 'running') { pool = (Math.random() < 0.7) ? EGG_RUNNING : EGG_NORMAL; }
+    else if (st === 'failed' || st === 'error' || st === 'stuck') { pool = (Math.random() < 0.6) ? EGG_FAILED : EGG_NORMAL; }
+    else if (st === 'done') { pool = (Math.random() < 0.4) ? EGG_DONE : EGG_NORMAL; }
+    // 深夜优先
+    if ((h >= 23 || h < 5) && Math.random() < 0.5) { pool = EGG_NIGHT; }
+    line = pickLine(pool);
+  }
 
   var r = brand.getBoundingClientRect();
-  eggEl.textContent = EGG_LINES[i];
+  eggEl.textContent = line;
   eggEl.style.left = (r.right + 14) + 'px';
   eggEl.style.top = (r.top + r.height/2 - 16) + 'px';
-  // 先摆位置再显示，避免从旧位置飞过来
   void eggEl.offsetWidth;
-  eggEl.className = 'egg-bubble on';
+  eggEl.className = isRare ? 'egg-bubble on rare' : 'egg-bubble on';
 
   if (eggTimer) clearTimeout(eggTimer);
-  eggTimer = setTimeout(function(){ eggEl.className = 'egg-bubble'; }, 2600);
+  eggTimer = setTimeout(function(){ eggEl.className = 'egg-bubble'; }, isRare ? 4000 : 2600);
 }
-document.addEventListener('DOMContentLoaded', function(){
-  var brand = $('brandEgg');
-  if (brand) brand.onclick = showEgg;
+
+function bindEgg(){
+  var b = $('brandEgg');
+  if (b) b.onclick = showEgg;
+}
+document.addEventListener('DOMContentLoaded', bindEgg);
+if (document.readyState !== 'loading') bindEgg();
+
+/* ---------- 右下角系统面板 + 插件系统 ---------- */
+var sysOpen = false;
+
+function toggleSys(force){
+  var btn = $('sysBtn'), pnl = $('sysPanel');
+  if (!btn || !pnl) return;
+  sysOpen = (typeof force === 'boolean') ? force : !sysOpen;
+  btn.className = sysOpen ? 'on' : '';
+  pnl.className = sysOpen ? 'on' : '';
+  if (sysOpen) refreshSys();
+}
+
+function fmtTok(n){
+  n = Math.round(n || 0);
+  return n >= 1000 ? (n/1000).toFixed(1) + 'k' : String(n);
+}
+
+function refreshSys(){
+  var st = curState;
+  var sys = window.__lastSys || null;
+
+  // 上下文
+  if (sys){
+    var per = sys.contextPerSlot || 1;
+    var pt = sys.promptTokens || 0;
+    var tt = sys.toolTokens || 0;
+    var free = Math.max(0, per - pt - tt);
+    $('sysCtx').textContent = per + ' tok';
+    $('sysPrompt').textContent = fmtTok(pt) + ' tok';
+    $('sysTools').textContent = fmtTok(tt) + ' tok';
+    $('sysFree').textContent = fmtTok(free) + ' tok';
+    var pct = Math.min(100, (pt + tt) / per * 100);
+    var bar = $('sysBar');
+    bar.style.width = pct + '%';
+    bar.className = pct > 85 ? 'warn' : '';
+    $('sysModel').textContent = sys.model || '—';
+    $('sysToolCount').textContent = (sys.toolCount || 0) + ' 个';
+  }
+
+  // 本次任务
+  if (st){
+    $('sysStatus').textContent = (STATUS_TEXT[st.status] || st.status || '—');
+    $('sysSteps').textContent = (st.step || 0) + ' / ' + (st.maxSteps || 0);
+    $('sysElapsed').textContent = fmtTime(st.elapsed || 0);
+    var uniq = {};
+    var arr = st.steps || [];
+    for (var i=0;i<arr.length;i++){ uniq[arr[i].tool] = 1; }
+    $('sysToolsUsed').textContent = arr.length + ' 次（' + Object.keys(uniq).length + ' 种）';
+    $('sysIntent').textContent = INTENT_TEXT[st.intent] || st.intent || '—';
+  } else {
+    $('sysStatus').textContent = '空闲';
+  }
+}
+
+
+
+/* ---- 补丁系统 ---- */
+var PATCH_KEY = 'nafx_patches';
+var patches = [];
+var patchDraftType = 'css';
+
+function loadPatches(){
+  try {
+    var raw = localStorage.getItem(PATCH_KEY);
+    patches = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(patches)) patches = [];
+  } catch(e){ patches = []; }
+  return patches;
+}
+
+function savePatches(){
+  try { localStorage.setItem(PATCH_KEY, JSON.stringify(patches)); } catch(e){}
+}
+
+function applyPatches(){
+  // 先清掉旧补丁
+  var old = document.querySelectorAll('[data-patch-id]');
+  for (var i=0;i<old.length;i++) old[i].remove();
+
+  for (var j=0;j<patches.length;j++){
+    var p = patches[j];
+    if (!p.enabled) continue;
+    try {
+      if (p.type === 'css'){
+        var s = document.createElement('style');
+        s.setAttribute('data-patch-id', p.id);
+        s.textContent = p.code;
+        document.head.appendChild(s);
+      } else {
+        var sc = document.createElement('script');
+        sc.setAttribute('data-patch-id', p.id);
+        sc.textContent = '(function(){try{' + '\n' + p.code + '\n' + '}catch(e){console.error("[patch ' + p.id + ']", e)}})();';
+        document.body.appendChild(sc);
+      }
+    } catch(e){ console.error('[patch]', p.id, e); }
+  }
+}
+
+function renderPatches(){
+  var box = $('patchList');
+  if (!box) return;
+  if (patches.length === 0){
+    box.innerHTML = '<div class="sys-note" style="margin:0">还没有补丁。</div>';
+    return;
+  }
+  var html = '';
+  for (var i=0;i<patches.length;i++){
+    var p = patches[i];
+    html += '<div class="patch-item' + (p.enabled ? '' : ' off') + '" data-i="' + i + '">' +
+      '<span class="tp">' + p.type.toUpperCase() + '</span>' +
+      '<span class="nm" title="' + esc(p.name) + '">' + esc(p.name) + '</span>' +
+      '<button data-act="toggle">' + (p.enabled ? '停用' : '启用') + '</button>' +
+      '<button data-act="del">删</button>' +
+      '</div>';
+  }
+  box.innerHTML = html;
+  var items = box.querySelectorAll('.patch-item');
+  for (var k=0;k<items.length;k++){
+    (function(el){
+      el.onclick = function(ev){
+        var btn = ev.target;
+        if (btn.tagName !== 'BUTTON') return;
+        var idx = parseInt(el.getAttribute('data-i'), 10);
+        var act = btn.getAttribute('data-act');
+        if (act === 'toggle'){
+          patches[idx].enabled = !patches[idx].enabled;
+        } else if (act === 'del'){
+          if (!confirm('删掉补丁「' + patches[idx].name + '」？')) return;
+          patches.splice(idx, 1);
+        }
+        savePatches(); applyPatches(); renderPatches();
+        toast(act === 'del' ? '已删除' : '已切换');
+      };
+    })(items[k]);
+  }
+}
+
+function bindSys(){
+  var btn = $('sysBtn'), pnl = $('sysPanel');
+  if (!btn) return;
+  btn.onclick = function(){ toggleSys(); };
+  $('sysClose').onclick = function(){ toggleSys(false); };
+
+  $('patchAddBtn').onclick = function(){
+    $('patchEditor').className = 'on';
+    $('patchName').value = '';
+    $('patchCode').value = '';
+    patchDraftType = 'css';
+    markType();
+  };
+  $('patchCancel').onclick = function(){ $('patchEditor').className = ''; };
+  $('patchTypeCSS').onclick = function(){ patchDraftType = 'css'; markType(); };
+  $('patchTypeJS').onclick = function(){ patchDraftType = 'js'; markType(); };
+
+  $('patchSave').onclick = function(){
+    var nm = $('patchName').value.trim();
+    var code = $('patchCode').value;
+    if (!nm){ toast('给补丁起个名字', true); return; }
+    if (!code.trim()){ toast('补丁内容是空的', true); return; }
+    patches.push({ id: 'p' + Date.now(), name: nm, type: patchDraftType, code: code, enabled: true });
+    savePatches(); applyPatches(); renderPatches();
+    $('patchEditor').className = '';
+    toast('补丁已启用');
+  };
+
+  loadPatches();
+  applyPatches();
+  renderPatches();
+}
+
+function markType(){
+  var c = $('patchTypeCSS'), j = $('patchTypeJS');
+  if (!c) return;
+  if (patchDraftType === 'css'){
+    c.style.background = 'var(--accent)'; c.style.color = 'var(--primary-fg)'; c.style.border = 'none';
+    j.style.background = 'var(--panel3)'; j.style.color = ''; j.style.border = '1px solid var(--line)';
+  } else {
+    j.style.background = 'var(--accent)'; j.style.color = 'var(--primary-fg)'; j.style.border = 'none';
+    c.style.background = 'var(--panel3)'; c.style.color = ''; c.style.border = '1px solid var(--line)';
+  }
+}
+
+// 点击面板外面关掉
+document.addEventListener('click', function(e){
+  if (!sysOpen) return;
+  var pnl = $('sysPanel'), btn = $('sysBtn');
+  if (!pnl || !btn) return;
+  if (pnl.contains(e.target) || btn.contains(e.target)) return;
+  toggleSys(false);
 });
-// DOMContentLoaded 可能已经过了，直接也绑一次
-if (document.readyState !== 'loading'){
-  var b0 = $('brandEgg');
-  if (b0) b0.onclick = showEgg;
-}
+
+if (document.readyState !== 'loading') bindSys();
+else document.addEventListener('DOMContentLoaded', bindSys);
 function bindChips(){
   var cs = document.querySelectorAll('.chip');
   for (var i=0;i<cs.length;i++){
