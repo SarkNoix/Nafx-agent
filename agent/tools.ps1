@@ -306,7 +306,9 @@ function Invoke-AiTool {
                 $all = @($lines)
                 $old = $all[$n - 1]
                 # 值本来就一样：别真去写，明确告诉它"没变化"，免得它接着反复刷同一行
-                if ($old -eq $newText) {
+                # 必须用 -ceq（区分大小写）：PowerShell 的 -eq 对字符串不区分大小写，
+                # 会把 hello 当成等于 HELLO，导致"只改大小写"的操作被静默跳过。
+                if ($old -ceq $newText) {
                     return "第 $n 行本来就是「$newText」，没有变化，这一步不需要再做。文件共 $($all.Count) 行。"
                 }
                 $all[$n - 1] = $newText
@@ -426,15 +428,36 @@ function Invoke-AiTool {
 
                 $extra = [string]$Action.command
 
-                # Windows 自带 cscript，//E:JScript 指定按 JScript 解释执行，不需要装 Node。
-                # 中文处理：.js 不能带 BOM（JScript 会把 BOM 当代码），
-                # 所以脚本里要输出中文时，让 cscript 用 UTF-8 代码页跑（chcp 65001），
-                # 输出就能按 UTF-8 正确解回来。
-                $cmdLine = '/c chcp 65001>nul & cscript //nologo //E:JScript "' + $full + '"'
-                if (-not [string]::IsNullOrWhiteSpace($extra)) { $cmdLine += ' ' + $extra }
+                # Windows 自带的 cscript + JScript，不用装 Node。
+                # 坑：JScript 引擎只认 ANSI 源文件，UTF-8 存的中文会让它报
+                # "未结束的字符串常量"。所以这里先看一眼有没有非 ASCII 字符，
+                # 有就转一份 GBK 的临时文件去跑；纯英文脚本直接用原文件。
+                $runFile = $full
+                $tmpFile = $null
+                try {
+                    $raw = [IO.File]::ReadAllText($full)
+                    $hasNonAscii = $false
+                    foreach ($ch in $raw.ToCharArray()) {
+                        if ([int][char]$ch -gt 127) { $hasNonAscii = $true; break }
+                    }
+                    if ($hasNonAscii) {
+                        $tmpFile = Join-Path $script:AiRoot ('.nafx_run_' + [Guid]::NewGuid().ToString('N').Substring(0,8) + '.js')
+                        [IO.File]::WriteAllText($tmpFile, $raw, [Text.Encoding]::GetEncoding(936))
+                        $runFile = $tmpFile
+                    }
+                } catch { $runFile = $full }
 
-                return Invoke-ChildScript -FilePath 'cmd.exe' -CommandLine $cmdLine `
-                    -Enc ([Text.Encoding]::UTF8) -Label "run_js $($Action.path)"
+                try {
+                    $cmdLine = '/c chcp 936>nul & cscript //nologo //E:JScript "' + $runFile + '"'
+                    if (-not [string]::IsNullOrWhiteSpace($extra)) { $cmdLine += ' ' + $extra }
+                    $out = Invoke-ChildScript -FilePath 'cmd.exe' -CommandLine $cmdLine `
+                        -Enc ([Text.Encoding]::GetEncoding(936)) -Label "run_js $($Action.path)"
+                    return $out
+                } finally {
+                    if ($tmpFile -and (Test-Path $tmpFile)) {
+                        Remove-Item $tmpFile -Force -ErrorAction SilentlyContinue
+                    }
+                }
             }
 
             'run_bat' {
@@ -590,6 +613,36 @@ function Invoke-AiTool {
                     if ($out2 -and -not ($out2 -match '[\u00C0-\u00FF]{3,}|锟斤拷')) { return $out2 }
                 }
                 return $out1
+            }
+
+            'run_ps' {
+                # 直接跑一条 PowerShell 命令。
+                # 什么时候用：cmd 做不了的（对象、管道、cmdlet、算数、正则、JSON）。
+                # 能用 run_cmd 解决的优先 run_cmd，那个更快。
+                $cmd = [string]$Action.command
+                if ([string]::IsNullOrWhiteSpace($cmd)) { throw 'command 不能为空，把 PowerShell 命令填进去' }
+
+                # 危险命令一律拒绝
+                $deny = '(?i)\b(Format-Volume|Clear-Disk|Remove-Partition|Initialize-Disk|' +
+                        'Stop-Computer|Restart-Computer|Set-ExecutionPolicy\s+Unrestricted|' +
+                        'Remove-Item\s+.*-Recurse.*\s+[A-Za-z]:\\?\s*$|' +
+                        'Invoke-Expression\s+\(New-Object\s+Net\.WebClient)'
+                if ($cmd -match $deny) { throw '这条命令被安全策略拒绝' }
+
+                # 会停下来等人的：跑起来永远不返回
+                if ($cmd -match '(?i)\b(Read-Host|pause\b|Out-GridView|Show-Command)') {
+                    throw '这条命令会停下来等人操作，永远不会返回。去掉 Read-Host / Out-GridView 之类。'
+                }
+
+                # 多行命令包成一行跑（分号连接），并强制 UTF-8 输出
+                $inner = '[Console]::OutputEncoding=[Text.Encoding]::UTF8; ' +
+                         '$OutputEncoding=[Text.Encoding]::UTF8; ' +
+                         '$ErrorActionPreference=''Continue''; ' +
+                         $cmd
+                $cmdLine = '-NoProfile -ExecutionPolicy Bypass -Command "' + ($inner -replace '"','\"') + '"'
+                $lbl = 'run_ps ' + $cmd.Substring(0, [Math]::Min(40, $cmd.Length))
+                return Invoke-ChildScript -FilePath 'powershell.exe' -CommandLine $cmdLine `
+                    -Enc ([Text.Encoding]::UTF8) -Label $lbl
             }
 
             'unzip' {

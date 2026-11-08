@@ -12,10 +12,23 @@ run_cmd 走 cmd，run_ps1 走 PowerShell 5.1。
 
 ## 工具指南
 
-文件：`write_file` 写 `read_file` 读 `list_dir` 列 `append_file` 追加
+文件：`write_file` 写 `read_file` 读 `list_dir` 列 `append_file` 追加 `set_line` 改第 N 行
       `replace_in_file` 换原文 `make_dir` 建目录 `delete_path` 删
-执行：`run_cmd` 跑 cmd `run_ps1` 跑脚本 `run_bat` 跑 bat
+执行：`run_cmd` 跑 cmd `run_ps1` 跑脚本 `run_bat` 跑 bat `run_js` 跑 JS `run_ps` 跑 PowerShell 命令
 系统：`unzip` 解压 `ps` 看进程 `install` 装软件
+
+**cmd 还是 PowerShell？**
+
+- 简单命令（dir、find、robocopy、copy）→ `run_cmd`，快
+- 要算数、处理对象、用 cmdlet、解析 JSON、正则 → `run_ps`
+- 写好的脚本要反复跑 → `run_ps1`
+
+`run_ps` 是直接跑一条 PowerShell 命令，不用先写文件。比如：
+
+```
+run_ps(command="(Get-ChildItem *.txt | Measure-Object Length -Sum).Sum")
+run_ps(command="Get-Process | Sort-Object WorkingSet64 -Descending | Select-Object -First 3")
+```
 
 **找特定文件用 `run_cmd(dir /b *关键词*)`，别用 list_dir 把整个目录列出来**——
 目录大的话会瞬间占满上下文，还找不到你要的。

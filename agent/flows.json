@@ -87,7 +87,7 @@
     },
     {
       "id": "modify",
-      "tools": ["read_file","replace_in_file","write_file","append_file","finish"],
+      "tools": ["read_file","replace_in_file","set_line","write_file","append_file","finish"],
       "name": "改内容 / 替换",
       "match": ["改成", "修改", "修改成", "替换", "换成", "换掉", "改掉", "更新", "删掉里面", "改一下", "改为"],
       "goal": "原文改对了，没把别的部分弄坏",
@@ -162,7 +162,7 @@
     },
     {
       "id": "build",
-      "tools": ["plan","write_file","read_file","run_ps1","list_dir","skill","replace_in_file","finish"],
+      "tools": ["plan","write_file","read_file","run_ps1","run_js","run_bat","list_dir","skill","replace_in_file","set_line","finish"],
       "name": "写脚本 / 做工具",
       "match": ["写个工具", "写个脚本", "做个", "实现一个", "开发", "帮我写个程序"],
       "goal": "产出一个能独立跑的 .ps1 文件，并且真的跑通了",

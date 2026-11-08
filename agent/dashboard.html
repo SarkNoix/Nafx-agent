@@ -518,6 +518,49 @@ textarea::placeholder{color:var(--faint)}
 #patchEditor input:focus,#patchEditor textarea:focus{border-color:var(--accent)}
 #patchEditor .row{display:flex;gap:6px;margin-top:2px}
 #patchEditor .row button{flex:1;padding:6px;font-size:11.5px;border-radius:7px}
+
+/* ---------- 输入框上方的命令记录条 ---------- */
+.cmdbar{
+  max-width:900px;margin:0 auto 8px;
+  display:flex;align-items:center;gap:6px;
+  overflow-x:auto;overflow-y:hidden;
+  padding:2px 0 4px;
+  scrollbar-width:thin;
+}
+.cmdbar::-webkit-scrollbar{height:3px}
+.cmdbar::-webkit-scrollbar-thumb{background:var(--line2);border-radius:3px}
+.cmdbar:empty{display:none}
+.cmdbar .lbl{
+  font-size:10px;color:var(--faint);flex-shrink:0;
+  letter-spacing:.5px;padding-right:2px;
+}
+.cmdchip{
+  display:inline-flex;align-items:center;gap:5px;
+  padding:3px 9px;border-radius:20px;
+  background:var(--panel2);border:1px solid var(--line);
+  font-family:ui-monospace,Consolas,monospace;font-size:10.5px;
+  color:var(--dim);cursor:pointer;flex-shrink:0;
+  transition:.14s;max-width:280px;
+}
+.cmdchip:hover{border-color:var(--accent);color:var(--fg)}
+.cmdchip:active{transform:scale(.95)}
+.cmdchip.bad{border-color:var(--err-bd);color:var(--err)}
+.cmdchip .n{color:var(--faint);font-size:9.5px;flex-shrink:0}
+.cmdchip .tx{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cmdchip.done{border-color:var(--ok-bd);color:var(--ok)}
+.cmdchip .tick{font-size:9px}
+
+/* 侧边栏卡片里的小字 */
+.side-block .quote{
+  font-size:10.5px;
+  color:var(--faint);
+  font-style:italic;
+  line-height:1.5;
+  margin:-3px 0 10px;
+  letter-spacing:.2px;
+  opacity:.8;
+}
+[data-theme="glass"] .side-block .quote{color:rgba(255,255,255,.62)}
 </style>
 </head>
 <body>
@@ -547,6 +590,7 @@ textarea::placeholder{color:var(--faint)}
   <aside class="side">
     <div class="side-block">
       <h3>配置</h3>
+      <div class="quote">困住你的永远是硬墙，而不是你自己</div>
       <div class="kv"><span>模型</span><span id="cModel">—</span></div>
       <div class="kv"><span>上下文</span><span id="cCtx">—</span></div>
       <div class="kv"><span>每路容量</span><span id="cPer">—</span></div>
@@ -557,6 +601,7 @@ textarea::placeholder{color:var(--faint)}
 
     <div class="side-block">
       <h3>上下文占用</h3>
+      <div class="quote">每一条消息，都值得等待</div>
       <div class="gauge">
         <div class="gauge-label"><span>提示词</span><span id="gPrompt">—</span></div>
         <div class="gauge-bar"><div class="gauge-fill" id="gbPrompt" style="width:0%"></div></div>
@@ -578,6 +623,7 @@ textarea::placeholder{color:var(--faint)}
 
     <div class="side-block">
       <h3>工具 <span class="cnt">点一下复制</span></h3>
+      <div class="quote">拿起工具，就是 agent</div>
       <div id="toolBox"></div>
     </div>
 
@@ -592,6 +638,7 @@ textarea::placeholder{color:var(--faint)}
   <section class="center">
     <div class="thread" id="thread"></div>
     <div class="composer">
+      <div class="cmdbar" id="cmdBar"></div>
       <div class="composer-inner">
         <textarea id="input" rows="1" placeholder="说点什么，让它去做…"></textarea>
         <button class="primary" id="send" style="height:46px;padding:0 22px">发送</button>
@@ -978,8 +1025,58 @@ function liveBox(st){
     '</div>';
 }
 
+
+/* ---------- 输入框上方的命令记录条 ---------- */
+var lastCmdSig = '';
+
+function renderCmdBar(st){
+  var bar = $('cmdBar');
+  if (!bar) return;
+
+  var steps = (st && st.steps) ? st.steps : [];
+  if (steps.length === 0){
+    if (lastCmdSig !== ''){ bar.innerHTML = ''; lastCmdSig = ''; }
+    return;
+  }
+
+  // 只显示最近 8 条
+  var show = steps.slice(-8);
+  var sig = show.map(function(s){ return s.n + ':' + s.tool + ':' + (s.ok===false?'x':'o'); }).join('|');
+  if (sig === lastCmdSig) return;
+  lastCmdSig = sig;
+
+  var html = '<span class="lbl">命令</span>';
+  for (var i=0;i<show.length;i++){
+    var s = show[i];
+    var bad = (s.ok === false);
+    var arg = String(s.arg || '');
+    if (arg.length > 42) arg = arg.substring(0,42) + '…';
+    var tool = String(s.tool || '?');
+    var label = tool + (arg ? ' ' + arg : '');
+    html += '<div class="cmdchip' + (bad ? ' bad' : '') + '" ' +
+      'data-copy="' + esc(label).split('"').join('&quot;') + '" ' +
+      'title="' + esc(label) + '（点击复制）">' +
+      '<span class="n">' + (s.n || '') + '</span>' +
+      '<span class="tx">' + esc(label) + '</span>' +
+      (bad ? '<span class="tick">✗</span>' : '') +
+      '</div>';
+  }
+  bar.innerHTML = html;
+  bar.scrollLeft = bar.scrollWidth;
+
+  var chips = bar.querySelectorAll('.cmdchip');
+  for (var k=0;k<chips.length;k++){
+    (function(c){
+      c.onclick = function(){
+        var v = c.getAttribute('data-copy');
+        if (v) copyText(v);
+      };
+    })(chips[k]);
+  }
+}
 function renderFlow(sess, st){
-  if (st){ curState = st;
+  if (st){ curState = st; renderCmdBar(st); }
+  if (st){
     var status = st.status || 'idle';
     dot.className = 'dot ' + status;
     $('hintStatus').textContent = (st.phase ? '· ' + st.phase : (STATUS_TEXT[status] || ''));

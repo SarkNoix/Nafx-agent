@@ -805,7 +805,7 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
         break
     }
 
-    # ---------- plan（记清单）----------
+    # ---------- plan（记清单 + 量化检查）----------
     if ($toolName -eq 'plan') {
         $rawPlan = [string]$act.steps
         $planList = @()
@@ -817,16 +817,63 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
         }
         $state.plan = $rawPlan
         $planText = Format-PlanList -Steps $planList
-        $obs = if ($planList.Count -gt 0) { "清单已记下，共 $($planList.Count) 步。现在开始做第一步。" } else { '清单是空的，你可以直接开始做。' }
+
+        # ---- 量化检查：步骤是不是太空泛 ----
+        # 太空泛的步骤等于没计划（"统计文件数量" 这种，做完也不知道算不算完）。
+        # 判断标准：有没有说用什么工具/方法，或者说清产出什么。
+        $vague = @()
+        $methodWords = 'skill|run_|read_|write_|list_|replace_|make_|delete_|append_|set_|unzip|ps\b|install|findstr|dir |find /c|Get-|Measure-|ConvertTo-|Select-|Group-|Sort-|plan|finish'
+        foreach ($pl in $planList) {
+            $tx = [string]$pl.text
+            $hasMethod = ($tx -match $methodWords)
+            $hasOutput = ($tx -match '得到|拿到|输出|生成|写入|改成|返回|确认|检查|验证|存到|放进|列出来|报出|说出')
+            if (-not $hasMethod -and -not $hasOutput) {
+                $vague += $tx
+            }
+        }
+
+        $obs = ''
+        if ($planList.Count -eq 0) {
+            $obs = '清单是空的。先想清楚要做什么，再把步骤列出来（每步写清用什么方法）。'
+        } else {
+            $sb = New-Object System.Text.StringBuilder
+            [void]$sb.AppendLine("清单已记下，共 $($planList.Count) 步。")
+            [void]$sb.AppendLine('')
+            [void]$sb.AppendLine('逐条对一下，每步都要「说清怎么做」或者「说清做完产出什么」：')
+            $i2 = 0
+            foreach ($pl in $planList) {
+                $i2++
+                $tx = [string]$pl.text
+                $ok = -not ($vague -contains $tx)
+                [void]$sb.AppendLine(("  {0}. {1}  {2}" -f $i2, $tx, $(if ($ok) { '✓' } else { '← 太空泛' })))
+            }
+            if ($vague.Count -gt 0) {
+                [void]$sb.AppendLine('')
+                [void]$sb.AppendLine("有 $($vague.Count) 步太空泛，做起来容易跑偏。")
+                [void]$sb.AppendLine('举例：')
+                [void]$sb.AppendLine('  差：统计文件数量')
+                [void]$sb.AppendLine('  好：用 skill count_ext -Path data 统计，得到每种类型的个数')
+                [void]$sb.AppendLine('')
+                [void]$sb.AppendLine('不用重新列清单，直接按下面的补充开始做：')
+                [void]$sb.AppendLine('每步执行前先想一下「这一步做完，我能拿出什么」。')
+            } else {
+                [void]$sb.AppendLine('')
+                [void]$sb.AppendLine('每步都有具体方法，很好。开始做第一步。')
+            }
+            $obs = "清单已记下，共 $($planList.Count) 步。" + $(if ($vague.Count -gt 0) { "（$($vague.Count) 步要再具体点）" } else { '' }) + ' 现在开始做第一步。'
+            $planText = $sb.ToString()
+        }
+
         $state.steps += @{ n = $step; think = $think; tool = 'plan'; arg = "$($planList.Count) 步"; ok = $true
                            note = $obs; raw = $res.raw_calls; obs = $obs; sec = $res.seconds }
         Write-State $state
         Write-Log ("  [{0}] {1} -> plan" -f $step, $think)
         foreach ($pl in $planList) { Write-Log ("      · " + $pl.text) }
+        if ($vague.Count -gt 0) { Write-Log ("      ⚠ 有 $($vague.Count) 步太空泛") }
 
         $tcMsg = Format-ToolCallMessage -Act $act -CallId $callId
         $history += $tcMsg
-        $history += @{ role = 'tool'; tool_call_id = $callId; content = ($obs + "`n`n" + $planText) }
+        $history += @{ role = 'tool'; tool_call_id = $callId; content = $planText }
         continue
     }
 
