@@ -788,21 +788,97 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
         break
     }
 
-    # ---------- say（问用户，实质是停下）----------
+    # ---------- say（问用户，等回答，最多 60 秒）----------
     if ($toolName -eq 'say') {
         $what = [string]$act.message
         if (-not $what) { $what = [string]$res.content }
-        $state.status = 'need_input'
+        if ([string]::IsNullOrWhiteSpace($what)) { $what = '（模型没写问题，你想怎么办？）' }
+
+        $askId = 'q' + [Guid]::NewGuid().ToString('N').Substring(0, 8)
+        $askFile = Join-Path $AgentDir 'ask.json'
+        $ansFile = Join-Path $AgentDir 'answer.json'
+        $waitSec = 60
+
+        if (Test-Path $ansFile) { Remove-Item $ansFile -Force -ErrorAction SilentlyContinue }
+
+        $askObj = [ordered]@{
+            id       = $askId
+            question = $what
+            ts       = (Get-Date -Format 'HH:mm:ss')
+            deadline = (Get-Date).AddSeconds($waitSec).ToString('HH:mm:ss')
+            seconds  = $waitSec
+        }
+        try {
+            [IO.File]::WriteAllText($askFile, (($askObj | ConvertTo-Json -Compress)), (New-Object Text.UTF8Encoding($false)))
+        } catch { }
+
+        $state.status = 'waiting'
         $state.answer = $what
+        $state.phase  = '等你回答'
         $state.elapsed = $clock.Elapsed.TotalSeconds
-        $state.summary = '需要你确认：' + $what
+        $state.summary = '需要你回答：' + $what
         $state.steps += @{ n = $step; think = $think; tool = 'say'; arg = ''; ok = $true
                            note = $what; raw = $res.raw_calls; obs = ''; sec = $res.seconds }
         Write-State $state
-        Write-Log ("  [{0}] {1} -> say {2}" -f $step, $think, $what)
-        Write-Closing -State $state -Status 'need_input' -Summary $state.summary -StepCount $step
-        $finished = $true
-        break
+        Write-Log ("  [{0}] -> say：{1}（等 {2} 秒）" -f $step, $what, $waitSec)
+
+        $userAnswer = $null
+        $deadline = (Get-Date).AddSeconds($waitSec)
+        $lastTick = -1
+        while ((Get-Date) -lt $deadline) {
+            Start-Sleep -Milliseconds 400
+
+            $remain = [int][Math]::Ceiling(($deadline - (Get-Date)).TotalSeconds)
+            if ($remain -ne $lastTick) {
+                $lastTick = $remain
+                $state.phase = "等你回答（还剩 $remain 秒）"
+                $state.elapsed = $clock.Elapsed.TotalSeconds
+                Write-State $state
+            }
+
+            if (Test-Path (Join-Path $AgentDir 'stop.flag')) { break }
+
+            if (Test-Path $ansFile) {
+                try {
+                    $ans = Get-Content $ansFile -Raw -Encoding UTF8 | ConvertFrom-Json
+                    if ($ans.id -eq $askId -and -not [string]::IsNullOrWhiteSpace([string]$ans.answer)) {
+                        $userAnswer = [string]$ans.answer
+                        break
+                    }
+                } catch { }
+            }
+        }
+
+        if (Test-Path $askFile) { Remove-Item $askFile -Force -ErrorAction SilentlyContinue }
+        if (Test-Path $ansFile) { Remove-Item $ansFile -Force -ErrorAction SilentlyContinue }
+
+        if (-not $userAnswer) {
+            $state.status = 'timeout'
+            $state.phase  = '没等到回答'
+            $state.answer = "等了你 $waitSec 秒没回音，这个回合先结束了。想继续就把任务再说一遍。"
+            $state.summary = '等你回答超时'
+            $state.elapsed = $clock.Elapsed.TotalSeconds
+            Write-State $state
+            Write-Log ("  等回答超时（{0} 秒），结束回合" -f $waitSec)
+            Write-Closing -State $state -Status 'timeout' -Summary $state.summary -StepCount $step
+            $finished = $true
+            break
+        }
+
+        Write-Log ("  用户回答：" + $userAnswer)
+        $state.status = 'running'
+        $state.phase  = '继续'
+        $state.answer = ''
+        $state.summary = ''
+        $state.elapsed = $clock.Elapsed.TotalSeconds
+        $state.steps += @{ n = ($step + 1); think = ''; tool = 'answer'; arg = ''; ok = $true
+                           note = $userAnswer; raw = ''; obs = ''; sec = 0 }
+        Write-State $state
+
+        $tcMsg = Format-ToolCallMessage -Act $act -CallId $callId
+        $history += $tcMsg
+        $history += @{ role = 'tool'; tool_call_id = $callId; content = ("用户回答：" + $userAnswer + "`n`n（用户已经回答了。根据这个回答继续做，别再问同样的问题。）") }
+        continue
     }
 
     # ---------- plan（记清单 + 量化检查）----------

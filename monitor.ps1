@@ -454,6 +454,48 @@ while ($listener.IsListening) {
                     Send-Text -Response $resp -Text ('{"ok":true,"id":' + (J $item.id) + ',"pending":' + $pend + ',"running":' + $run + '}')
                 }
 
+                '/api/answer' {
+                    # 面板把用户对 say 问题的回答写进来，agent 那边在轮询这个文件
+                    if ($method -ne 'POST') { Send-Text -Response $resp -Text '{"ok":false}' -Code 405; break }
+                    try {
+                        $b = Read-Body $ctx.Request | ConvertFrom-Json
+                    } catch { Send-Text -Response $resp -Text '{"ok":false,"msg":"请求格式不对"}' -Code 400; break }
+
+                    $qid = [string]$b.id
+                    $ans = [string]$b.answer
+                    if ([string]::IsNullOrWhiteSpace($ans)) {
+                        Send-Text -Response $resp -Text '{"ok":false,"msg":"回答不能为空"}' -Code 400
+                        break
+                    }
+
+                    # 没有 id 也行，agent 只比对有 id 时是否匹配
+                    $payload = [ordered]@{
+                        id   = $qid
+                        answer = $ans
+                        ts   = (Get-Date -Format 'HH:mm:ss')
+                    }
+                    $ansPath = Join-Path $Root 'agent\answer.json'
+                    try {
+                        [IO.File]::WriteAllText($ansPath, ($payload | ConvertTo-Json -Compress), (New-Object Text.UTF8Encoding($false)))
+                        Send-Text -Response $resp -Text '{"ok":true}'
+                    } catch {
+                        Send-Text -Response $resp -Text ('{"ok":false,"msg":' + (J $_.Exception.Message) + '}') -Code 500
+                    }
+                }
+
+                '/api/ask' {
+                    # 面板读当前有没有在等回答
+                    $askPath = Join-Path $Root 'agent\ask.json'
+                    if (Test-Path $askPath) {
+                        try {
+                            $raw = [IO.File]::ReadAllText($askPath, [Text.Encoding]::UTF8)
+                            Send-Text -Response $resp -Text $raw
+                            break
+                        } catch { }
+                    }
+                    Send-Text -Response $resp -Text '{"id":"","question":""}'
+                }
+
                 '/api/pause' {
                     # 强停：kill 掉正在跑 agent，队列里那条标成 paused
                     if ($method -ne 'POST') { Send-Text -Response $resp -Text '{"ok":false}' -Code 405; break }

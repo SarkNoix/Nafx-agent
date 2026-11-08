@@ -7,6 +7,8 @@ agent/state.json
 agent/queue.json
 agent/session.jsonl
 agent/panel.pid
+agent/ask.json
+agent/answer.json
 logs/
 workspace/*.tmp
 
