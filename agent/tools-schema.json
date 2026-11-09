@@ -1,18 +1,18 @@
 [
-{"type":"function","function":{"name":"write_file","description":"写文件，覆盖","parameters":{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}}},
-{"type":"function","function":{"name":"read_file","description":"读文件","parameters":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}}},
-{"type":"function","function":{"name":"list_dir","description":"列目录","parameters":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}}},
-{"type":"function","function":{"name":"replace_in_file","description":"替换原文","parameters":{"type":"object","properties":{"path":{"type":"string"},"find":{"type":"string"},"replace":{"type":"string"}},"required":["path","find","replace"]}}},
-{"type":"function","function":{"name":"set_line","description":"改第 N 行","parameters":{"type":"object","properties":{"path":{"type":"string"},"command":{"type":"string","description":"行号，比如 4"},"content":{"type":"string","description":"新内容"}},"required":["path","command","content"]}}},
+{"type":"function","function":{"name":"write_file","description":"写文件。新建或整个覆盖。改某一行用 set_line，末尾追加用 append_file","parameters":{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}}},
+{"type":"function","function":{"name":"read_file","description":"读文件内容。大文件会截断，先用 run_cmd(findstr /n) 定位行号再读","parameters":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}}},
+{"type":"function","function":{"name":"list_dir","description":"列目录。文件很多时别用它，用 run_cmd(dir /b *关键词*) 精确找","parameters":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}}},
+{"type":"function","function":{"name":"replace_in_file","description":"替换文件里的第一处原文。要换全部用 skill(replace_text)","parameters":{"type":"object","properties":{"path":{"type":"string"},"find":{"type":"string"},"replace":{"type":"string"}},"required":["path","find","replace"]}}},
+{"type":"function","function":{"name":"set_line","description":"改第 N 行。整篇重写用 write_file，别用这个逐行改","parameters":{"type":"object","properties":{"path":{"type":"string"},"command":{"type":"string","description":"行号，比如 4"},"content":{"type":"string","description":"新内容"}},"required":["path","command","content"]}}},
 {"type":"function","function":{"name":"append_file","description":"末尾追加","parameters":{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}}},
 {"type":"function","function":{"name":"make_dir","description":"建目录","parameters":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}}},
 {"type":"function","function":{"name":"delete_path","description":"删除，不可逆","parameters":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}}},
-{"type":"function","function":{"name":"run_cmd","description":"跑一条cmd命令","parameters":{"type":"object","properties":{"command":{"type":"string"}},"required":["command"]}}},
+{"type":"function","function":{"name":"run_cmd","description":"跑一条 cmd 命令。能一条命令做完的就别写脚本","parameters":{"type":"object","properties":{"command":{"type":"string"}},"required":["command"]}}},
 {"type":"function","function":{"name":"run_ps","description":"直接跑 PowerShell 命令（cmd 做不了的用它：对象、管道、cmdlet、算数、正则、JSON）","parameters":{"type":"object","properties":{"command":{"type":"string"}},"required":["command"]}}},
 {"type":"function","function":{"name":"run_ps1","description":"跑.ps1脚本","parameters":{"type":"object","properties":{"path":{"type":"string"},"command":{"type":"string"}},"required":["path"]}}},
 {"type":"function","function":{"name":"run_bat","description":"跑.bat脚本","parameters":{"type":"object","properties":{"path":{"type":"string"},"command":{"type":"string"}},"required":["path"]}}},
 {"type":"function","function":{"name":"run_js","description":"跑 .js 脚本（Windows 自带 JScript，不用装 Node）","parameters":{"type":"object","properties":{"path":{"type":"string"},"command":{"type":"string"}},"required":["path"]}}},
-{"type":"function","function":{"name":"skill","description":"技能库：现成脚本。command 写 list 看全部，或 名字 参数","parameters":{"type":"object","properties":{"command":{"type":"string"}},"required":[]}}},
+{"type":"function","function":{"name":"skill","description":"现成技能。常见活儿（统计/找重复/转格式/求和/压缩）先来这儿找，别自己写。command 写 list 看全部","parameters":{"type":"object","properties":{"command":{"type":"string"}},"required":[]}}},
 {"type":"function","function":{"name":"help","description":"查手册和工具详情","parameters":{"type":"object","properties":{"command":{"type":"string"}},"required":["command"]}}},
 {"type":"function","function":{"name":"syshelp","description":"查命令参数","parameters":{"type":"object","properties":{"command":{"type":"string"}},"required":["command"]}}},
 {"type":"function","function":{"name":"win_doc","description":"查微软官方文档","parameters":{"type":"object","properties":{"command":{"type":"string"}},"required":["command"]}}},
@@ -25,5 +25,5 @@
 {"type":"function","function":{"name":"unzip","description":"解压 zip/tar/gz/7z/rar","parameters":{"type":"object","properties":{"path":{"type":"string"},"command":{"type":"string","description":"解到哪个目录，留空用同名"}},"required":["path"]}}},
 {"type":"function","function":{"name":"ps","description":"看进程。command 写 memory 或留空=按内存排序","parameters":{"type":"object","properties":{"command":{"type":"string"}},"required":[]}}},
 {"type":"function","function":{"name":"install","description":"用winget装软件。command 写 search 关键词 只搜索","parameters":{"type":"object","properties":{"command":{"type":"string"}},"required":["command"]}}},
-{"type":"function","function":{"name":"finish","description":"收尾","parameters":{"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"]}}}
+{"type":"function","function":{"name":"finish","description":"收尾并给答案。是工具不是文字，要在 tool_calls 里调","parameters":{"type":"object","properties":{"answer":{"type":"string"}},"required":["answer"]}}}
 ]
