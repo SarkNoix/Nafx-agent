@@ -736,6 +736,24 @@ textarea::placeholder{color:var(--faint)}
   backdrop-filter:blur(16px);
   -webkit-backdrop-filter:blur(16px);
 }
+
+/* ---------- 配置编辑 ---------- */
+.cfg-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+.cfg-item{display:flex;flex-direction:column;gap:3px}
+.cfg-item label{font-size:10px;color:var(--faint);letter-spacing:.3px}
+.cfg-item input,.cfg-item select{
+  background:var(--panel2);border:1px solid var(--line);
+  border-radius:7px;color:var(--fg);font-family:ui-monospace,Consolas,monospace;
+  font-size:12px;padding:5px 8px;outline:none;width:100%;
+}
+.cfg-item input:focus,.cfg-item select:focus{border-color:var(--accent)}
+.cfg-item input.bad{border-color:var(--err);background:var(--err-bg)}
+.cfg-save{
+  margin-top:9px;width:100%;padding:7px;font-size:12px;border-radius:8px;
+  background:var(--accent);color:var(--primary-fg);border:none;font-weight:600;
+}
+.cfg-save:disabled{opacity:.5}
+.cfg-note{font-size:10.5px;color:var(--faint);margin-top:6px;line-height:1.5}
 </style>
 </head>
 <body>
@@ -880,6 +898,24 @@ textarea::placeholder{color:var(--faint)}
     <div class="sys-row"><span>名称</span><span id="sysModel">—</span></div>
     <div class="sys-row"><span>工具数</span><span id="sysToolCount">—</span></div>
     <div class="sys-row"><span>意图</span><span id="sysIntent">—</span></div>
+
+    <div class="sys-tit">配置</div>
+    <div class="cfg-grid">
+      <div class="cfg-item"><label>上下文</label><input id="cfgContext" type="number" /></div>
+      <div class="cfg-item"><label>线程数（0=自动）</label><input id="cfgThreads" type="number" /></div>
+      <div class="cfg-item"><label>单步最多 token</label><input id="cfgMaxTokens" type="number" /></div>
+      <div class="cfg-item"><label>最多步数</label><input id="cfgMaxSteps" type="number" /></div>
+      <div class="cfg-item"><label>单步超时（秒）</label><input id="cfgStepTimeout" type="number" /></div>
+      <div class="cfg-item"><label>加载模式</label>
+        <select id="cfgLoadMode">
+          <option value="mmap">mmap（省内存）</option>
+          <option value="mlock">mlock（快但吃内存）</option>
+          <option value="mmap+mlock">mmap+mlock</option>
+        </select>
+      </div>
+    </div>
+    <button class="cfg-save" id="cfgSave">保存配置</button>
+    <div class="cfg-note">改完要重启服务才生效。不确定填什么，双击项目里的「自动调参.bat」看推荐值。</div>
 
     <div class="sys-tit">插件 / 补丁</div>
     <div class="sys-note">
@@ -2005,6 +2041,75 @@ function renderPatches(){
   }
 }
 
+
+/* ---------- 配置编辑 ---------- */
+var CFG_FIELDS = [
+  ['cfgContext',    'context'],
+  ['cfgThreads',    'threads'],
+  ['cfgMaxTokens',  'maxTokens'],
+  ['cfgMaxSteps',   'maxSteps'],
+  ['cfgStepTimeout','stepTimeoutSeconds']
+];
+
+function loadCfg(){
+  fetch('/api/config?t=' + Date.now())
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(c){
+      if (!c) return;
+      for (var i=0;i<CFG_FIELDS.length;i++){
+        var el = $(CFG_FIELDS[i][0]);
+        if (el) { el.value = c[CFG_FIELDS[i][1]]; el.className = ''; }
+      }
+      var lm = $('cfgLoadMode');
+      if (lm && c.loadMode) lm.value = c.loadMode;
+    })
+    .catch(function(){});
+}
+
+function saveCfg(){
+  var body = {};
+  var bad = false;
+  for (var i=0;i<CFG_FIELDS.length;i++){
+    var el = $(CFG_FIELDS[i][0]);
+    if (!el) continue;
+    var v = el.value.trim();
+    if (v === '') { el.className = 'bad'; bad = true; continue; }
+    var n = Number(v);
+    if (isNaN(n)) { el.className = 'bad'; bad = true; continue; }
+    el.className = '';
+    body[CFG_FIELDS[i][1]] = n;
+  }
+  var lm = $('cfgLoadMode');
+  if (lm) body.loadMode = lm.value;
+  if (bad) { toast('有格子填得不对', true); return; }
+
+  var btn = $('cfgSave');
+  if (btn) btn.disabled = true;
+
+  fetch('/api/config', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(body)
+  })
+    .then(function(r){ return r.json(); })
+    .then(function(j){
+      if (j && j.ok){
+        toast('已保存，重启服务后生效');
+      } else {
+        toast((j && j.msg) || '保存失败', true);
+      }
+    })
+    .catch(function(e){ toast('保存失败：' + e.message, true); })
+    .then(function(){ if (btn) btn.disabled = false; });
+}
+
+function bindCfg(){
+  var btn = $('cfgSave');
+  if (btn) btn.onclick = saveCfg;
+  loadCfg();
+}
+if (document.readyState !== 'loading') bindCfg();
+else document.addEventListener('DOMContentLoaded', bindCfg);
 function bindSys(){
   var btn = $('sysBtn'), pnl = $('sysPanel');
   if (!btn) return;

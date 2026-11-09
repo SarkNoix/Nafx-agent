@@ -596,6 +596,40 @@ while ($listener.IsListening) {
                         try {
                             $newCfg = $body | ConvertFrom-Json
                             $cur = Get-Content $CfgPath -Raw -Encoding UTF8 | ConvertFrom-Json
+
+                            # 范围校验：面板能改，但不能改成跑不起来的数
+                            $limits = @{
+                                context            = @(1024, 32768)
+                                threads            = @(0, 32)
+                                maxTokens          = @(100, 4000)
+                                maxSteps           = @(5, 100)
+                                stepTimeoutSeconds = @(30, 1800)
+                                taskTimeoutSeconds = @(60, 7200)
+                                runTimeoutSeconds  = @(5, 600)
+                                maxOutputChars     = @(200, 8000)
+                                parallel           = @(1, 4)
+                                temperature        = @(0.0, 2.0)
+                                topP               = @(0.1, 1.0)
+                                port               = @(1024, 65535)
+                                monitorPort        = @(1024, 65535)
+                            }
+                            $bad = @()
+                            foreach ($pv in $newCfg.PSObject.Properties) {
+                                if (-not $limits.ContainsKey($pv.Name)) { continue }
+                                $lo = $limits[$pv.Name][0]; $hi = $limits[$pv.Name][1]
+                                $num = 0.0
+                                if (-not [double]::TryParse([string]$pv.Value, [ref]$num)) {
+                                    $bad += ($pv.Name + ' 不是数字')
+                                    continue
+                                }
+                                if ($num -lt $lo -or $num -gt $hi) {
+                                    $bad += ($pv.Name + ' 要在 ' + $lo + ' - ' + $hi + ' 之间')
+                                }
+                            }
+                            if ($bad.Count -gt 0) {
+                                Send-Text -Response $resp -Text ('{"ok":false,"msg":' + (J ($bad -join '；')) + '}') -Code 400
+                                break
+                            }
                             $intKeys = @('port','monitorPort','threads','context','maxTokens','maxSteps','parallel','runTimeoutSeconds','stepTimeoutSeconds','taskTimeoutSeconds','prio','maxOutputChars')
                             foreach ($p in $newCfg.PSObject.Properties) {
                                 if ($p.Name -in $intKeys) { $cur | Add-Member -NotePropertyName $p.Name -NotePropertyValue ([int]$p.Value) -Force }
