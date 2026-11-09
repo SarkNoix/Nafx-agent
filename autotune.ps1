@@ -106,8 +106,9 @@ if ($context -lt 2048) { $context = 2048 }
 # 上限 16384：再大 prefill 会慢到没意义（每多 1k token 就多 24 秒）
 if ($context -gt 16384) { $context = 16384 }
 
-# 线程：物理核数，上限 16
-$threads = $cores
+# 线程：用逻辑核数（超线程），上限 16。
+# 实测 i3-10105F：8 线程 6.16 tok/s，4 线程 5.94 tok/s，超线程确实有点用。
+$threads = $logical
 if ($threads -gt 16) { $threads = 16 }
 if ($threads -lt 1) { $threads = 1 }
 

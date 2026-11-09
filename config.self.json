@@ -36,7 +36,7 @@
     "kvCacheTypeV":  "f16",
     "flashAttn":  "auto",
     "personalPrompt":  "这台机器是我自己的，工作区在 E:\\Nafx\\workspace。\n我经常做的事：数文件、算订单金额、找重复文件、压缩打包、看日志。\n拿不准的时候先问，别猜。",
-    "threads":  4,
+    "threads":  8,
     "stepTimeoutSeconds":  240,
     "maxTokens":  600,
     "context":  6144

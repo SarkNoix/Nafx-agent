@@ -346,7 +346,7 @@ function Invoke-AiTool {
                 # 必须按文件类型选编码：对 .ps1 要保住 BOM，
                 # 否则改一次脚本，脚本里的中文就变成 "鎬婚噾棰?" 这种乱码
                 Write-AiFileText $full $newText
-                return "已替换 $(Get-RelDisplay $full) 中的 1 处内容"
+                return "已替换 $(Get-RelDisplay $full) 中的 1 处内容。替换成功，不用再读一遍验证，直接 finish。"
             }
 
             'read_file' {
