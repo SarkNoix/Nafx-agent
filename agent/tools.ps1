@@ -264,7 +264,7 @@ function Invoke-AiTool {
                 } catch [System.IO.IOException] {
                     throw "写不进去：$($_.Exception.Message)。文件可能正被其他程序打开。"
                 }
-                return "已写入 $(Get-RelDisplay $full)（$($content.Length) 字符）"
+                return "已写入 $(Get-RelDisplay $full)（$($content.Length) 字符）。写入成功，不用再读一遍验证，直接 finish。"
             }
 
             'append_file' {
@@ -493,18 +493,30 @@ function Invoke-AiTool {
                 $idx = Get-Content $indexPath -Raw -Encoding UTF8 | ConvertFrom-Json
                 $all = @($idx.skills)
 
-                # 不带参数 / list → 列出所有技能
+                # 不带参数 / list → 一行一个技能。详细参数用 info 查（省上下文）
                 if ([string]::IsNullOrWhiteSpace($arg) -or $arg -match '^(?i)(list|ls|all|列表|全部)$') {
                     $sb = New-Object System.Text.StringBuilder
-                    [void]$sb.AppendLine("技能库共 $($all.Count) 个。调用方法：skill(command=`"名字 参数`")")
+                    [void]$sb.AppendLine("技能库 $($all.Count) 个。用法 skill(command=`"名字 参数`")；看详细参数用 skill(command=`"info 名字`")")
                     [void]$sb.AppendLine('')
                     foreach ($s in $all) {
-                        [void]$sb.AppendLine(("{0}  ——  {1}" -f $s.name, $s.title))
-                        [void]$sb.AppendLine(("    " + $s.desc))
-                        [void]$sb.AppendLine(("    参数: " + $s.params))
-                        [void]$sb.AppendLine(("    例: " + $s.example))
+                        $d = [string]$s.desc
+                        # 只在句号处截断。逗号不能截——括号里的逗号会被误伤
+                        # （"找出重复文件（按哈希判断，不看文件名）"会断成半句）
+                        $cut = $d.IndexOf([char]0x3002)
+                        if ($cut -gt 6) { $d = $d.Substring(0, $cut) }
+                        if ($d.Length -gt 30) { $d = $d.Substring(0, 30) + [char]0x2026 }
+                        [void]$sb.AppendLine(("{0,-20} {1}" -f $s.name, $d))
                     }
                     return $sb.ToString()
+                }
+
+                # info 名字 → 看这个技能怎么用
+                if ($arg -match '^(?i)(info|详情|帮助)\s+(\S+)$') {
+                    $qn = $Matches[2]
+                    $one = $all | Where-Object { $_.name -eq $qn } | Select-Object -First 1
+                    if (-not $one) { $one = $all | Where-Object { [string]$_.title -like "*$qn*" } | Select-Object -First 1 }
+                    if (-not $one) { throw "没有这个技能：$qn。先 skill(command=`"list`") 看有哪些。" }
+                    return ("技能 " + $one.name + " —— " + $one.title + "`n`n" + [string]$one.desc + "`n`n参数: " + [string]$one.params + "`n用例: " + [string]$one.example)
                 }
 
                 # 拆出技能名和参数
