@@ -507,6 +507,9 @@ setInterval(function(){ document.getElementById('brandEgg').click(); }, 60000);
 
 ## 性能调优笔记（踩过的坑，别重复踩）
 
+> 这节的耗时数字是**早期测的**（提示词还没精简、工具描述还没改）。结论仍然有效，
+> 但现在的实际表现请对照上面「实测性能」那一节。
+
 **① KV cache 量化在 CPU 上是负优化。**
 
 `config.json` 里能开 `kvCacheTypeK` / `kvCacheTypeV`（把注意力缓存压到 8bit/4bit）。
