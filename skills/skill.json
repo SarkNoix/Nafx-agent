@@ -177,6 +177,22 @@
       "triggers": ["抓网页", "网页内容", "抓取", "这个链接", "读一下这个网址", "网页文字", "扒下来", "抓一下", "这个网页", "网页"],
       "params": "-Url <网址> [-Out <存到哪>] [-Max <显示多少字>]",
       "example": "skill(command=\"web_fetch_text -Url https://example.com -Out page.txt\")"
+    },
+    {
+      "name": "zip_dir",
+      "title": "压缩成 zip",
+      "desc": "把目录或文件压缩成 zip（和 unzip 对称）",
+      "triggers": ["压缩", "打包", "zip", "压成", "压缩包", "归档"],
+      "params": "-Path <目录或文件> [-Out <包名>]",
+      "example": "skill(command=\"zip_dir -Path data\")"
+    },
+    {
+      "name": "json_query",
+      "title": "查 JSON 字段",
+      "desc": "读 JSON / JSONL，按字段路径取值；数字字段自动求和、平均、最大最小",
+      "triggers": ["json", "jsonl", "字段", "取值", "查询字段", "读json"],
+      "params": "-Path <文件> [-Pattern <字段，支持 a.b.c>]",
+      "example": "skill(command=\"json_query -Path data/orders.jsonl -Pattern amount\")"
     }
   ]
 }

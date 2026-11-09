@@ -1,12 +1,20 @@
-﻿param([switch]$NoBrowser)
+﻿param([switch]$NoBrowser, [string]$ConfigFile = 'config.json')
 
 # ============================================================
-#  Nafx · 模型服务启动器（读取 config.json）
+#  Nafx · 模型服务启动器
+#  默认读 config.json；加 -ConfigFile config.self.json 用个人配置
 # ============================================================
 $ErrorActionPreference = 'Continue'
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-$Cfg = Get-Content (Join-Path $Root 'config.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+$cfgPath = $ConfigFile
+if (-not [IO.Path]::IsPathRooted($cfgPath)) { $cfgPath = Join-Path $Root $cfgPath }
+if (-not (Test-Path $cfgPath)) {
+    Write-Host ('找不到配置文件：' + $cfgPath) -ForegroundColor Red
+    exit 1
+}
+Write-Host ('配置文件：' + (Split-Path $cfgPath -Leaf)) -ForegroundColor DarkGray
+$Cfg = Get-Content $cfgPath -Raw -Encoding UTF8 | ConvertFrom-Json
 
 function Resolve-AppPath([string]$p) {
     if ([string]::IsNullOrWhiteSpace($p)) { return $p }
@@ -76,9 +84,20 @@ if (-not (Test-AiUp)) {
 
     if ($prof) {
         # 对话模板：jinja 让 llama.cpp 用模型自带的模板（多数情况最合适）
+        # 有些 GGUF 转换时把模板丢了（比如 xLAM），这时用 chatTemplateFile 指定外置模板
         $tmpl = [string]$prof.chatTemplate
         if ([string]::IsNullOrWhiteSpace($tmpl)) { $tmpl = 'jinja' }
         if ($tmpl -eq 'jinja') { $argList += '--jinja' }
+
+        $tplFile = [string]$prof.chatTemplateFile
+        if (-not [string]::IsNullOrWhiteSpace($tplFile)) {
+            if (-not [IO.Path]::IsPathRooted($tplFile)) { $tplFile = Join-Path $Root $tplFile }
+            if (Test-Path $tplFile) {
+                $argList += @('--chat-template-file', $tplFile)
+            } else {
+                Write-Host ('  [警告] 模板文件不存在：' + $tplFile) -ForegroundColor Yellow
+            }
+        }
 
         # 思考模式：Qwen3 系列支持，别的模型不认这个参数
         $rs = [string]$prof.reasoning

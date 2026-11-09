@@ -10,9 +10,9 @@
       "id": "count",
       "tools": ["run_cmd","list_dir","skill","read_file","finish"],
       "name": "数数量 / 统计",
-      "match": ["多少", "几个", "几条", "几行", "数量", "统计", "总数", "一共"],
+      "match": ["多少", "几个", "几条", "几行", "数量", "统计", "总数", "一共", "加起来", "求和", "合计", "总额", "总金额", "总和", "平均", "均值", "最大", "最小"],
       "goal": "拿到工具算出的真实数字，并说清这个数字是什么",
-      "suggest_tools": ["run_cmd", "skill count_ext", "list_dir", "skill text_stats"],
+      "suggest_tools": ["skill sum_field", "skill json_query", "run_cmd", "skill count_ext", "list_dir", "skill text_stats"],
       "reject_tools": ["find_duplicates", "batch_rename", "archive_by_date", "unzip_all", "write_file"],
       "steps": [
         { "n": 1, "do": "先想：能不能一条命令直接算出来？能就直接 run_cmd，别绕", "need": "命令真跑过，返回里有数字" },
@@ -24,20 +24,22 @@
         "数文件有几行：run_cmd(find /c /v \"\" data\\x.txt)",
         "按扩展名分类统计：skill(count_ext -Path data)",
         "整个目录所有文本多少行：skill(text_stats -Path data)",
-        "jsonl 有多少条：run_cmd(find /c /v \"\" data\\x.jsonl)"
+        "jsonl 有多少条：run_cmd(find /c /v \"\" data\\x.jsonl)",
+        "某字段求和：skill(sum_field -Path data\\x.jsonl -Field amount)",
+        "或者直接查字段（自动给求和/平均/最值）：skill(json_query -Path data\\x.jsonl -Pattern amount)"
       ],
       "forbid": [
         "没跑工具就直接报数字",
         "数字凭印象或凭经验写",
         "一条命令能搞定却先去查技能库（多绕一步就多几十秒）"
       ],
-      "example": "任务：data 目录里有几个文件\n→ run_cmd(dir /b data | find /c /v \"\") 返回 2\n→ finish(answer=\"data 里有 2 个文件\")"
+      "example": "任务：data 目录里有几个文件\n→ run_cmd(dir /b data | find /c /v \"\") 返回 2\n→ finish(answer=\"data 里有 2 个文件\")\n\n任务：订单金额加起来多少\n→ skill(sum_field -Path data/orders.jsonl -Field amount) 返回合计 7486\n→ finish(answer=\"订单金额合计 7486\")"
     },
     {
       "id": "lookup",
       "tools": ["read_file","list_dir","skill","run_cmd","finish"],
       "name": "查东西 / 找某个值",
-      "match": ["在哪", "是什么", "查一下", "某个", "谁", "哪一行", "内容是什么", "读一下", "是多少"],
+      "match": ["在哪", "是什么", "查一下", "某个", "谁", "哪一行", "内容是什么", "读一下", "是多少", "读取", "查看", "显示", "列出", "网页", "网址", "链接", "下载"],
       "goal": "找到那个东西，把它的实际内容或位置说出来",
       "suggest_tools": ["read_file", "list_dir", "skill csv_query", "skill search_text", "run_cmd"],
       "reject_tools": ["find_duplicates", "batch_rename", "unzip_all"],
@@ -51,7 +53,10 @@
         "看目录：list_dir(path=\"data\")",
         "表格查某人某项：skill(csv_query -Path staff.csv -Find 张三 -Field 金额)",
         "哪个文件里有某词：skill(search_text -Pattern 关键词 -Path .)",
-        "文件里某行：run_cmd(findstr /n \"关键词\" data\\x.txt)"
+        "文件里某行：run_cmd(findstr /n \"关键词\" data\\x.txt)",
+        "目录结构：skill(tree -Path data)",
+        "表格整体统计：skill(csv_stats -Path staff.csv)",
+        "网页正文：skill(web_fetch_text -Url https://example.com -Out page.txt)"
       ],
       "forbid": [
         "没读就编内容",
@@ -102,7 +107,8 @@
       "cheatsheet": [
         "局部替换：replace_in_file(path=\"a.txt\", find=\"old\", replace=\"new\")",
         "确认原文：read_file(path=\"a.txt\")",
-        "末尾追加：append_file(path=\"a.txt\", content=\"...\")"
+        "末尾追加：append_file(path=\"a.txt\", content=\"...\")",
+        "很多文件一起替换：skill(replace_text -Path data -Find 旧词 -Replace 新词)"
       ],
       "forbid": [
         "不读原文直接整个重写",
@@ -115,7 +121,7 @@
       "id": "convert",
       "tools": ["skill","read_file","list_dir","run_cmd","finish"],
       "name": "格式转换",
-      "match": ["转成", "转换成", "导出", "变成csv", "变成json", "转csv", "转json"],
+      "match": ["转成", "转换成", "导出", "导入", "变成csv", "变成json", "转csv", "转json"],
       "goal": "新格式的文件生成出来，能打开，数据没丢",
       "suggest_tools": ["skill csv_to_jsonl", "skill jsonl_to_csv", "skill xlsx_to_csv"],
       "reject_tools": ["find_duplicates", "text_stats", "batch_rename"],
@@ -192,27 +198,32 @@
       "id": "organize",
       "tools": ["list_dir","skill","read_file","run_cmd","finish"],
       "name": "整理 / 批量处理",
-      "match": ["整理", "分类", "归档", "批量", "重命名", "清理", "重复", "去重", "一样的文件"],
+      "match": ["整理", "分类", "归档", "批量", "重命名", "改名", "清理", "重复", "去重", "一样的文件", "压缩", "打包", "解压", "zip", "复制", "拷贝", "移动", "排序", "筛选", "过滤", "提取", "合并", "拼接", "比较", "对比", "删除", "删掉", "大文件", "小文件", "多大", "占用", "空间", "磁盘", "体积"],
       "goal": "批量操作做对了，而且没有误伤别的文件",
       "suggest_tools": ["skill find_duplicates", "skill batch_rename", "skill archive_by_date", "skill clean_empty_dirs", "list_dir"],
       "reject_tools": ["write_file"],
       "steps": [
         { "n": 1, "do": "先 list_dir 看清有哪些文件", "need": "知道要处理哪些" },
-        { "n": 2, "do": "调对应的现成技能（find_duplicates / batch_rename / archive_by_date / clean_empty_dirs）", "need": "找到能用的" },
+        { "n": 2, "do": "照 cheatsheet 调现成技能（find_duplicates / batch_rename / zip_dir / archive_by_date 等）。技能名就在上面那张表里，别自己编命令名", "need": "找到能用的" },
         { "n": 3, "do": "会用 -Apply 的技能，先不加 -Apply 预览一遍", "need": "看到预览清单" },
         { "n": 4, "do": "确认没问题再加 -Apply 真执行", "need": "工具返回实际处理数量" },
         { "n": 5, "do": "finish 说明动了多少个文件、动了什么", "need": "答案里有数量" }
       ],
       "cheatsheet": [
+        "压缩打包：skill(zip_dir -Path data)  → 生成 data.zip",
+        "批量解压：skill(unzip_all -Path downloads)",
         "找重复文件：skill(find_duplicates -Path test)",
-        "批量加前缀：skill(batch_rename -Path test -AddPrefix bak_)",
+        "找大文件：skill(find_large -Path . -MinMB 10)",
+        "批量改名：skill(batch_rename -Path test -AddPrefix bak_)",
         "按日期归档：skill(archive_by_date -Path downloads -Apply)",
-        "清空目录：skill(clean_empty_dirs -Path . -Apply)"
+        "其余：dedupe_lines(重复行去重) / compare_files(比较两文件) / merge_files(合并) / clean_empty_dirs(清空目录)"
       ],
       "forbid": [
         "不预览直接动手",
         "任务没要求删的也删",
-        "批量操作后用 list_dir 反复确认超过两次"
+        "批量操作后用 list_dir 反复确认超过两次",
+        "自己编一个命令或脚本名（比如 compress.bat）去跑——工作区里没有这个文件，一定失败",
+        "命令报错或没产出，却在 finish 里说「已完成」"
       ],
       "example": "任务：把 test 里的重复文件找出来\n→ skill(find_duplicates -Path test)\n→ finish(answer=\"找到 2 组重复\")"
     }

@@ -20,7 +20,10 @@ $ErrorActionPreference = 'Stop'
 
 $AgentDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 $Root     = Split-Path -Parent $AgentDir
-$Cfg      = Get-Content (Join-Path $Root 'config.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+# 配置文件名优先取环境变量（面板启动 agent 时会传），默认 config.json
+$cfgName  = if ($env:NAFX_CONFIG) { [string]$env:NAFX_CONFIG } else { 'config.json' }
+$cfgPath  = if ([IO.Path]::IsPathRooted($cfgName)) { $cfgName } else { Join-Path $Root $cfgName }
+$Cfg      = Get-Content $cfgPath -Raw -Encoding UTF8 | ConvertFrom-Json
 
 if (-not $Task) { $Task = [string]$env:NAFX_TASK }
 if (-not $Task) { $Task = '你好' }
@@ -400,10 +403,48 @@ function Invoke-Model {
         }
     }
 
+    # ---- 兼容 xLAM 这类「工具调用写在正文里」的模型 ----
+    # 它的模板要求输出纯文本 JSON 数组：
+    #   [{"name":"write_file","arguments":{"path":"a.txt","content":"hi"}}]
+    # llama.cpp 不会把它解析成 tool_calls，所以这里补一层。
+    # 防误判：必须能解析成数组，每个元素有 name，且 name 是已注册的工具。
+    if ($calls.Count -eq 0 -and $msg.content) {
+        $txt = [string]$msg.content
+        $lb = $txt.IndexOf('[')
+        $rb = $txt.LastIndexOf(']')
+        if ($lb -ge 0 -and $rb -gt $lb) {
+            $cand = $txt.Substring($lb, $rb - $lb + 1)
+            try {
+                # 坑：PowerShell 5.1 里 @($json | ConvertFrom-Json) 会把整个数组再包一层，
+                # Count 变成 1。必须先判断类型，是数组就直接用，不是才包成单元素数组。
+                $parsedJson = $cand | ConvertFrom-Json
+                $arr = @()
+                if ($parsedJson -is [array]) { $arr = $parsedJson } else { $arr = @($parsedJson) }
+                $parsed = @()
+                $good = $true
+                foreach ($a in $arr) {
+                    $nm = [string]$a.name
+                    if (-not $nm) { $good = $false; break }
+                    if (-not $script:ToolSchemaMap.ContainsKey($nm)) { $good = $false; break }
+                    $argJson = ''
+                    if ($null -ne $a.arguments) {
+                        $argJson = ConvertTo-Json -InputObject $a.arguments -Depth 8 -Compress
+                    }
+                    $parsed += [pscustomobject]@{
+                        id        = 'call_' + [Guid]::NewGuid().ToString('N').Substring(0, 8)
+                        name      = $nm
+                        arguments = $argJson
+                    }
+                }
+                if ($good -and $parsed.Count -gt 0) { $calls = $parsed }
+            } catch { }
+        }
+    }
+
     return [pscustomobject]@{
         content   = [string]$msg.content
         calls     = $calls
-        raw_calls = $(if ($msg.tool_calls) { ConvertTo-Json -InputObject @($msg.tool_calls) -Depth 8 -Compress } else { '' })
+        raw_calls = $(if ($msg.tool_calls) { ConvertTo-Json -InputObject @($msg.tool_calls) -Depth 8 -Compress } elseif ($calls.Count -gt 0) { ConvertTo-Json -InputObject @($calls) -Depth 8 -Compress } else { '' })
         tokens    = $obj.usage.completion_tokens
         seconds   = $sw.Elapsed.TotalSeconds
     }
@@ -575,7 +616,34 @@ if ($FlowsLoaded) {
             $sysFull = $sysFull + "`n`n" + (Format-Flow -Flow $fr.Flow)
             Write-Log ("  套用模板：" + $fr.Flow.name + "（分 " + $fr.Score + "）")
         } else {
-            Write-Log ("  没匹配到流程模板，自由发挥")
+            # 没匹配到流程：至少给一张技能速查表，别让它裸奔。
+            # 之前这里什么都不加，模型只能凭提示词里的工具名硬猜，
+            # 结果是「大文件」任务去 list_dir 两次然后瞎报一个 1.8 KB 是「大文件」。
+            $fallback = @'
+
+## 常见活儿的现成技能
+
+没给专用流程，你自己判断。这些技能都是写好的，**能用就别自己写命令**：
+
+| 想干什么 | 怎么调 |
+|---|---|
+| 按文件类型数个数 | `skill(command="count_ext -Path data")` |
+| 文本统计（行/字/词） | `skill(command="text_stats -Path data/x.txt")` |
+| 某字段求和 | `skill(command="sum_field -Path data/x.jsonl -Field amount")` |
+| 查 JSON 字段 | `skill(command="json_query -Path data/x.jsonl -Pattern amount")` |
+| 找重复文件 | `skill(command="find_duplicates -Path data")` |
+| 找大文件 | `skill(command="find_large -Path . -MinMB 10")` |
+| 搜文字 | `skill(command="search_text -Pattern 关键词 -Path .")` |
+| 看目录结构 | `skill(command="tree -Path data")` |
+| 压缩 | `skill(command="zip_dir -Path data")` |
+| 解压 | `skill(command="unzip -Path data/x.zip")` |
+| 表格统计 | `skill(command="csv_stats -Path staff.csv")` |
+| 批量改名 | `skill(command="batch_rename -Path data -AddPrefix bak_")` |
+
+不确定有哪些，先 `skill(command="list")` 看全部 24 个。
+'@
+            $sysFull = $sysFull + $fallback
+            Write-Log ("  没匹配到流程模板，注入通用技能速查表")
         }
     } catch { }
 
@@ -604,10 +672,19 @@ if ($MemoryLoaded) {
         $script:UsedLessons = @(Get-Lessons -Task $TaskText -Max 4 -RejectTools $rej)
         if ($script:UsedLessons.Count -gt 0) {
             $sysFull = $sysFull + "`n`n" + (Format-Lessons -Lessons $script:UsedLessons)
+
             Write-Log ("  带上 " + $script:UsedLessons.Count + " 条以前的经验")
         }
     } catch { }
 }
+# 个人配置里的额外指令（config.self.json 的 personalPrompt）
+# 注意：必须放在 if 块外面，不然后面没有经验教训时这段就失效了。
+$personalPrompt = [string]$Cfg.personalPrompt
+if (-not [string]::IsNullOrWhiteSpace($personalPrompt)) {
+    $sysFull = $sysFull + "`n`n## 我的习惯`n`n" + $personalPrompt
+    Write-Log ("  带上个人指令（" + $personalPrompt.Length + " 字符）")
+}
+
 $history = @(@{ role = 'system'; content = $sysFull })
 foreach ($sm in $sessionMsgs) { $history += $sm }
 $history += @{ role = 'user'; content = "任务：$TaskText$wsSnapshot" }

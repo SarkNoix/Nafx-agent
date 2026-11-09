@@ -9,11 +9,14 @@
 #   3. 队列持久化在 agent/queue.json，重启面板不丢任务。
 # ============================================================
 
-param([int]$Port = 0)
+param([int]$Port = 0, [string]$ConfigFile = 'config.json')
 
 $ErrorActionPreference = 'Stop'
 $Root      = Split-Path -Parent $MyInvocation.MyCommand.Path
-$CfgPath   = Join-Path $Root 'config.json'
+$CfgPath   = $ConfigFile
+if (-not [IO.Path]::IsPathRooted($CfgPath)) { $CfgPath = Join-Path $Root $CfgPath }
+# 传给子进程（agent.ps1 靠这个知道用哪套配置）
+$env:NAFX_CONFIG = $CfgPath
 $Cfg       = Get-Content $CfgPath -Raw -Encoding UTF8 | ConvertFrom-Json
 if ($Port -le 0) { $Port = [int]$Cfg.monitorPort }
 
