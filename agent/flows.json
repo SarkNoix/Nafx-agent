@@ -8,7 +8,7 @@
   "flows": [
     {
       "id": "count",
-      "tools": ["run_cmd","list_dir","find_files","skill","read_file","finish"],
+      "tools": ["run_cmd","list_dir","find_files","csv_preview","skill","read_file","finish"],
       "name": "数数量 / 统计",
       "match": ["多少", "几个", "几条", "几行", "数量", "统计", "总数", "一共", "加起来", "求和", "合计", "总额", "总金额", "总和", "平均", "均值", "最大", "最小"],
       "goal": "拿到工具算出的真实数字，并说清这个数字是什么",
@@ -37,7 +37,7 @@
     },
     {
       "id": "lookup",
-      "tools": ["read_file","list_dir","file_info","grep_file","skill","run_cmd","finish"],
+      "tools": ["read_file","list_dir","file_info","grep_file","now","skill","run_cmd","finish"],
       "name": "查东西 / 找某个值",
       "match": ["在哪", "是什么", "查一下", "某个", "谁", "哪一行", "内容是什么", "读一下", "是多少", "读取", "查看", "显示", "列出", "网页", "网址", "链接", "下载", "多大", "大小", "体积", "占多少"],
       "goal": "找到那个东西，把它的实际内容或位置说出来",
@@ -92,7 +92,7 @@
     },
     {
       "id": "modify",
-      "tools": ["read_file","grep_file","replace_in_file","set_line","write_file","append_file","finish"],
+      "tools": ["read_file","grep_file","diff_files","replace_in_file","set_line","write_file","append_file","finish"],
       "name": "改内容 / 替换",
       "match": ["改成", "修改", "修改成", "替换", "换成", "换掉", "改掉", "更新", "删掉里面", "改一下", "改为"],
       "goal": "原文改对了，没把别的部分弄坏",
@@ -119,7 +119,7 @@
     },
     {
       "id": "convert",
-      "tools": ["skill","read_file","list_dir","run_cmd","finish"],
+      "tools": ["skill","read_file","list_dir","json_format","csv_preview","zip_list","run_cmd","finish"],
       "name": "格式转换",
       "match": ["转成", "转换成", "导出", "导入", "变成csv", "变成json", "转csv", "转json"],
       "goal": "新格式的文件生成出来，能打开，数据没丢",
@@ -196,10 +196,10 @@
     },
     {
       "id": "organize",
-      "tools": ["list_dir","find_files","file_info","move_path","copy_path","skill","read_file","run_cmd","finish"],
+      "tools": ["list_dir","find_files","file_info","zip_list","move_path","copy_path","skill","read_file","run_cmd","finish"],
       "name": "整理 / 批量处理",
       "match": ["整理", "分类", "归档", "批量", "重命名", "改名", "清理", "重复", "去重", "一样的文件", "压缩", "打包", "解压", "zip", "复制", "拷贝", "移动", "排序", "筛选", "过滤", "提取", "合并", "拼接", "比较", "对比", "删除", "删掉", "大文件", "小文件", "多大", "占用", "空间", "磁盘", "体积"],
-      "goal": "批量操作做对了，而且没有误伤别的文件",
+      "goal": "批量操作做对了，而且没有误伤别的文件。列文件用 find_files，别用 list_dir 一层层翻",
       "suggest_tools": ["skill find_duplicates", "skill batch_rename", "skill archive_by_date", "skill clean_empty_dirs", "list_dir"],
       "reject_tools": ["write_file"],
       "steps": [

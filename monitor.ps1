@@ -538,6 +538,29 @@ while ($listener.IsListening) {
                         try { $Workers[$slot] | Stop-Process -Force -ErrorAction SilentlyContinue; $n++ } catch { }
                     }
                     $Workers.Clear()
+
+                    # 光杀进程不够。任务状态还留在 running，面板会一直显示"跑着"，
+                    # 下一个任务的 state 又把它覆盖掉，看起来就像两个任务的答案串了。
+                    # 所以这里要把队列和 state 一起收尾。
+                    try {
+                        $q = Get-Queue
+                        $changedQ = $false
+                        foreach ($it in $q) {
+                            if ($it.status -eq 'running' -or $it.status -eq 'pending') {
+                                $it.status = 'stopped'
+                                $it.doneAt = (Get-Date -Format 'MM-dd HH:mm:ss')
+                                if (-not $it.result) { $it.result = '已手动停止' }
+                                $changedQ = $true
+                            }
+                        }
+                        if ($changedQ) { Save-Queue $q }
+                    } catch { }
+
+                    try {
+                        $st = [ordered]@{ status = 'stopped'; task = ''; step = 0; answer = '已手动停止'; steps = @(); elapsed = 0 }
+                        [IO.File]::WriteAllText($StateFile, ($st | ConvertTo-Json -Depth 6 -Compress), (New-Object Text.UTF8Encoding($false)))
+                    } catch { }
+
                     Send-Text -Response $resp -Text ('{"ok":true,"stopped":' + $n + '}')
                 }
 

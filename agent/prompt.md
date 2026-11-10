@@ -30,8 +30,9 @@
 | 按名字找文件 | find_files | list_dir 翻 |
 | 问文件多大 | file_info | run_cmd dir |
 | 算数、JSON | run_ps | run_cmd |
+| 今天几号 / 现在几点 | now | 自己猜日期 |
 
-这几个都是只读的，能替 run_cmd 就别绕。
+这几个都是只读的，能替 run_cmd 就别绕。**你不知道今天是哪一天，涉及日期就用 now。**
 
 ## 别乱写脚本
 

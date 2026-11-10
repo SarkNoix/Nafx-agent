@@ -525,6 +525,119 @@ function Invoke-AiTool {
                 throw "command 只能填 get 或 set，收到：$op"
             }
 
+
+            # ---------- 剩下几个"现在完全做不了"的 ----------
+
+            'now' {
+                # 当前日期时间。模型的训练数据有截止日期，问"今天几号"必须查这个
+                $d = Get-Date
+                $wk = @('星期日','星期一','星期二','星期三','星期四','星期五','星期六')[[int]$d.DayOfWeek]
+                return ("现在是 " + $d.ToString('yyyy年M月d日') + " " + $wk + " " + $d.ToString('HH:mm:ss'))
+            }
+
+            'zip_list' {
+                # 不解压，先看压缩包里有什么
+                $full = Resolve-AiPath $Action.path
+                if (-not (Test-Path $full)) { throw "不存在：$($Action.path)" }
+                if (Test-Path $full -PathType Container) { throw "$($Action.path) 是目录。要打包用 skill(zip_dir)" }
+                if ($full -notmatch '\.(zip|docx|xlsx|pptx|jar|apk)$') { throw "这个格式读不了清单（只支持 zip 系）。要看内容就 unzip 解出来" }
+                Add-Type -AssemblyName System.IO.Compression.FileSystem
+                $zip = [IO.Compression.ZipFile]::OpenRead($full)
+                try {
+                    $items = @($zip.Entries)
+                    $sb = New-Object System.Text.StringBuilder
+                    [void]$sb.AppendLine("$(Get-RelDisplay $full) 里有 $($items.Count) 项：")
+                    $shown = 0
+                    foreach ($e in $items) {
+                        if ($shown -ge 40) { break }
+                        $shown++
+                        $sz = if ($e.Length -ge 1MB) { [math]::Round($e.Length/1MB,1).ToString() + ' MB' } elseif ($e.Length -ge 1KB) { [math]::Round($e.Length/1KB,1).ToString() + ' KB' } else { $e.Length.ToString() + ' B' }
+                        [void]$sb.AppendLine(("  " + $sz.PadLeft(9) + "  " + $e.FullName))
+                    }
+                    if ($items.Count -gt 40) { [void]$sb.AppendLine("  ...还有 $($items.Count - 40) 项") }
+                    return $sb.ToString()
+                } finally { $zip.Dispose() }
+            }
+
+            'diff_files' {
+                # 两个文件逐行比，说清楚哪几行不一样。command 填另一个文件
+                $a = Resolve-AiPath $Action.path
+                $bRel = [string]$Action.command
+                if ([string]::IsNullOrWhiteSpace($bRel)) { throw 'command 里要填第二个文件的路径' }
+                $b = Resolve-AiPath $bRel
+                if (-not (Test-Path $a)) { throw "不存在：$($Action.path)" }
+                if (-not (Test-Path $b)) { throw "不存在：$bRel" }
+                $la = @([IO.File]::ReadAllLines($a))
+                $lb = @([IO.File]::ReadAllLines($b))
+                if ($la.Count -eq $lb.Count) {
+                    $same = $true
+                    for ($i = 0; $i -lt $la.Count; $i++) { if ($la[$i] -cne $lb[$i]) { $same = $false; break } }
+                    if ($same) { return "两个文件内容完全一样（都是 $($la.Count) 行）" }
+                }
+                $sb = New-Object System.Text.StringBuilder
+                [void]$sb.AppendLine("$(Get-RelDisplay $a)（$($la.Count) 行） vs $(Get-RelDisplay $b)（$($lb.Count) 行）：")
+                $max = [Math]::Max($la.Count, $lb.Count)
+                $diffCount = 0
+                $shown = 0
+                for ($i = 0; $i -lt $max; $i++) {
+                    $x = if ($i -lt $la.Count) { $la[$i] } else { $null }
+                    $y = if ($i -lt $lb.Count) { $lb[$i] } else { $null }
+                    if ($x -ceq $y) { continue }
+                    $diffCount++
+                    if ($shown -ge 20) { continue }
+                    $shown++
+                    [void]$sb.AppendLine("")
+                    [void]$sb.AppendLine("第 $($i+1) 行：")
+                    $xs = if ($null -eq $x) { '（没有这行）' } elseif ($x.Length -gt 80) { $x.Substring(0,80) + '…' } else { $x }
+                    $ys = if ($null -eq $y) { '（没有这行）' } elseif ($y.Length -gt 80) { $y.Substring(0,80) + '…' } else { $y }
+                    [void]$sb.AppendLine("  前: $xs")
+                    [void]$sb.AppendLine("  后: $ys")
+                }
+                if ($diffCount -gt 20) { [void]$sb.AppendLine("") ; [void]$sb.AppendLine("（共 $diffCount 处不同，只列了前 20 处）") }
+                return $sb.ToString()
+            }
+
+            'json_format' {
+                # 美化（缩进）或压缩 JSON。command 填 pretty 或 compact
+                $full = Resolve-AiPath $Action.path
+                if (-not (Test-Path $full)) { throw "不存在：$($Action.path)" }
+                $mode = ([string]$Action.command).Trim().ToLowerInvariant()
+                if ([string]::IsNullOrWhiteSpace($mode)) { $mode = 'pretty' }
+                $raw = [IO.File]::ReadAllText($full, [Text.Encoding]::UTF8)
+                $obj = $null
+                try { $obj = $raw | ConvertFrom-Json } catch { throw "不是合法 JSON：$($_.Exception.Message)" }
+                $out = if ($mode -eq 'compact') { $obj | ConvertTo-Json -Depth 20 -Compress } else { $obj | ConvertTo-Json -Depth 20 }
+                $save = [string]$Action.content
+                if ($save -eq '1' -or $save -match '^(?i)(yes|true|写入)') {
+                    Write-AiFileText $full $out
+                    return "已把 $(Get-RelDisplay $full) 写成 $mode 格式"
+                }
+                if ($out.Length -gt 3000) { $out = $out.Substring(0,3000) + '…（太长，只显示前 3000 字符）' }
+                return $out
+            }
+
+            'csv_preview' {
+                # 先看 CSV 长什么样：列名 + 前几行。不解全表
+                $full = Resolve-AiPath $Action.path
+                if (-not (Test-Path $full)) { throw "不存在：$($Action.path)" }
+                $n = 8
+                $tryN = 0
+                if ([int]::TryParse([string]$Action.command, [ref]$tryN) -and $tryN -gt 0) { $n = [Math]::Min($tryN, 50) }
+                $rows = @(Get-Content -LiteralPath $full -Encoding UTF8 -TotalCount ($n + 1))
+                if ($rows.Count -eq 0) { return "文件是空的" }
+                $cols = @($rows[0] -split ',')
+                $sb = New-Object System.Text.StringBuilder
+                [void]$sb.AppendLine("$(Get-RelDisplay $full) 共 $($cols.Count) 列：")
+                [void]$sb.AppendLine(("  列名  " + ($cols -join ' | ')))
+                [void]$sb.AppendLine("")
+                [void]$sb.AppendLine("前 $([Math]::Min($n, $rows.Count-1)) 行：")
+                for ($i = 1; $i -lt $rows.Count; $i++) {
+                    $r = $rows[$i]
+                    if ($r.Length -gt 120) { $r = $r.Substring(0,120) + '…' }
+                    [void]$sb.AppendLine("  $i. $r")
+                }
+                return $sb.ToString()
+            }
             'replace_in_file' {
                 $full = Resolve-AiPath $Action.path
                 Assert-CanWrite -Full $full -RelPath ([string]$Action.path)
