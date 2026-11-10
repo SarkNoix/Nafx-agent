@@ -123,10 +123,23 @@ function Assert-CanWrite {
     }
 }
 
-function Get-RelDisplay {    param([string]$FullPath)
+function Get-RelDisplay {
+    param([string]$FullPath)
     $rootFull = [IO.Path]::GetFullPath($script:AiRoot).TrimEnd('\')
-    if ($FullPath.Length -gt $rootFull.Length) { return $FullPath.Substring($rootFull.Length + 1) }
-    return '.'
+    # 必须在 workspace 里面才做相对化。
+    # 以前只看长度就裁，路径在 workspace 外面时会裁错：
+    # E:\Nafx\skills\clean_logs.md 会变成 "an_logs.md"（少了 3 个字符）。
+    if ($FullPath.StartsWith($rootFull + '\', [StringComparison]::OrdinalIgnoreCase)) {
+        return $FullPath.Substring($rootFull.Length + 1)
+    }
+    # 在项目目录里但不在 workspace：按项目根做相对路径
+    try {
+        $proj = Split-Path $script:ToolDir -Parent
+        if ($FullPath.StartsWith($proj + '\', [StringComparison]::OrdinalIgnoreCase)) {
+            return $FullPath.Substring($proj.Length + 1)
+        }
+    } catch { }
+    return $FullPath
 }
 
 function Trim-AiText {
@@ -703,6 +716,201 @@ function Invoke-AiTool {
                 $val = [Environment]::GetEnvironmentVariable($name)
                 if ([string]::IsNullOrEmpty($val)) { return "环境变量 $name 不存在或为空" }
                 return "$name = $val"
+            }
+
+            # ---------- 应用 / 进程 / Python / 技能 / 单位 ----------
+
+            'open_app' {
+                # 打开程序或文件。command 填程序名（notepad/calc/explorer）或完整路径
+                $what = ([string]$Action.command).Trim()
+                if ([string]::IsNullOrWhiteSpace($what)) { $what = ([string]$Action.path).Trim() }
+                if ([string]::IsNullOrWhiteSpace($what)) { throw 'command 里填程序名，比如 notepad、calc、explorer' }
+                # 常见程序直接用（不填全路径，靠系统自己找）
+                $known = @{
+                    'notepad' = 'notepad.exe'; '记事本' = 'notepad.exe'
+                    'calc' = 'calc.exe'; '计算器' = 'calc.exe'
+                    'mspaint' = 'mspaint.exe'; '画图' = 'mspaint.exe'
+                    'explorer' = 'explorer.exe'; '资源管理器' = 'explorer.exe'
+                    'cmd' = 'cmd.exe'; 'terminal' = 'wt.exe'; 'wt' = 'wt.exe'
+                    'taskmgr' = 'taskmgr.exe'; '任务管理器' = 'taskmgr.exe'
+                    'control' = 'control.exe'; '控制面板' = 'control.exe'
+                    'mstsc' = 'mstsc.exe'; 'devmgmt' = 'devmgmt.msc'
+                }
+                $key = $what.ToLowerInvariant()
+                if ($known.ContainsKey($key)) {
+                    Start-Process -FilePath $known[$key] -ErrorAction Stop
+                    return "已打开 $what"
+                }
+                # 不是内置名字：当路径或可执行文件处理
+                if ($what -match '^[A-Za-z]:[\\/]' -or $what -match '[\\/]') {
+                    $p = $what
+                    if (-not (Test-Path -LiteralPath $p)) { $p = Resolve-AiPath $what }
+                    if (-not (Test-Path -LiteralPath $p)) { throw "找不到：$what" }
+                    Start-Process -FilePath $p -ErrorAction Stop
+                    return "已打开 $what"
+                }
+                # 最后试一把：当命令名
+                try { Start-Process -FilePath $what -ErrorAction Stop; return "已打开 $what" }
+                catch { throw "打不开 $what。常用的是 notepad / calc / explorer / mspaint / taskmgr，或者给完整路径。" }
+            }
+
+            'kill_process' {
+                # 结束进程。command 填进程名（不带 .exe）或 PID
+                $what = ([string]$Action.command).Trim()
+                if ([string]::IsNullOrWhiteSpace($what)) { throw 'command 里填进程名（如 notepad）或 PID' }
+                # 保护：这些绝对不能杀
+                $protect = @('system', 'idle', 'csrss', 'wininit', 'winlogon', 'services', 'lsass', 'smss', 'explorer')
+                $killed = @()
+                $numId = 0
+                if ([int]::TryParse($what, [ref]$numId)) {
+                    $p = Get-Process -Id $numId -ErrorAction SilentlyContinue
+                    if (-not $p) { throw "没有 PID 为 $numId 的进程" }
+                    if ($protect -contains $p.ProcessName.ToLowerInvariant()) { throw "$($p.ProcessName) 是系统进程，不能杀" }
+                    $n = $p.ProcessName
+                    try { $p.Kill(); $killed += "$n (PID $numId)" } catch { throw "杀不掉：$($_.Exception.Message)" }
+                } else {
+                    $name = $what -replace '\.exe$', ''
+                    if ($protect -contains $name.ToLowerInvariant()) { throw "$name 是系统进程，不能杀" }
+                    $procs = @(Get-Process -Name $name -ErrorAction SilentlyContinue)
+                    if ($procs.Count -eq 0) { throw "没有叫 $name 的进程在跑" }
+                    foreach ($p in $procs) {
+                        try { $pid2 = $p.Id; $p.Kill(); $killed += "$name (PID $pid2)" } catch { }
+                    }
+                }
+                if ($killed.Count -eq 0) { throw "没能结束 $what（可能需要管理员权限）" }
+                return ("已结束：" + ($killed -join '、'))
+            }
+
+            'run_python' {
+                # 跑 Python。path 给 .py 文件，或者 content 直接给代码
+                $py = 'C:\Python312\python.exe'
+                if (-not (Test-Path $py)) {
+                    $found = Get-Command python -ErrorAction SilentlyContinue
+                    if ($found) { $py = $found.Source } else { throw '没找到 Python。装一个或者用 run_ps 代替' }
+                }
+                $code = [string]$Action.content
+                $fileRel = [string]$Action.path
+                $tmpMade = $false
+                if (-not [string]::IsNullOrWhiteSpace($fileRel)) {
+                    $script = Resolve-AiPath $fileRel
+                    if (-not (Test-Path $script)) { throw "文件不存在：$fileRel" }
+                } else {
+                    if ([string]::IsNullOrWhiteSpace($code)) { throw 'path 给 .py 文件，或者 content 直接给代码' }
+                    $script = Join-Path $env:TEMP ('nafx_' + [Guid]::NewGuid().ToString('N').Substring(0,8) + '.py')
+                    [IO.File]::WriteAllText($script, $code, (New-Object Text.UTF8Encoding($false)))
+                    $tmpMade = $true
+                }
+                try {
+                    $env:PYTHONIOENCODING = 'utf-8'
+                    $out = & $py $script 2>&1 | Out-String
+                    if ($tmpMade) { Remove-Item $script -Force -ErrorAction SilentlyContinue }
+                    $out = $out.Trim()
+                    if ([string]::IsNullOrWhiteSpace($out)) { return 'Python 跑完了，没有输出' }
+                    if ($out.Length -gt 3000) { $out = $out.Substring(0,3000) + "`n…（太长，只显示前 3000 字符）" }
+                    return "运行 Python 结束（退出码 $LASTEXITCODE）：`n--- 标准输出 ---`n$out"
+                } catch {
+                    if ($tmpMade) { Remove-Item $script -Force -ErrorAction SilentlyContinue }
+                    throw "Python 跑失败了：$($_.Exception.Message)"
+                }
+            }
+
+            'write_skill' {
+                # 把一套做法写成技能说明（md），以后可以查。path 填技能名
+                $name = ([string]$Action.path).Trim()
+                if ([string]::IsNullOrWhiteSpace($name)) { throw 'path 里填技能名，比如 clean_logs' }
+                $name = $name -replace '[^\w\u4e00-\u9fa5\-]', ''
+                if (-not $name) { throw '技能名里要有字母或中文' }
+                $body = [string]$Action.content
+                if ([string]::IsNullOrWhiteSpace($body)) { throw 'content 里填技能说明（markdown）' }
+                $skillDir = Join-Path (Split-Path $script:ToolDir -Parent) 'skills'
+                if (-not (Test-Path $skillDir)) { New-Item -ItemType Directory -Force -Path $skillDir | Out-Null }
+                $mdPath = Join-Path $skillDir ($name + '.md')
+                $doc = "# " + $name + "`n`n" + $body + "`n`n---`n`n（这个技能是 " + (Get-Date -Format 'yyyy-MM-dd HH:mm') + " 自动写的，用法见上面的说明）`n"
+                Write-AiFileText $mdPath $doc
+                return "已创建技能说明 $(Get-RelDisplay $mdPath)。以后用 skill 工具查 'list' 能看到它。"
+            }
+
+            'project_doc' {
+                # 查 Nafx 自己的文档。
+                # 别把全文塞给模型：README 有 1 万多字，一次返回 4000 字符会让下一步
+                # 的提示词爆掉（实测「查一下 Nafx 的架构」直接卡死）。
+                # 所以只给「章节目录 + 开头一段」，想看细节让它再指定章节。
+                $topic = ([string]$Action.command).Trim().ToLowerInvariant()
+                if ([string]::IsNullOrWhiteSpace($topic)) { $topic = 'all' }
+                $root = Split-Path $script:ToolDir -Parent
+                $docs = @{
+                    '架构' = 'README.md'; 'arch' = 'README.md'; '说明' = 'README.md'; 'readme' = 'README.md'
+                    '工具' = 'agent\工具手册.md'; 'tools' = 'agent\工具手册.md'; '手册' = 'agent\工具手册.md'
+                    '流程' = 'agent\flows.json'; 'flows' = 'agent\flows.json'
+                }
+                $pick = $null
+                foreach ($k in $docs.Keys) { if ($topic -eq $k -or $topic -like "*$k*") { $pick = $docs[$k]; break } }
+                if (-not $pick) {
+                    return ("能查这些：" + (($docs.Keys | Sort-Object) -join '、') + "`n用法：project_doc(架构)")
+                }
+                $p = Join-Path $root $pick
+                if (-not (Test-Path $p)) { throw "文档不存在：$pick" }
+                $txt = [IO.File]::ReadAllText($p, [Text.Encoding]::UTF8)
+                # 提章节标题当目录。
+                # 先把 ``` 代码块整段去掉——里面用 # 写的注释会被当成标题
+                # （README 那段 PowerShell 就混进来好几条「- 留给系统的：...」）。
+                $clean = [regex]::Replace($txt, '(?s)```.*?```', '')
+                $heads = @()
+                foreach ($m in [regex]::Matches($clean, '(?m)^(#{2,3})\s+(.+)$')) {
+                    $h = $m.Groups[2].Value.Trim()
+                    if ($h.Length -le 30) { $heads += $h }
+                }
+                $sb = New-Object System.Text.StringBuilder
+                [void]$sb.AppendLine("【$pick】共 $($txt.Length) 字")
+                if ($heads.Count -gt 0) {
+                    [void]$sb.AppendLine("")
+                    [void]$sb.AppendLine("章节：")
+                    $hs = $heads | Select-Object -First 12
+                    foreach ($h in $hs) { [void]$sb.AppendLine("  - $h") }
+                    if ($heads.Count -gt 12) { [void]$sb.AppendLine("  ...还有 $($heads.Count - 12) 节") }
+                }
+                [void]$sb.AppendLine("")
+                [void]$sb.AppendLine("开头：")
+                $head600 = if ($txt.Length -gt 600) { $txt.Substring(0, 600) } else { $txt }
+                [void]$sb.AppendLine($head600)
+                [void]$sb.AppendLine("")
+                [void]$sb.AppendLine("")
+                [void]$sb.AppendLine("**上面是目录。回答用户时**：从目录里挑最相关的那一节，说清它讲了什么；")
+                [void]$sb.AppendLine("不要原样复述下面的开头——那只是文件前 600 字，不一定是答案。")
+                [void]$sb.AppendLine("要看某一节的全文，用 read_file 读这个文件，或者问得更具体一点。")
+                return $sb.ToString()
+            }
+
+            'unit_convert' {
+                # 单位换算。command 写 "100 km to miles" 这种
+                $expr = ([string]$Action.command).Trim()
+                if ([string]::IsNullOrWhiteSpace($expr)) { throw 'command 里写换算，比如 100 km to miles' }
+                if ($expr -notmatch '^\s*(-?[\d.]+)\s*([A-Za-z°]+)\s*(?:to|转|->|→)\s*([A-Za-z°]+)\s*$') {
+                    throw "看不懂 $expr。写成：100 km to miles、30 c to f、1 gb to mb"
+                }
+                $val = [double]$Matches[1]
+                $from = $Matches[2].ToLowerInvariant()
+                $to = $Matches[3].ToLowerInvariant()
+                # 每个单位换算成基准单位（长度=米，重量=克，数据=字节，温度=摄氏度）
+                $len = @{ 'mm'=0.001; 'cm'=0.01; 'm'=1; 'km'=1000; 'in'=0.0254; 'ft'=0.3048; 'yd'=0.9144; 'mi'=1609.344; 'miles'=1609.344; 'mile'=1609.344; '英尺'=0.3048; '米'=1; '公里'=1000 }
+                $wt = @{ 'mg'=0.001; 'g'=1; 'kg'=1000; 't'=1000000; 'oz'=28.3495; 'lb'=453.592; 'lbs'=453.592; '斤'=500; '克'=1; '公斤'=1000 }
+                $data = @{ 'b'=1; 'kb'=1024; 'mb'=1048576; 'gb'=1073741824; 'tb'=1099511627776 }
+                $result = $null
+                $unit = ''
+                if ($len.ContainsKey($from) -and $len.ContainsKey($to)) {
+                    $result = $val * $len[$from] / $len[$to]; $unit = '长度'
+                } elseif ($wt.ContainsKey($from) -and $wt.ContainsKey($to)) {
+                    $result = $val * $wt[$from] / $wt[$to]; $unit = '重量'
+                } elseif ($data.ContainsKey($from) -and $data.ContainsKey($to)) {
+                    $result = $val * $data[$from] / $data[$to]; $unit = '数据量'
+                } elseif (($from -in @('c','°c','摄氏')) -and ($to -in @('f','°f','华氏'))) {
+                    $result = $val * 9 / 5 + 32; $unit = '温度'
+                } elseif (($from -in @('f','°f','华氏')) -and ($to -in @('c','°c','摄氏'))) {
+                    $result = ($val - 32) * 5 / 9; $unit = '温度'
+                }
+                if ($null -eq $result) { throw "换不了 $from → $to。支持长度（mm/cm/m/km/in/ft/mi）、重量（mg/g/kg/lb/斤）、数据（b/kb/mb/gb/tb）、温度（c/f）" }
+                $r = [math]::Round($result, 4)
+                return "$val $from = $r $to（$unit）"
             }
             'replace_in_file' {
                 $full = Resolve-AiPath $Action.path

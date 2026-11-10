@@ -627,6 +627,16 @@ if ($FlowsLoaded) {
             # 结果是「大文件」任务去 list_dir 两次然后瞎报一个 1.8 KB 是「大文件」。
             $fallback = @'
 
+## 没见过的任务，先想清楚再动手
+
+**别看到任务里有个词就直接做最像的动作。** 先想三件事，把答案写进 think：
+
+1. 用户要的**最终结果**是什么？（一个数字 / 一段文字 / 文件改好了 / 只是想知道情况）
+2. **哪个工具**能拿到？下表里找；表里没有就先用 read_file / list_dir / find_files 看情况
+3. 拿到后**怎么确认对了**？（工具返回里能不能看到你要的东西）
+
+**信息不够就用 say 问。猜错方向比多问一句贵得多**（一步 30 秒，走错三步就一分半）。
+
 ## 常见活儿的现成技能
 
 没给专用流程，你自己判断。这些技能都是写好的，**能用就别自己写命令**：
@@ -668,7 +678,7 @@ try {
     } else {
         # 没匹配到流程：给一套常用工具，别把 32 个全发出去。
         # 之前这里发全部，一次「找所有 txt」光 prefill 就花了 105 秒。
-        $defaultTools = @('read_file', 'read_lines', 'grep_file', 'write_file', 'find_files', 'file_info', 'run_cmd', 'run_ps', 'sys_info', 'skill', 'now', 'date_calc', 'finish')
+        $defaultTools = @('read_file', 'read_lines', 'grep_file', 'write_file', 'find_files', 'file_info', 'run_cmd', 'run_ps', 'sys_info', 'open_app', 'unit_convert', 'project_doc', 'skill', 'now', 'date_calc', 'finish')
         $dflt = Get-ToolsJsonWithFinish -Names $defaultTools
         if ($dflt -and $dflt.Length -gt 100) {
             $toolsJson = $dflt
