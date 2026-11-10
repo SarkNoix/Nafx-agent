@@ -431,6 +431,46 @@ setInterval(function(){ document.getElementById('brandEgg').click(); }, 60000);
 **有什么用**：改了界面不用等我更新，自己补丁就行。做好的补丁能分享给别人。
 
 ---
+## 自动训练器（train/）
+
+Nafx 带一个自测自改的工具：**自己出题、按步骤判分、发现短板后改提示词、再重考**。
+
+目标是把分数刷到 95 以上。
+
+```powershell
+# 完整训练：刷到 95 分，最多 3 轮
+powershell -ExecutionPolicy Bypass -File train\train.ps1 -Target 95 -Rounds 3
+
+# 快速冒烟：每轮抽 60% 的题
+powershell -ExecutionPolicy Bypass -File train\train.ps1 -Quick -Rounds 2
+
+# 只考某一类
+powershell -ExecutionPolicy Bypass -File train\train.ps1 -Category 联网
+
+# 只看题目和评分规则，不调模型
+powershell -ExecutionPolicy Bypass -File train\train.ps1 -DryRun
+```
+
+**跑之前先把模型服务起来**（双击 `Nafx.bat`，或者确认 8080 端口活着）。
+
+**题库**在 `train/bank.json`（约 96 KB），分好几类：文件操作、数据统计、联网、系统查询。
+
+**每轮会做什么**：
+
+```
+1. 出题 → 让 agent 真做一遍
+2. 按预设的评分规则判分（数字对不对、文件改没改、有没有编答案）
+3. 统计哪类题错得多
+4. 改提示词 / 改流程模板
+5. 再考一遍，看分数涨没涨
+```
+
+**输出**在 `train/out/`：每轮的备份、报告、调参日志。
+
+这是把「感觉变好了」换成「分数涨了多少」的办法。
+
+---
+
 ## 实测性能（i3-10105F / 8 GB / 无显卡）
 
 下面这些数字全部来自这台机器上的真实运行，不是估算。
