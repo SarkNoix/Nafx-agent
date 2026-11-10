@@ -638,6 +638,72 @@ function Invoke-AiTool {
                 }
                 return $sb.ToString()
             }
+
+            # ---------- 日期 / 网络 / 环境 ----------
+
+            'date_calc' {
+                # 算日期。command 填：有符号天数（3 = 三天后，-7 = 七天前），
+                # 或者一个日期（2024-01-01），那就算距今多少天
+                $q = ([string]$Action.command).Trim()
+                $now = Get-Date
+                if ([string]::IsNullOrWhiteSpace($q)) { throw 'command 里填天数（如 3）或日期（如 2024-01-01）' }
+                $off = 0
+                if ([int]::TryParse($q, [ref]$off)) {
+                    $target = $now.AddDays($off)
+                    $dir = if ($off -gt 0) { "$off 天后" } elseif ($off -lt 0) { "$([Math]::Abs($off)) 天前" } else { '今天' }
+                    return ("$dir 是 " + $target.ToString('yyyy年M月d日') + " " + $target.ToString('dddd'))
+                }
+                $dt = [datetime]::MinValue
+                if ([datetime]::TryParse($q, [ref]$dt)) {
+                    $days = [int][Math]::Floor(($dt.Date - $now.Date).TotalDays)
+                    if ($days -gt 0) { return "$q 还有 $days 天（" + $dt.ToString('yyyy年M月d日') + " " + $dt.ToString('dddd') + "）" }
+                    if ($days -lt 0) { return "$q 已经过去 $([Math]::Abs($days)) 天" }
+                    return "$q 就是今天"
+                }
+                throw "看不懂 $q。填天数（3 / -7）或者日期（2024-01-01）"
+            }
+
+            'download_file' {
+                # 把网址上的文件存到本地。path 填网址，command 填存到哪（留空用原文件名）
+                $url = ([string]$Action.path).Trim()
+                if ($url -notmatch '^https?://') { throw 'path 要填 http:// 或 https:// 开头的网址' }
+                $dstRel = ([string]$Action.command).Trim()
+                if ([string]::IsNullOrWhiteSpace($dstRel)) {
+                    $leaf = ($url -split '[/\\?]' | Where-Object { $_ } | Select-Object -Last 1)
+                    if (-not $leaf) { $leaf = 'download.bin' }
+                    $dstRel = $leaf
+                }
+                $dst = Resolve-AiPath $dstRel
+                Assert-CanWrite -Full $dst -RelPath $dstRel
+                $d = Split-Path $dst -Parent
+                if ($d -and -not (Test-Path $d)) { New-Item -ItemType Directory -Force -Path $d | Out-Null }
+                $ProgressPreference = 'SilentlyContinue'
+                Invoke-WebRequest -Uri $url -OutFile $dst -UseBasicParsing -TimeoutSec 120
+                $sz = (Get-Item -LiteralPath $dst).Length
+                $szTxt = if ($sz -ge 1MB) { [math]::Round($sz/1MB,1).ToString() + ' MB' } elseif ($sz -ge 1KB) { [math]::Round($sz/1KB,1).ToString() + ' KB' } else { $sz.ToString() + ' B' }
+                return "已下载到 $(Get-RelDisplay $dst)（$szTxt）"
+            }
+
+            'env_get' {
+                # 看环境变量。command 填变量名（留空列出常见的几个）
+                $name = ([string]$Action.command).Trim()
+                if ([string]::IsNullOrWhiteSpace($name)) {
+                    $keys = @('USERPROFILE', 'TEMP', 'PATH', 'COMPUTERNAME', 'USERNAME', 'PROCESSOR_ARCHITECTURE')
+                    $sb = New-Object System.Text.StringBuilder
+                    [void]$sb.AppendLine('常用环境变量：')
+                    foreach ($k in $keys) {
+                        $v = [Environment]::GetEnvironmentVariable($k)
+                        if ($v) {
+                            if ($v.Length -gt 100) { $v = $v.Substring(0,100) + '…' }
+                            [void]$sb.AppendLine("  $k = $v")
+                        }
+                    }
+                    return $sb.ToString().TrimEnd()
+                }
+                $val = [Environment]::GetEnvironmentVariable($name)
+                if ([string]::IsNullOrEmpty($val)) { return "环境变量 $name 不存在或为空" }
+                return "$name = $val"
+            }
             'replace_in_file' {
                 $full = Resolve-AiPath $Action.path
                 Assert-CanWrite -Full $full -RelPath ([string]$Action.path)
