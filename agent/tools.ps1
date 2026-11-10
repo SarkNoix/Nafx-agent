@@ -333,6 +333,106 @@ function Invoke-AiTool {
                 return "已创建目录 $(Get-RelDisplay $full)"
             }
 
+            # ---------- 文件操作（以前只能绕 run_cmd 做的） ----------
+
+            'find_files' {
+                # 按通配符找文件。比 run_cmd(dir /b *关键词*) 好在：能递归、输出带大小、不用记 cmd 语法
+                $dir = Resolve-AiPath $Action.path
+                if (-not (Test-Path $dir)) { throw "目录不存在：$($Action.path)" }
+                $pat = [string]$Action.command
+                if ([string]::IsNullOrWhiteSpace($pat)) { $pat = '*' }
+                $files = @(Get-ChildItem -LiteralPath $dir -Filter $pat -File -Recurse -ErrorAction SilentlyContinue)
+                if ($files.Count -eq 0) { return "没找到匹配 $pat 的文件" }
+                $sb = New-Object System.Text.StringBuilder
+                [void]$sb.AppendLine("找到 $($files.Count) 个匹配 $pat 的文件：")
+                foreach ($x in ($files | Select-Object -First 30)) {
+                    $sz = if ($x.Length -ge 1MB) { [math]::Round($x.Length/1MB,1).ToString() + ' MB' } elseif ($x.Length -ge 1KB) { [math]::Round($x.Length/1KB,1).ToString() + ' KB' } else { $x.Length.ToString() + ' B' }
+                    [void]$sb.AppendLine(("  " + (Get-RelDisplay $x.FullName) + "  " + $sz))
+                }
+                if ($files.Count -gt 30) { [void]$sb.AppendLine("  ...还有 $($files.Count - 30) 个") }
+                return $sb.ToString()
+            }
+
+            'file_info' {
+                # 看文件/目录的基本信息。以前要 run_cmd(dir 文件) 然后自己解析
+                $full = Resolve-AiPath $Action.path
+                if (-not (Test-Path $full)) { throw "不存在：$($Action.path)" }
+                $it = Get-Item -LiteralPath $full
+                if ($it.PSIsContainer) {
+                    $fs = @(Get-ChildItem -LiteralPath $full -File -Recurse -ErrorAction SilentlyContinue)
+                    $sum = ($fs | Measure-Object Length -Sum).Sum
+                    return "$($Action.path) 是目录：$($fs.Count) 个文件，共 $([math]::Round($sum/1KB,1)) KB"
+                }
+                $sz = if ($it.Length -ge 1MB) { [math]::Round($it.Length/1MB,1).ToString() + ' MB' } elseif ($it.Length -ge 1KB) { [math]::Round($it.Length/1KB,1).ToString() + ' KB' } else { $it.Length.ToString() + ' B' }
+                $ro = if ($it.IsReadOnly) { '，只读' } else { '' }
+                return "$($Action.path)：$sz，改于 $($it.LastWriteTime.ToString('yyyy-MM-dd HH:mm'))$ro"
+            }
+
+            'move_path' {
+                # 移动 / 重命名。目标路径填在 command 里
+                $src = Resolve-AiPath $Action.path
+                $dstRel = [string]$Action.command
+                if ([string]::IsNullOrWhiteSpace($dstRel)) { throw 'command 里要填目标路径，比如 b.txt 或 new\a.txt' }
+                if (-not (Test-Path $src)) { throw "源不存在：$($Action.path)" }
+                $dst = Resolve-AiPath $dstRel
+                Assert-CanWrite -Full $dst -RelPath $dstRel
+                if (Test-Path $dst) { throw "目标已存在：$dstRel。要覆盖就先 delete_path 删掉它。" }
+                $d = Split-Path $dst -Parent
+                if ($d -and -not (Test-Path $d)) { New-Item -ItemType Directory -Force -Path $d | Out-Null }
+                Move-Item -LiteralPath $src -Destination $dst -Force
+                return "已移动 $(Get-RelDisplay $src) → $(Get-RelDisplay $dst)"
+            }
+
+            'copy_path' {
+                # 复制文件或目录。目标路径填在 command 里
+                $src = Resolve-AiPath $Action.path
+                $dstRel = [string]$Action.command
+                if ([string]::IsNullOrWhiteSpace($dstRel)) { throw 'command 里要填目标路径' }
+                if (-not (Test-Path $src)) { throw "源不存在：$($Action.path)" }
+                $dst = Resolve-AiPath $dstRel
+                Assert-CanWrite -Full $dst -RelPath $dstRel
+                $d = Split-Path $dst -Parent
+                if ($d -and -not (Test-Path $d)) { New-Item -ItemType Directory -Force -Path $d | Out-Null }
+                Copy-Item -LiteralPath $src -Destination $dst -Recurse -Force
+                return "已复制 $(Get-RelDisplay $src) → $(Get-RelDisplay $dst)"
+            }
+
+            'grep_file' {
+                # 在文件里搜关键词，返回行号和上下文。比 read_file 整个读省 token
+                $full = Resolve-AiPath $Action.path
+                if (-not (Test-Path $full)) { throw "文件不存在：$($Action.path)" }
+                if (Test-Path $full -PathType Container) { throw "$($Action.path) 是目录。搜目录用 skill(search_text)" }
+                $kw = [string]$Action.command
+                if ([string]::IsNullOrWhiteSpace($kw)) { throw 'command 里要填要找的关键词' }
+                $ctx = 0
+                $tryN = 0
+                if ([int]::TryParse([string]$Action.content, [ref]$tryN) -and $tryN -gt 0) { $ctx = [Math]::Min($tryN, 5) }
+                $all = @([IO.File]::ReadAllLines($full))
+                $hitIdx = @()
+                for ($i = 0; $i -lt $all.Count; $i++) {
+                    if ($all[$i] -like "*$kw*") { $hitIdx += $i }
+                }
+                if ($hitIdx.Count -eq 0) { return "文件里没有 $kw（共 $($all.Count) 行）" }
+                $sb = New-Object System.Text.StringBuilder
+                [void]$sb.AppendLine("在 $(Get-RelDisplay $full) 里找到 $($hitIdx.Count) 处 $kw（共 $($all.Count) 行）：")
+                $shown = 0
+                foreach ($h in $hitIdx) {
+                    if ($shown -ge 10) { break }
+                    $shown++
+                    $from = [Math]::Max(0, $h - $ctx)
+                    $to = [Math]::Min($all.Count - 1, $h + $ctx)
+                    [void]$sb.AppendLine("")
+                    for ($k = $from; $k -le $to; $k++) {
+                        $mark = if ($k -eq $h) { '>' } else { ' ' }
+                        $ln = $all[$k]
+                        if ($ln.Length -gt 100) { $ln = $ln.Substring(0,100) }
+                        [void]$sb.AppendLine("  $mark $($k+1): $ln")
+                    }
+                }
+                if ($hitIdx.Count -gt 10) { [void]$sb.AppendLine("  ...还有 $($hitIdx.Count - 10) 处") }
+                return $sb.ToString()
+            }
+
             'replace_in_file' {
                 $full = Resolve-AiPath $Action.path
                 Assert-CanWrite -Full $full -RelPath ([string]$Action.path)
