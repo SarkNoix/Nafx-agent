@@ -304,6 +304,11 @@ function Get-MergedState {
         logFile   = [string]$main.logFile
         slot      = [int]$main.slot
         intent    = [string]$main.intent
+        flow      = [string]$main.flow
+        flowName  = [string]$main.flowName
+        # 这两个是 agent 算好的"实际发出去的"工具规模，面板用它算剩余上下文
+        toolTokens = [int]$main.toolTokens
+        flowTools  = [int]$main.flowTools
         phase     = [string]$main.phase
         workers   = $summary
     }

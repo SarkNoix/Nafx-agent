@@ -1531,8 +1531,9 @@ function bindMsgOps(){
 }
 
 /* ---------- 配置信息 ---------- */
-function renderSystem(sys){
+function renderSystem(sys, st){
   if (!sys) return;
+  if (!st) { st = window.curState || null; }
   $('cModel').textContent = sys.model || '—';
   $('cCtx').textContent = sys.context || '—';
   $('cPer').textContent = (sys.contextPerSlot||0) + ' tok';
@@ -1543,7 +1544,7 @@ function renderSystem(sys){
   else { ad.textContent = '普通'; ad.className = 'val-warn'; }
 
   var per = sys.contextPerSlot || 1;
-  var pt = sys.promptTokens || 0, tt = sys.toolTokens || 0;
+  var pt = sys.promptTokens || 0, tt = (st && typeof st.toolTokens === 'number') ? st.toolTokens : (sys.toolTokens || 0);
   var free = Math.max(0, per - pt - tt);
   $('gPrompt').textContent = fmtNum(pt) + ' tok';
   $('gbPrompt').style.width = Math.min(100, pt/per*100) + '%';
@@ -1563,7 +1564,7 @@ function tick(){
   Promise.all([fetchJson('/api/state'), fetchJson('/api/system'), fetchJson('/api/session')])
     .then(function(res){
       var st = res[0], sys = res[1], sess = res[2];
-      if (sys) { renderSystem(sys); window.__lastSys = sys; }
+      if (sys) { renderSystem(sys, st); window.__lastSys = sys; }
       renderFlow(sess, st);
       loadFiles();
       checkAsk();
@@ -1931,7 +1932,9 @@ function refreshSys(){
   if (sys){
     var per = sys.contextPerSlot || 1;
     var pt = sys.promptTokens || 0;
-    var tt = sys.toolTokens || 0;
+    // 优先用 state 里的真实值（只算实际发出去的那几个工具），
+    // 不能用 sys.toolTokens——那是全部 50 个的大小，会让人以为上下文快满了。
+    var tt = (st && typeof st.toolTokens === 'number') ? st.toolTokens : (sys.toolTokens || 0);
     var free = Math.max(0, per - pt - tt);
     $('sysCtx').textContent = per + ' tok';
     $('sysPrompt').textContent = fmtTok(pt) + ' tok';
@@ -1942,7 +1945,7 @@ function refreshSys(){
     bar.style.width = pct + '%';
     bar.className = pct > 85 ? 'warn' : '';
     $('sysModel').textContent = sys.model || '—';
-    $('sysToolCount').textContent = (sys.toolCount || 0) + ' 个';
+    $('sysToolCount').textContent = (st && st.flowTools) ? (st.flowTools + ' / ' + (sys.toolCount || 0) + ' 个') : ((sys.toolCount || 0) + ' 个');
   }
 
   // 本次任务

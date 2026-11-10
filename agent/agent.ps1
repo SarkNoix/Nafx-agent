@@ -614,6 +614,7 @@ if ($isBuild -and $ProjectPrompt) {
 
 # 套流程模板：这个任务的硬约束
 $script:ActiveFlow = $null
+$script:ActiveFlowToolCount = 0
 if ($FlowsLoaded) {
     try {
         $fr = Get-Flow -Task $TaskText
@@ -669,6 +670,7 @@ try {
     if ($script:ActiveFlow -and $script:ActiveFlow.tools) {
         $flowTools = @($script:ActiveFlow.tools)
         if ($flowTools.Count -gt 0) {
+            $script:ActiveFlowToolCount = $flowTools.Count
             $filtered = Get-ToolsJsonWithFinish -Names $flowTools
             if ($filtered -and $filtered.Length -gt 100) {
                 $toolsJson = $filtered
@@ -679,6 +681,7 @@ try {
         # 没匹配到流程：给一套常用工具，别把 32 个全发出去。
         # 之前这里发全部，一次「找所有 txt」光 prefill 就花了 105 秒。
         $defaultTools = @('read_file', 'read_lines', 'grep_file', 'write_file', 'find_files', 'file_info', 'run_cmd', 'run_ps', 'sys_info', 'open_app', 'unit_convert', 'project_doc', 'skill', 'now', 'date_calc', 'finish')
+        $script:ActiveFlowToolCount = $defaultTools.Count
         $dflt = Get-ToolsJsonWithFinish -Names $defaultTools
         if ($dflt -and $dflt.Length -gt 100) {
             $toolsJson = $dflt
@@ -756,6 +759,10 @@ $state = [pscustomobject]@{
     intent    = $intent
     flow      = $(if ($script:ActiveFlow) { [string]$script:ActiveFlow.id } else { '' })
     flowName  = $(if ($script:ActiveFlow) { [string]$script:ActiveFlow.name } else { '' })
+    # 实际发出去的工具定义有多大。面板拿这个算剩余上下文，
+    # 不能用整个 schema 文件的大小——那是 50 个全量，实际只发 4-10 个。
+    toolTokens = [int][Math]::Round($toolsJson.Length / 3.5)
+    flowTools  = $script:ActiveFlowToolCount
     phase     = '准备'
 }
 Write-State $state
