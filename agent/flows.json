@@ -93,17 +93,18 @@
                       "tools":  [
                                     "read_file",
                                     "read_lines",
+                                    "list_dir",
+                                    "find_files",
                                     "file_info",
                                     "grep_file",
-                                    "project_doc",
                                     "now",
                                     "date_calc",
                                     "skill",
                                     "run_cmd",
-                                    "finish",
                                     "web_search",
                                     "web_fetch",
-                                    "write_file"
+                                    "write_file",
+                                    "finish"
                                 ],
                       "name":  "查东西 / 找某个值",
                       "match":  [
@@ -119,7 +120,6 @@
                                     "读取",
                                     "查看",
                                     "显示",
-                                    "列出",
                                     "网页",
                                     "网址",
                                     "链接",
@@ -182,7 +182,8 @@
                                     "write_file",
                                     "read_file",
                                     "make_dir",
-                                    "finish"
+                                    "finish",
+                                    "delete_path"
                                 ],
                       "name":  "创建文件 / 写内容",
                       "match":  [
@@ -525,7 +526,9 @@
                                     "list_dir",
                                     "run_cmd",
                                     "finish",
-                                    "write_file"
+                                    "write_file",
+                                    "delete_path",
+                                    "make_dir"
                                 ],
                       "name":  "整理 / 批量处理",
                       "match":  [
