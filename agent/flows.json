@@ -544,7 +544,7 @@
                                     "磁盘",
                                     "体积"
                                 ],
-                      "goal":  "批量操作做对了，而且没有误伤别的文件。列文件用 find_files，别用 list_dir 一层层翻",
+                      "goal":  "批量操作做对了，而且没有误伤别的文件。没说清操作哪个目录、按什么整理，先 say 问一句再做",
                       "suggest_tools":  [
                                             "skill find_duplicates",
                                             "skill batch_rename",

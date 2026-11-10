@@ -2,7 +2,6 @@
 chcp 65001 >nul
 setlocal
 set "ROOT=%~dp0"
-
 echo.
 echo   Nafx
 echo   ----------------------------------------
@@ -26,11 +25,31 @@ if errorlevel 1 (
 )
 
 rem ---------- 3) 面板 ----------
-echo   [3/3] 启动面板...
-start "" /min powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%ROOT%monitor.ps1"
-timeout /t 3 >nul
-start "" "http://127.0.0.1:8090"
+rem 先看是不是已经开着了，别重复启动
+powershell -NoProfile -ExecutionPolicy Bypass -Command "if (Get-NetTCPConnection -LocalPort 8090 -State Listen -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"
+if errorlevel 1 (
+    echo   [3/3] 启动面板...
+    start "" /min powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%ROOT%monitor.ps1"
+) else (
+    echo   [3/3] 面板已在运行
+)
 
+rem 关键：轮询等面板真能打开再开浏览器。
+rem 以前这里写死 timeout /t 3，但面板要十几秒才监听，
+rem 结果浏览器打开是"无法访问"，用户以为坏了。
+echo   等面板就绪，最多 40 秒...
+powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "$ok=$false; for($i=0;$i -lt 40;$i++){ try{ $r=Invoke-WebRequest 'http://127.0.0.1:8090/' -UseBasicParsing -TimeoutSec 2; if($r.StatusCode -eq 200){$ok=$true;break} }catch{}; Start-Sleep -Seconds 1 }; if($ok){exit 0}else{exit 1}"
+if errorlevel 1 (
+    echo.
+    echo   [!] 面板没起来。
+    echo       可能是 8090 端口被占，或者 PowerShell 被安全软件拦了。
+    echo       单独跑 自检.bat 看具体原因。
+    echo.
+    pause
+    exit /b 1
+)
+
+start "" "http://127.0.0.1:8090"
 echo.
 echo   好了。
 echo.

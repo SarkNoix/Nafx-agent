@@ -700,6 +700,20 @@ if (-not [string]::IsNullOrWhiteSpace($personalPrompt)) {
     Write-Log ("  带上个人指令（" + $personalPrompt.Length + " 字符）")
 }
 
+
+# 任务太模糊时，硬性要求它先问一句。
+# 只靠提示词里的「信息不够就问」不管用——「帮我整理一下」这种，
+# 模型会看到流程模板里的 cheatsheet 就直接干了，最后做错方向。
+$vagueWords = @('整理', '清理', '处理', '弄一下', '搞一下', '收拾', '优化一下')
+$isVague = $false
+foreach ($vw in $vagueWords) { if ($TaskText -match [regex]::Escape($vw)) { $isVague = $true; break } }
+# 有具体路径或文件名，就说明用户说清楚了，不用问
+$hasTarget = ($TaskText -match '[A-Za-z0-9_\-\u4e00-\u9fa5]+\.(txt|md|log|csv|json|jsonl|xlsx|ps1|bat|zip)') -or
+             ($TaskText -match '(data|test|logs?|downloads?|桌面|文档|图片)\b')
+if ($isVague -and -not $hasTarget -and $TaskText.Length -lt 20) {
+    $sysFull = $sysFull + "`n`n## 这个任务没说清楚`n`n用户只说了「$TaskText」，没说对什么东西做。**你必须先用 say 问一句具体要处理哪个目录、按什么方式，问完等回答再动手。别自己挑一个做。**"
+    Write-Log ("  任务太模糊，要求它先问")
+}
 $history = @(@{ role = 'system'; content = $sysFull })
 foreach ($sm in $sessionMsgs) { $history += $sm }
 $history += @{ role = 'user'; content = "任务：$TaskText$wsSnapshot" }
