@@ -21,9 +21,19 @@ if ([string]::IsNullOrWhiteSpace($Out)) {
 }
 if ($Out -notmatch '\.zip$') { $Out = $Out + '.zip' }
 
-# 放在被压缩对象的同级目录
+# 放在被压缩对象的同级目录。
+# -Out 可能是"bak"这种文件名，也可能是"E:\x\bak.zip"完整路径。
+# 以前不管是哪种都 Join-Path 拼一次，传完整路径就会变成
+# "E:\x\E:\x\bak.zip" 这种非法路径，报 "The given path's format is not supported"。
 $parent = Split-Path -Parent $item.FullName
-$outPath = Join-Path $parent $Out
+if ([IO.Path]::IsPathRooted($Out)) {
+    $outPath = $Out
+    # 完整路径的话，保证父目录存在
+    $od = Split-Path -Parent $outPath
+    if ($od -and -not (Test-Path -LiteralPath $od)) { New-Item -ItemType Directory -Force -Path $od | Out-Null }
+} else {
+    $outPath = Join-Path $parent $Out
+}
 
 if (Test-Path -LiteralPath $outPath) {
     Write-Output "已经有同名的包了：$Out（先删掉或者换个名字）"

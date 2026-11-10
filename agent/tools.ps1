@@ -78,6 +78,25 @@ function Resolve-AiPath {
 
     # 系统关键位置：只准许读，不许写改删
     if (Test-IsProtectedPath $full) { return $full }
+    # ---- 路径自动纠正 ----
+    # 模型经常自己给文件名加目录前缀：任务说「sales.csv」，它调 data/sales.csv。
+    # 文件明明在 workspace 根下，它却报「不存在」，然后开始瞎找。
+    # 这里兜一下：原路径不存在时，去掉第一层目录再试一次。
+    if (-not (Test-Path -LiteralPath $full)) {
+        $rootFull2 = [IO.Path]::GetFullPath($script:AiRoot).TrimEnd('\')
+        if ($full.StartsWith($rootFull2 + '\', [StringComparison]::OrdinalIgnoreCase)) {
+            $relPart = $full.Substring($rootFull2.Length + 1)
+            $parts = $relPart -split '\\'
+            if ($parts.Count -ge 2) {
+                $rest = ($parts[1..($parts.Count - 1)] -join '\')
+                $candidate = Join-Path $rootFull2 $rest
+                if (Test-Path -LiteralPath $candidate) {
+                    [Console]::Error.WriteLine("  [路径纠正] $RelPath 不存在，已改用 $rest")
+                    return $candidate
+                }
+            }
+        }
+    }
     return $full
 }
 

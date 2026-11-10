@@ -14,7 +14,8 @@
                                     "unit_convert",
                                     "skill",
                                     "read_file",
-                                    "finish"
+                                    "finish",
+                                    "write_file"
                                 ],
                       "name":  "数数量 / 统计",
                       "match":  [
@@ -99,7 +100,10 @@
                                     "date_calc",
                                     "skill",
                                     "run_cmd",
-                                    "finish"
+                                    "finish",
+                                    "web_search",
+                                    "web_fetch",
+                                    "write_file"
                                 ],
                       "name":  "查东西 / 找某个值",
                       "match":  [
@@ -309,7 +313,8 @@
                                     "csv_preview",
                                     "zip_list",
                                     "run_cmd",
-                                    "finish"
+                                    "finish",
+                                    "write_file"
                                 ],
                       "name":  "格式转换",
                       "match":  [
@@ -364,13 +369,16 @@
                   {
                       "id":  "search",
                       "tools":  [
-                                    "skill",
+                                    "web_search",
+                                    "web_fetch",
                                     "grep_file",
+                                    "skill",
                                     "run_cmd",
                                     "list_dir",
                                     "read_file",
                                     "download_file",
-                                    "finish"
+                                    "finish",
+                                    "write_file"
                                 ],
                       "name":  "搜索 / 找关键词",
                       "match":  [
@@ -383,7 +391,13 @@
                                     "含有",
                                     "关键字",
                                     "有没有",
-                                    "出现过"
+                                    "出现过",
+                                    "上网",
+                                    "网上",
+                                    "搜一下",
+                                    "网上搜",
+                                    "百度",
+                                    "谷歌"
                                 ],
                       "goal":  "列出命中的文件和位置，没命中就明确说没找到",
                       "suggest_tools":  [
@@ -510,7 +524,8 @@
                                     "skill",
                                     "list_dir",
                                     "run_cmd",
-                                    "finish"
+                                    "finish",
+                                    "write_file"
                                 ],
                       "name":  "整理 / 批量处理",
                       "match":  [
@@ -638,7 +653,8 @@
                                     "now",
                                     "run_cmd",
                                     "run_ps",
-                                    "finish"
+                                    "finish",
+                                    "write_file"
                                 ],
                       "goal":  "拿到真实的系统数字，别猜、别用一堆命令行拼",
                       "cheatsheet":  [

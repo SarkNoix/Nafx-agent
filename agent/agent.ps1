@@ -680,7 +680,7 @@ try {
     } else {
         # 没匹配到流程：给一套常用工具，别把 32 个全发出去。
         # 之前这里发全部，一次「找所有 txt」光 prefill 就花了 105 秒。
-        $defaultTools = @('read_file', 'read_lines', 'grep_file', 'write_file', 'find_files', 'file_info', 'run_cmd', 'run_ps', 'sys_info', 'open_app', 'unit_convert', 'project_doc', 'skill', 'now', 'date_calc', 'finish')
+        $defaultTools = @('read_file', 'read_lines', 'grep_file', 'write_file', 'find_files', 'file_info', 'run_cmd', 'run_ps', 'web_search', 'web_fetch', 'sys_info', 'open_app', 'unit_convert', 'project_doc', 'skill', 'now', 'date_calc', 'finish')
         $script:ActiveFlowToolCount = $defaultTools.Count
         $dflt = Get-ToolsJsonWithFinish -Names $defaultTools
         if ($dflt -and $dflt.Length -gt 100) {

@@ -27,7 +27,7 @@ $archives += @(Get-ChildItem -LiteralPath $root.FullName -File -ErrorAction Sile
 $archives = @($archives | Sort-Object FullName -Unique)
 
 if ($archives.Count -eq 0) {
-    Write-Output "没有找到压缩包（找的是 " + ($exts -join ' ') + "）"
+    Write-Output ("没有找到压缩包（找的是 " + ($exts -join ' ') + "）")
     exit 0
 }
 
