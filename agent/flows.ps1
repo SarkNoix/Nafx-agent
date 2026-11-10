@@ -39,14 +39,19 @@ function Get-Flow {
 
     $best = $null
     $bestScore = 0
+    $bestLen = 0
 
     foreach ($flow in $script:Flows) {
         $score = 0
+        $longest = 0
         foreach ($kw in @($flow.match)) {
             if (-not $kw) { continue }
             $k = ([string]$kw).ToLower()
             # 关键词整个出现在任务里，最强信号
-            if ($taskLower.Contains($k)) { $score += $k.Length * 2 }
+            if ($taskLower.Contains($k)) {
+                $score += $k.Length * 2
+                if ($k.Length -gt $longest) { $longest = $k.Length }
+            }
             else {
                 # 退一步：只比中文两字组。英文（json/csv 这类）必须整词出现才算，
                 # 否则 orders.jsonl 的 js/so/on 会让「变成json」凭空得分。
@@ -59,7 +64,14 @@ function Get-Flow {
                 if ($hit -ge 2) { $score += $hit }
             }
         }
-        if ($score -gt $bestScore) { $bestScore = $score; $best = $flow }
+        # 分数相同就比"命中的最长关键词"——词更长说明更具体。
+        # 不然「内存还剩多少」（count 的"多少" 4 分）会压过「内存」（system 也是 4 分），
+        # 只是因为它先被遍历到。
+        if ($score -gt $bestScore -or ($score -eq $bestScore -and $score -gt 0 -and $longest -gt $bestLen)) {
+            $bestScore = $score
+            $bestLen = $longest
+            $best = $flow
+        }
     }
 
     # 分数太低就当没匹配（避免乱套模板）

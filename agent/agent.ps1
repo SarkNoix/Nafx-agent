@@ -183,11 +183,17 @@ function Get-ToolsJsonFor {
 function Get-ToolsJsonWithFinish {
     param([string[]]$Names)
     $json = Get-ToolsJsonFor -Names $Names
-    if ($json -match '"name":"finish"') { return $json }
-    $finishSchema = $script:ToolSchemaMap['finish']
-    if (-not $finishSchema) { return $json }
-    if ($json -eq '[]') { return ('[' + $finishSchema + ']') }
-    return ($json.TrimEnd(']') + ',' + $finishSchema + ']')
+    # 通用工具：不管套哪个流程都得有，否则模型没法收尾、没法问人、没法重来。
+    # 以前只加了 finish，结果 say 和 rethink 永远发不出去——
+    # 信息不够时它只能瞎猜，走偏了也只能硬着头皮往下走。
+    foreach ($name in @('finish', 'say', 'rethink')) {
+        if ($json -match ('"name":"' + $name + '"')) { continue }
+        $sc = $script:ToolSchemaMap[$name]
+        if (-not $sc) { continue }
+        if ($json -eq '[]' -or [string]::IsNullOrWhiteSpace($json)) { $json = '[' + $sc + ']' }
+        else { $json = $json.TrimEnd(']') + ',' + $sc + ']' }
+    }
+    return $json
 }
 
 # ============================================================
@@ -662,7 +668,7 @@ try {
     } else {
         # 没匹配到流程：给一套常用工具，别把 32 个全发出去。
         # 之前这里发全部，一次「找所有 txt」光 prefill 就花了 105 秒。
-        $defaultTools = @('read_file', 'write_file', 'list_dir', 'find_files', 'file_info', 'run_cmd', 'skill', 'now', 'date_calc', 'finish')
+        $defaultTools = @('read_file', 'read_lines', 'grep_file', 'write_file', 'find_files', 'file_info', 'run_cmd', 'run_ps', 'sys_info', 'skill', 'now', 'date_calc', 'finish')
         $dflt = Get-ToolsJsonWithFinish -Names $defaultTools
         if ($dflt -and $dflt.Length -gt 100) {
             $toolsJson = $dflt
