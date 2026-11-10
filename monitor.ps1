@@ -757,6 +757,27 @@ while ($listener.IsListening) {
                     }
                 }
 
+                '/api/tools' {
+                    # 面板的工具列表。以前是硬编码在前端的，加了新工具就看不到。
+                    # 现在直接读 tools-schema.json，加几个就显示几个。
+                    $toolsPath = Join-Path $Root 'agent\tools-schema.json'
+                    $list = New-Object System.Collections.ArrayList
+                    if (Test-Path $toolsPath) {
+                        try {
+                            $arr = Get-Content $toolsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                            foreach ($tool in @($arr)) {
+                                $fn = $tool.function
+                                if (-not $fn -or -not $fn.name) { continue }
+                                [void]$list.Add([pscustomobject]@{
+                                    name = [string]$fn.name
+                                    desc = [string]$fn.description
+                                })
+                            }
+                        } catch { }
+                    }
+                    Send-Text -Response $resp -Text (ConvertTo-Json -InputObject $list.ToArray() -Depth 4 -Compress)
+                }
+
                 '/api/files' {
                     # 工作区文件清单，给面板左侧的文件栏用
                     $wsFull = if ([IO.Path]::IsPathRooted([string]$Cfg.workspace)) { [string]$Cfg.workspace } else { Join-Path $Root ([string]$Cfg.workspace) }

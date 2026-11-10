@@ -267,6 +267,7 @@ main{position:relative;z-index:1;flex:1;display:flex;min-height:0}
 .tool-chip:hover{border-color:var(--accent);background:var(--panel3)}
 .tool-chip:active{transform:scale(.96)}
 .tool-group{font-size:10px;color:var(--faint);margin:9px 0 4px;letter-spacing:.5px}
+.tool-group .tg-cnt{font-style:normal;font-size:10px;color:var(--faint);margin-left:4px;font-weight:400}
 .side-actions{display:flex;flex-direction:column;gap:7px;margin-top:auto;
   padding-top:14px;border-top:1px solid var(--line)}
 .side-actions button{width:100%;text-align:left;padding:8px 11px;font-size:12.5px}
@@ -1121,56 +1122,83 @@ function loadFiles(){
 }
 
 /* ---------- 工具词 ---------- */
-var TOOLS = [
-  { g:'文件', items:[
-    ['write_file','写文件','write_file(path="x.txt", content="内容")'],
-    ['read_file','读文件','read_file(path="x.txt")'],
-    ['list_dir','列目录','list_dir(path=".")'],
-    ['append_file','追加','append_file(path="x.txt", content="追加内容")'],
-    ['replace_in_file','替换','replace_in_file(path="x.txt", find="原文", replace="新文")'],
-    ['make_dir','建目录','make_dir(path="mydir")'],
-    ['delete_path','删除','delete_path(path="x.txt")']
-  ]},
-  { g:'执行', items:[
-    ['run_cmd','跑命令','run_cmd(command="dir /b")'],
-    ['run_ps1','跑脚本','run_ps1(path="x.ps1")'],
-    ['run_bat','跑bat','run_bat(path="x.bat")']
-  ]},
-  { g:'系统', items:[
-    ['unzip','解压','unzip(path="x.zip", command="解压到哪")'],
-    ['ps','看进程','ps(command="")'],
-    ['install','装软件','install(command="search 软件名")']
-  ]},
-  { g:'查询', items:[
-    ['syshelp','查参数','syshelp(command="robocopy")'],
-    ['help','查手册','help(command="write_file")'],
-    ['win_doc','官方文档','win_doc(command="robocopy")'],
-    ['web_search','搜索','web_search(command="关键词")']
-  ]},
-  { g:'流程', items:[
-    ['plan','列清单','plan(steps="第一步\n第二步")'],
-    ['say','问用户','say(message="请确认...")'],
-    ['finish','收尾','finish(answer="做完了")']
-  ]}
+/* 工具分组：只定分组顺序，具体有哪些工具从 /api/tools 实时拉。
+   没列在这里的工具会归到「其他」——这样以后加工具不用改前端。 */
+var TOOL_GROUPS = [
+  { g:'文件', names:['write_file','read_file','read_lines','list_dir','append_file','replace_in_file','set_line','make_dir','delete_path','move_path','copy_path','file_info','find_files','hash_file','zip_list','unzip'] },
+  { g:'查找', names:['grep_file','search_text'] },
+  { g:'执行', names:['run_cmd','run_ps','run_ps1','run_bat','run_js','run_python'] },
+  { g:'系统', names:['sys_info','ps','kill_process','open_app','clipboard','env_get','install','now','date_calc','unit_convert'] },
+  { g:'数据', names:['skill','write_skill','json_format','csv_preview'] },
+  { g:'网络', names:['web_search','web_fetch','download_file'] },
+  { g:'查询', names:['syshelp','help','win_doc','project_doc'] },
+  { g:'流程', names:['plan','say','rethink','learn','finish'] }
 ];
 
+/* 工具全量，从后端拉 */
+var ALL_TOOLS = [];
+var toolSig = '';
+
+function loadTools(){
+  fetch('/api/tools?t=' + Date.now())
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(list){
+      if (!list || !list.length) return;
+      var sig = list.map(function(x){ return x.name; }).join(',');
+      if (sig === toolSig) return;
+      toolSig = sig;
+      ALL_TOOLS = list;
+      renderTools();
+    })
+    .catch(function(){});
+}
+
 function renderTools(){
+  var box = $('toolBox');
+  if (!box) return;
+  if (!ALL_TOOLS.length) { box.innerHTML = '<div class="sys-note" style="margin:0">加载中…</div>'; return; }
+
+  // 名字 -> 描述
+  var descMap = {};
+  for (var i=0;i<ALL_TOOLS.length;i++){ descMap[ALL_TOOLS[i].name] = ALL_TOOLS[i].desc || ''; }
+
+  // 已经被分组的工具
+  var used = {};
   var html = '';
-  for (var i=0;i<TOOLS.length;i++){
-    var g = TOOLS[i];
-    html += '<div class="tool-group">' + g.g + '</div><div class="tools-grid">';
-    for (var j=0;j<g.items.length;j++){
-      var it = g.items[j];
-      html += '<div class="tool-chip" data-code="' + esc(it[2]) + '" title="' + esc(it[1]) + '">' + it[0] + '</div>';
+  for (var g=0; g<TOOL_GROUPS.length; g++){
+    var grp = TOOL_GROUPS[g];
+    var names = [];
+    for (var n=0; n<grp.names.length; n++){
+      if (descMap[grp.names[n]] !== undefined) { names.push(grp.names[n]); used[grp.names[n]] = 1; }
+    }
+    if (!names.length) continue;
+    html += '<div class="tool-group">' + esc(grp.g) + ' <i class="tg-cnt">' + names.length + '</i></div><div class="tools-grid">';
+    for (var k=0; k<names.length; k++){
+      var nm = names[k];
+      html += '<div class="tool-chip" data-code="' + esc(nm) + '" title="' + esc(descMap[nm]) + '">' + esc(nm) + '</div>';
     }
     html += '</div>';
   }
-  $('toolBox').innerHTML = html;
-  var chips = $('toolBox').querySelectorAll('.tool-chip');
-  for (var k=0;k<chips.length;k++){
-    (function(c){
-      c.onclick = function(){ copyText(c.getAttribute('data-code')); };
-    })(chips[k]);
+
+  // 没分到组的工具，全丢进「其他」——以后加新工具不用改这里
+  var rest = [];
+  for (var i2=0;i2<ALL_TOOLS.length;i2++){
+    var nm2 = ALL_TOOLS[i2].name;
+    if (!used[nm2]) rest.push(nm2);
+  }
+  if (rest.length){
+    html += '<div class="tool-group">其他 <i class="tg-cnt">' + rest.length + '</i></div><div class="tools-grid">';
+    for (var r=0;r<rest.length;r++){
+      html += '<div class="tool-chip" data-code="' + esc(rest[r]) + '" title="' + esc(descMap[rest[r]]) + '">' + esc(rest[r]) + '</div>';
+    }
+    html += '</div>';
+  }
+
+  html += '<div class="sys-note" style="margin:6px 0 0">共 ' + ALL_TOOLS.length + ' 个工具，点一下复制名字</div>';
+  box.innerHTML = html;
+  var chips = box.querySelectorAll('.tool-chip');
+  for (var c=0;c<chips.length;c++){
+    (function(ch){ ch.onclick = function(){ copyText(ch.getAttribute('data-code')); }; })(chips[c]);
   }
 }
 
@@ -1566,6 +1594,7 @@ function tick(){
       var st = res[0], sys = res[1], sess = res[2];
       if (sys) { renderSystem(sys, st); window.__lastSys = sys; }
       renderFlow(sess, st);
+      loadTools();
       loadFiles();
       checkAsk();
       var busy = (st && st.status === 'running');
@@ -2195,7 +2224,7 @@ function bindChips(){
 }
 
 /* ---------- 启动 ---------- */
-renderTools();
+loadTools();
 thread.innerHTML = emptyHtml();
 bindChips();
 loadFiles();
