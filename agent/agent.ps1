@@ -1129,6 +1129,51 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
     Write-Log ("  [{0}] {1} -> {2} {3}  ({4} tok / {5:N1}s)" -f $step, $think, $toolName, $stepArg, $res.tokens, $res.seconds)
     Write-Log ("      观察：$obs`n")
 
+    # ---- 防绕圈（按工具名，不看参数）----
+    # 原来的判重是 "工具名|参数"，模型换个参数就绕过去了：
+    # list_dir . → list_dir ./ → run_cmd dir → find_files . ，repeatCount 一直是 0，
+    # 最后跑到 maxsteps 才停（实测「列出当前目录有哪些文件」跑了 311 秒）。
+    $recentTools = @($state.steps | Select-Object -Last 5 | ForEach-Object { [string]$_.tool })
+    $sameToolCount = @($recentTools | Where-Object { $_ -eq $toolName }).Count
+    if ($sameToolCount -ge 2) {
+        $history += @{ role = 'user'; content = "你已经调了 $($sameToolCount + 1) 次 $toolName（参数可能不一样）。**别再用这个工具了**——结果就在上面的观察里，现在调 finish 把答案说出来。" }
+        Write-Log ("  [绕圈] $toolName 已连续 $($sameToolCount + 1) 次")
+    }
+    # 连着 4 次同名工具，直接用已有结果收尾，别再烧步数
+    if ($sameToolCount -ge 3) {
+        $finalObs = ($obs -split "`n" | Where-Object { $_.Trim() } | Select-Object -First 8) -join '；'
+        $state.status = 'done'
+        $state.answer = if ($finalObs) { $finalObs } else { '没能完成这个任务' }
+        $state.elapsed = $clock.Elapsed.TotalSeconds
+        $state.summary = $state.answer
+        Write-State $state
+        Write-Log ("  同一个工具叫了 " + ($sameToolCount + 1) + " 次，强制收尾")
+        Write-Closing -State $state -Status 'done' -Summary $state.summary -StepCount $step
+        $finished = $true
+        break
+    }
+
+    # ---- 只读工具连着 5 步，也当绕圈 ----
+    # 光看目录/读文件不产生新信息，再读下去也是白烧
+    $readOnlyTools = @('list_dir', 'read_file', 'read_lines', 'grep_file', 'find_files', 'file_info')
+    $lastFive = @($state.steps | Select-Object -Last 5)
+    if ($lastFive.Count -ge 5) {
+        $allRead = $true
+        foreach ($st0 in $lastFive) { if ($readOnlyTools -notcontains [string]$st0.tool) { $allRead = $false; break } }
+        if ($allRead) {
+            $finalObs2 = ($obs -split "`n" | Where-Object { $_.Trim() } | Select-Object -First 8) -join '；'
+            $state.status = 'done'
+            $state.answer = if ($finalObs2) { $finalObs2 } else { '没能完成这个任务' }
+            $state.elapsed = $clock.Elapsed.TotalSeconds
+            $state.summary = $state.answer
+            Write-State $state
+            Write-Log '  连续 5 步只读操作，强制收尾'
+            Write-Closing -State $state -Status 'done' -Summary $state.summary -StepCount $step
+            $finished = $true
+            break
+        }
+    }
+
     # 同一个动作连着做 = 它绕进去了。下一轮强制它 finish，别再耗步数。
     $toolKey = $toolName + '|' + [string]$call.arguments
     if ($toolKey -eq $lastToolKey) { $repeatCount++ } else { $repeatCount = 0; $lastToolKey = $toolKey }

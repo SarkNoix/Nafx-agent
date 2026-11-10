@@ -833,6 +833,44 @@ function Invoke-AiTool {
                 }
             }
 
+
+            'write_script' {
+                # 一次调用干三件事：写脚本 → 运行 → 返回输出。
+                # 为什么要有这个：一个「写脚本统计行数然后运行」的任务，
+                # 拆成 write_file + run_ps1 两步，4B 模型经常在中间绕圈（实测 210 秒 maxsteps）。
+                # 合并成一步，它就没机会迷路。
+                $full = Resolve-AiPath $Action.path
+                Assert-CanWrite -Full $full -RelPath ([string]$Action.path)
+                if ($full -notmatch '\.ps1$') { throw 'path 要以 .ps1 结尾' }
+                $content = [string]$Action.content
+                if ([string]::IsNullOrWhiteSpace($content)) { throw 'content 里填脚本内容' }
+                $dir = Split-Path $full -Parent
+                if ($dir -and -not (Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
+                Write-AiFileText $full $content
+                # 立刻运行，参数放在 command 里（可留空）
+                $runArgs = [string]$Action.command
+                $argList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $full)
+                if (-not [string]::IsNullOrWhiteSpace($runArgs)) { $argList += ($runArgs -split '\s+') }
+                $sw = [Diagnostics.Stopwatch]::StartNew()
+                # 必须先把当前目录切到 workspace 再跑。
+                # 子进程继承父进程的 cwd，不切的话脚本里的相对路径全找不到
+                # （实测报 "Cannot find path ...\default-workspace\data\orders.jsonl"）。
+                $oldCwd = (Get-Location).Path
+                try {
+                    Set-Location -LiteralPath $script:AiRoot
+                    $out = & powershell.exe @argList 2>&1 | Out-String
+                } catch {
+                    $out = "运行出错：" + $_.Exception.Message
+                } finally {
+                    try { Set-Location -LiteralPath $oldCwd } catch { }
+                }
+                $sw.Stop()
+                $out = $out.Trim()
+                if ($out.Length -gt 2500) { $out = $out.Substring(0,2500) + "`n…（太长，只显示前 2500 字符）" }
+                $relDisp = Get-RelDisplay $full
+                if ([string]::IsNullOrWhiteSpace($out)) { return "已写 $relDisp 并运行，没有输出（退出码 $LASTEXITCODE，耗时 $([math]::Round($sw.Elapsed.TotalSeconds,1)) 秒）" }
+                return "已写 $relDisp 并运行（退出码 $LASTEXITCODE，耗时 $([math]::Round($sw.Elapsed.TotalSeconds,1)) 秒）：`n--- 输出 ---`n$out"
+            }
             'write_skill' {
                 # 把一套做法写成技能说明（md），以后可以查。path 填技能名
                 $name = ([string]$Action.path).Trim()

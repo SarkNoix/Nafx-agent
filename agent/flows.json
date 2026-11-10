@@ -15,7 +15,8 @@
                                     "skill",
                                     "read_file",
                                     "finish",
-                                    "write_file"
+                                    "write_file",
+                                    "write_script"
                                 ],
                       "name":  "数数量 / 统计",
                       "match":  [
@@ -183,7 +184,8 @@
                                     "read_file",
                                     "make_dir",
                                     "finish",
-                                    "delete_path"
+                                    "delete_path",
+                                    "write_script"
                                 ],
                       "name":  "创建文件 / 写内容",
                       "match":  [
@@ -449,7 +451,8 @@
                                     "list_dir",
                                     "skill",
                                     "replace_in_file",
-                                    "finish"
+                                    "finish",
+                                    "write_script"
                                 ],
                       "name":  "写脚本 / 做工具",
                       "match":  [
@@ -528,7 +531,8 @@
                                     "finish",
                                     "write_file",
                                     "delete_path",
-                                    "make_dir"
+                                    "make_dir",
+                                    "write_script"
                                 ],
                       "name":  "整理 / 批量处理",
                       "match":  [
