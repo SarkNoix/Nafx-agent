@@ -706,6 +706,15 @@ $history += @{ role = 'user'; content = "任务：$TaskText$wsSnapshot" }
 
 Add-SessionTurn -Role 'user' -Content $TaskText -Ok $true
 
+# 清掉上一次可能残留的提问文件。
+# agent 正常结束时自己会删（下面 say 那段有 Remove-Item），
+# 但被 stop 或崩掉时就走不到了——那个 ask.json 留着，
+# 前端会一直显示"等你回答"，看起来像界面卡死。
+foreach ($stale in @('ask.json', 'answer.json')) {
+    $sp = Join-Path $AgentDir $stale
+    if (Test-Path $sp) { Remove-Item $sp -Force -ErrorAction SilentlyContinue }
+}
+
 $state = [pscustomobject]@{
     status    = 'running'
     task      = $TaskText
@@ -721,6 +730,8 @@ $state = [pscustomobject]@{
     logFile   = $logFile
     slot      = 1
     intent    = $intent
+    flow      = $(if ($script:ActiveFlow) { [string]$script:ActiveFlow.id } else { '' })
+    flowName  = $(if ($script:ActiveFlow) { [string]$script:ActiveFlow.name } else { '' })
     phase     = '准备'
 }
 Write-State $state
@@ -1078,7 +1089,7 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
     if (-not $stepArg) { $stepArg = [string]$act.command }
 
     $state.steps += @{ n = $step; think = $think; tool = $toolName; arg = $stepArg; ok = $ok
-                       note = (($obs -split "`n")[0]); raw = $res.raw_calls; obs = $obs; sec = $res.seconds }
+                       note = (($obs -split "`n")[0]); raw = $res.raw_calls; obs = $obs; sec = $res.seconds; tok = $res.tokens }
 
     if ($ok -and $planList.Count -gt 0) { $planList = Set-PlanStepDone -Plan $planList }
 

@@ -892,11 +892,13 @@ textarea::placeholder{color:var(--faint)}
     <div class="sys-row"><span>状态</span><span id="sysStatus">—</span></div>
     <div class="sys-row"><span>已走步数</span><span id="sysSteps">—</span></div>
     <div class="sys-row"><span>耗时</span><span id="sysElapsed">—</span></div>
+    <div class="sys-row"><span>速度</span><span id="sysSpeed">—</span></div>
     <div class="sys-row"><span>工具调用</span><span id="sysToolsUsed">—</span></div>
 
     <div class="sys-tit">模型</div>
     <div class="sys-row"><span>名称</span><span id="sysModel">—</span></div>
     <div class="sys-row"><span>工具数</span><span id="sysToolCount">—</span></div>
+    <div class="sys-row"><span>流程</span><span id="sysFlow">—</span></div>
     <div class="sys-row"><span>意图</span><span id="sysIntent">—</span></div>
 
     <div class="sys-tit">配置</div>
@@ -1305,12 +1307,12 @@ var lastCmdSig = '';
 var curAsk = null;
 var askPollTimer = null;
 
-function showAnswerBox(q, deadline){
+function showAnswerBox(q, deadline, qid){
   var box = $('answerBox');
   if (!box) return;
   box.className = 'answer-box on';
   $('answerQ').textContent = q;
-  curAsk = { question: q, deadline: deadline };
+  curAsk = { id: qid || '', question: q, deadline: deadline };
   var ta = $('answerInput');
   if (ta) { ta.value = ''; ta.focus(); }
   tickAnswerCd();
@@ -1343,10 +1345,10 @@ function checkAsk(){
         return;
       }
       // 新问题
-      if (!curAsk || curAsk.question !== a.question){
+      if (!curAsk || curAsk.question !== a.question || curAsk.id !== a.id){
         // 用秒数算截止时间
         var sec = parseInt(a.seconds || 60, 10);
-        showAnswerBox(a.question, Date.now() + sec * 1000);
+        showAnswerBox(a.question, Date.now() + sec * 1000, a.id);
       }
     })
     .catch(function(){});
@@ -1364,7 +1366,7 @@ function sendAnswer(){
   fetch('/api/answer', {
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ id: '', answer: v })
+    body: JSON.stringify({ id: (curAsk && curAsk.id) || '', answer: v })
   })
     .then(function(r){ return r.json(); })
     .then(function(j){
@@ -1951,8 +1953,22 @@ function refreshSys(){
     var uniq = {};
     var arr = st.steps || [];
     for (var i=0;i<arr.length;i++){ uniq[arr[i].tool] = 1; }
-    $('sysToolsUsed').textContent = arr.length + ' 次（' + Object.keys(uniq).length + ' 种）';
+    var names = Object.keys(uniq);
+    $('sysToolsUsed').textContent = arr.length ? (arr.length + ' 次：' + names.join(', ')) : '—';
+    // 速度：把所有步骤的 token 和秒数加起来
+    var totTok = 0, totSec = 0;
+    for (var t2=0; t2<arr.length; t2++){
+      totTok += (arr[t2].tok || 0);
+      totSec += (arr[t2].sec || 0);
+    }
+    if ($('sysSpeed')) {
+      $('sysSpeed').textContent = totSec > 0.5 ? (Math.round(totTok / totSec * 10) / 10) + ' tok/s（' + totTok + ' tok）' : '—';
+    }
     $('sysIntent').textContent = INTENT_TEXT[st.intent] || st.intent || '—';
+    if ($('sysFlow')) {
+      var fname = st.flowName || st.flow || '';
+      $('sysFlow').textContent = fname ? (st.flow ? fname + ' (' + st.flow + ')' : fname) : '通用（没匹配流程）';
+    }
   } else {
     $('sysStatus').textContent = '空闲';
   }

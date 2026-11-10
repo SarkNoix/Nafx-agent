@@ -487,13 +487,31 @@ while ($listener.IsListening) {
                 }
 
                 '/api/ask' {
-                    # 面板读当前有没有在等回答
+                    # 面板读当前有没有在等回答。
+                    # 必须检查 deadline：ask.json 没人删的话，前端会永远显示
+                    # 「等你回答」那个框，用户就以为界面卡死了。
                     $askPath = Join-Path $Root 'agent\ask.json'
                     if (Test-Path $askPath) {
                         try {
                             $raw = [IO.File]::ReadAllText($askPath, [Text.Encoding]::UTF8)
-                            Send-Text -Response $resp -Text $raw
-                            break
+                            $aj = $raw | ConvertFrom-Json
+                            $expired = $false
+                            if ($aj.deadline) {
+                                try {
+                                    $dl = [datetime]::ParseExact([string]$aj.deadline, 'HH:mm:ss', $null)
+                                    if ($dl -lt (Get-Date).Date) { $dl = $dl.AddDays(1) }
+                                    if ((Get-Date) -gt $dl) { $expired = $true }
+                                } catch { }
+                            }
+                            if (-not $expired) {
+                                $age = ((Get-Date) - (Get-Item $askPath).LastWriteTime).TotalSeconds
+                                if ($age -gt 180) { $expired = $true }
+                            }
+                            if (-not $expired) {
+                                Send-Text -Response $resp -Text $raw
+                                break
+                            }
+                            Remove-Item $askPath -Force -ErrorAction SilentlyContinue
                         } catch { }
                     }
                     Send-Text -Response $resp -Text '{"id":"","question":""}'
@@ -507,6 +525,12 @@ while ($listener.IsListening) {
                         try { $Workers[$slot] | Stop-Process -Force -ErrorAction SilentlyContinue; $n++ } catch { }
                     }
                     $Workers.Clear()
+
+                    # 强停时也把提问文件清掉，否则前端会一直显示"等你回答"
+                    foreach ($f2 in @('ask.json', 'answer.json')) {
+                        $fp = Join-Path $Root ('agent\' + $f2)
+                        if (Test-Path $fp) { Remove-Item $fp -Force -ErrorAction SilentlyContinue }
+                    }
                     $items = Get-Queue
                     foreach ($it in $items) {
                         if ($it.status -eq 'running') {
