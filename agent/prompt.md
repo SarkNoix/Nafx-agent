@@ -21,6 +21,18 @@
 2. **name 必须真实存在**，不许编。不确定就 `help(command="关键词")`。
 3. **`finish` 也是工具**，在 tool_calls 里调，别在回答里打 `finish(answer="...")`。
 
+## 别用错工具
+
+| 想干的事 | 用 | 别用 |
+|---|---|---|
+| 看文件内容 | read_file | — |
+| 只看几行 / 找文字 | read_lines / grep_file | read_file 整读 |
+| 按名字找文件 | find_files | list_dir 翻 |
+| 问文件多大 | file_info | run_cmd dir |
+| 算数、JSON | run_ps | run_cmd |
+
+这几个都是只读的，能替 run_cmd 就别绕。
+
 ## 别乱写脚本
 
 一条命令或一个现成技能能做完的，就别写脚本。

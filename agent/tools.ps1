@@ -433,6 +433,98 @@ function Invoke-AiTool {
                 return $sb.ToString()
             }
 
+            # ---------- 只读辅助（算哈希、分段读、看系统、剪贴板） ----------
+
+            'hash_file' {
+                # 算文件哈希。用来判断两个文件是不是一模一样（比逐字节快）
+                $full = Resolve-AiPath $Action.path
+                if (-not (Test-Path $full)) { throw "不存在：$($Action.path)" }
+                if (Test-Path $full -PathType Container) { throw "$($Action.path) 是目录。算目录里所有文件的哈希用 skill(find_duplicates)" }
+                $algo = [string]$Action.command
+                if ([string]::IsNullOrWhiteSpace($algo)) { $algo = 'sha256' }
+                $algo = $algo.Trim().ToUpperInvariant().Replace('-','')
+                if ($algo -notin @('MD5','SHA1','SHA256')) { $algo = 'SHA256' }
+                $h = (Get-FileHash -LiteralPath $full -Algorithm $algo).Hash.ToLowerInvariant()
+                $sz = (Get-Item -LiteralPath $full).Length
+                return "$algo $(Get-RelDisplay $full)`n  $h`n  大小 $sz 字节"
+            }
+
+            'read_lines' {
+                # 按行号范围读。大文件用这个分段看，比 read_file 截断后瞎猜好
+                $full = Resolve-AiPath $Action.path
+                if (-not (Test-Path $full)) { throw "文件不存在：$($Action.path)" }
+                if (Test-Path $full -PathType Container) { throw "$($Action.path) 是目录，不是文件" }
+                $from = 1
+                $tryFrom = 0
+                if ([int]::TryParse([string]$Action.command, [ref]$tryFrom) -and $tryFrom -gt 0) { $from = $tryFrom }
+                $cnt = 40
+                $tryCnt = 0
+                if ([int]::TryParse([string]$Action.content, [ref]$tryCnt) -and $tryCnt -gt 0) { $cnt = [Math]::Min($tryCnt, 200) }
+                $all = @([IO.File]::ReadAllLines($full))
+                if ($from -gt $all.Count) { throw "文件只有 $($all.Count) 行，第 $from 行不存在" }
+                $to = [Math]::Min($all.Count, $from + $cnt - 1)
+                $sb = New-Object System.Text.StringBuilder
+                [void]$sb.AppendLine("$(Get-RelDisplay $full) 第 $from-$to 行（共 $($all.Count) 行）：")
+                [void]$sb.AppendLine('')
+                for ($i = $from - 1; $i -lt $to; $i++) {
+                    $ln = $all[$i]
+                    if ($ln.Length -gt 160) { $ln = $ln.Substring(0,160) + '…' }
+                    [void]$sb.AppendLine(("$($i+1): " + $ln))
+                }
+                if ($to -lt $all.Count) { [void]$sb.AppendLine("") ; [void]$sb.AppendLine("（还有 $($all.Count - $to) 行，接着读用 command=" + ($to+1) + "）") }
+                return $sb.ToString()
+            }
+
+            'sys_info' {
+                # 看本机硬件。command 填 cpu / mem / disk / all（默认 all）
+                $what = [string]$Action.command
+                if ([string]::IsNullOrWhiteSpace($what)) { $what = 'all' }
+                $what = $what.Trim().ToLowerInvariant()
+                $sb = New-Object System.Text.StringBuilder
+                if ($what -in @('all','cpu')) {
+                    $cpu = Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue
+                    if ($cpu) {
+                        [void]$sb.AppendLine("CPU  $($cpu.Name)")
+                        [void]$sb.AppendLine("     $($cpu.NumberOfCores) 物理核 / $($cpu.NumberOfLogicalProcessors) 逻辑核")
+                    }
+                }
+                if ($what -in @('all','mem')) {
+                    $os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
+                    if ($os) {
+                        $t = [math]::Round($os.TotalVisibleMemorySize/1MB,2)
+                        $f2 = [math]::Round($os.FreePhysicalMemory/1MB,2)
+                        [void]$sb.AppendLine("内存  共 $t GB，可用 $f2 GB")
+                    }
+                }
+                if ($what -in @('all','disk')) {
+                    foreach ($d in (Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' -ErrorAction SilentlyContinue)) {
+                        $sz = [math]::Round($d.Size/1GB,1)
+                        $fr = [math]::Round($d.FreeSpace/1GB,1)
+                        [void]$sb.AppendLine("磁盘  $($d.DeviceID) 共 $sz GB，可用 $fr GB")
+                    }
+                }
+                if ($sb.Length -eq 0) { return "不认识 $what，能填 cpu / mem / disk / all" }
+                return $sb.ToString().TrimEnd()
+            }
+
+            'clipboard' {
+                # 读写剪贴板。command 填 get 或 set；set 时正文放 content
+                $op = ([string]$Action.command).Trim().ToLowerInvariant()
+                if ($op -eq 'set') {
+                    $txt = [string]$Action.content
+                    if ([string]::IsNullOrEmpty($txt)) { throw 'command 填 set 时要给 content' }
+                    Set-Clipboard -Value $txt
+                    return "已放进剪贴板（$($txt.Length) 字符）"
+                }
+                if ($op -eq 'get' -or [string]::IsNullOrWhiteSpace($op)) {
+                    $cur = Get-Clipboard -Raw -ErrorAction SilentlyContinue
+                    if ([string]::IsNullOrWhiteSpace($cur)) { return '剪贴板是空的' }
+                    if ($cur.Length -gt 2000) { $cur = $cur.Substring(0,2000) + '…' }
+                    return "剪贴板内容：`n$cur"
+                }
+                throw "command 只能填 get 或 set，收到：$op"
+            }
+
             'replace_in_file' {
                 $full = Resolve-AiPath $Action.path
                 Assert-CanWrite -Full $full -RelPath ([string]$Action.path)

@@ -28,9 +28,14 @@ function Get-Flow {
 
     $taskLower = $Task.ToLower()
 
-    # 中文没空格，用两字组合来对
+    # 中文没空格，用两字组合来对。
+    # 但只收纯中文的两字组 —— 英文的碎片会捣乱：
+    #   "orders.jsonl" 里有 js/so/on，会把 "变成json" 这种关键词误判成命中。
     $bigrams = @()
-    for ($i = 0; $i -lt $taskLower.Length - 1; $i++) { $bigrams += $taskLower.Substring($i, 2) }
+    for ($i = 0; $i -lt $taskLower.Length - 1; $i++) {
+        $bg = $taskLower.Substring($i, 2)
+        if ($bg -match '^[\u4e00-\u9fa5]{2}$') { $bigrams += $bg }
+    }
 
     $best = $null
     $bestScore = 0
@@ -43,10 +48,12 @@ function Get-Flow {
             # 关键词整个出现在任务里，最强信号
             if ($taskLower.Contains($k)) { $score += $k.Length * 2 }
             else {
-                # 退一步：两字组重合
+                # 退一步：只比中文两字组。英文（json/csv 这类）必须整词出现才算，
+                # 否则 orders.jsonl 的 js/so/on 会让「变成json」凭空得分。
                 $hit = 0
                 for ($bi = 0; $bi -lt $k.Length - 1; $bi++) {
                     $bg = $k.Substring($bi, 2)
+                    if ($bg -notmatch '^[\u4e00-\u9fa5]{2}$') { continue }
                     if ($bigrams -contains $bg) { $hit++ }
                 }
                 if ($hit -ge 2) { $score += $hit }
