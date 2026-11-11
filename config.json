@@ -11,7 +11,7 @@
     "_端口说明":  "port 是模型服务，monitorPort 是面板。被占用时改这两个数字。",
     "threads":  8,
     "_threads说明":  "用几个 CPU 核心。0 = 自动（按核心数决定）。手动设可以试试 4 / 6 / 8。",
-    "context": 6144,
+    "context":  6144,
     "_context说明":  "上下文长度（token）。越大能记住越多，但吃内存也越慢。4B 建议 8192，7B 建议 4096，内存紧就往下调。",
     "maxTokens":  600,
     "_maxTokens说明":  "单步最多生成多少 token。太小会截断工具调用，太大会变慢。600-800 比较稳。",
@@ -43,8 +43,8 @@
                          "extraArgs":  ""
                      },
     "_modelProfile说明":  "模型相关的启动参数。换模型如果跑不起来，先看这里。chatTemplate: jinja=用模型的对话模板(多数模型)；none=不用。reasoning: on/off Qwen3 系才有。extraArgs: 额外参数，比如 \"--no-mmap -fa\"",
-    "kvCacheTypeK": "f16",
-    "kvCacheTypeV": "f16",
-    "flashAttn": "auto",
+    "kvCacheTypeK":  "f16",
+    "kvCacheTypeV":  "f16",
+    "flashAttn":  "auto",
     "_内存说明":  "KV缓存量化：把注意力缓存从 fp16 压到 8bit/4bit，同样内存能装 2-4 倍的上下文。kvCacheTypeK/V 可选 f16(不压)/q8_0/q4_0，内存紧就用 q4_0。flashAttn 量化时建议开。改完重启生效。"
 }

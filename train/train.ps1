@@ -96,10 +96,18 @@ function Restore-WorkspaceConfig {
 }
 
 function Set-SandboxWorkspace {
+    # 不再改 config.json！
+    # 以前是直接改 config.json 的 workspace 指向沙箱，靠 Register-EngineEvent 还原。
+    # 但那个事件在 taskkill /F 时根本不触发，config 就永久留在沙箱上——
+    # 用户打开面板看到工作区只剩一个 data 目录，以为文件全没了。
+    # 现在改成：生成一份沙箱专用配置，让 agent 通过 NAFX_CONFIG 指向它。
+    # 这样 config.json 从头到尾一个字都不动。
     $c = Get-Content $CfgPath -Raw -Encoding UTF8 | ConvertFrom-Json
     $c.workspace = $script:SandboxPath
-    [IO.File]::WriteAllText($CfgPath, ($c | ConvertTo-Json -Depth 4), (New-Object Text.UTF8Encoding($false)))
-    $script:CfgSwapped = $true
+    $sandboxCfg = Join-Path $TrainDir 'sandbox-config.json'
+    [IO.File]::WriteAllText($sandboxCfg, ($c | ConvertTo-Json -Depth 10), (New-Object Text.UTF8Encoding($false)))
+    $env:NAFX_CONFIG = $sandboxCfg
+    $script:CfgSwapped = $false   # 没改原文件，不需要还原
 }
 
 # 无论正常结束、异常还是 Ctrl+C，都要还原
@@ -701,13 +709,18 @@ for ($round = 1; $round -le $Rounds; $round++) {
 }
 }
 finally {
-    # 不管正常跑完、报错还是被中断，都把 config 切回你的真实工作区
+    # 不管正常跑完、报错还是被中断，都收尾。
+    # 注意：现在不改 config.json 了，只清掉 NAFX_CONFIG 环境变量，
+    # 顺便删掉临时生成的 sandbox-config.json。
     Restore-WorkspaceConfig
+    if ($env:NAFX_CONFIG -and $env:NAFX_CONFIG -like '*sandbox-config*') { $env:NAFX_CONFIG = '' }
+    $sandboxCfg2 = Join-Path $TrainDir 'sandbox-config.json'
+    if (Test-Path $sandboxCfg2) { Remove-Item $sandboxCfg2 -Force -ErrorAction SilentlyContinue }
     $check = Get-Content $CfgPath -Raw -Encoding UTF8 | ConvertFrom-Json
     Say ''
-    Say ("  工作区已还原：{0}" -f $check.workspace) 'DarkCyan'
-    if ($check.workspace -ne $RealWorkspaceRel) {
-        Say ("  ！还原可能没成功，请手动检查 {0}" -f $CfgPath) 'Red'
+    Say ("  工作区：{0}（训练没动过 config.json）" -f $check.workspace) 'DarkCyan'
+    if ($check.workspace -match 'sandbox') {
+        Say ("  ！config 的 workspace 还指向沙箱，手动检查 {0}" -f $CfgPath) 'Red'
     }
 }
 
