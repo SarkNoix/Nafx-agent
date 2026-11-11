@@ -412,6 +412,18 @@ while ($listener.IsListening) {
                     Send-Bytes -Response $resp -Bytes (Get-HtmlBytes) -ContentType 'text/html; charset=utf-8'
                 }
 
+                '/editor' {
+                    # mod 编辑器。面板本身就在跑，复用它省一个进程——
+                    # 8 GB 内存下再起一个 PowerShell 经常申请不到内存（实测 8070 起不来）。
+                    # 这里直接吐 mod-editor.html，它要的 /api/config /tools /mods 面板都有。
+                    $edPath = Join-Path $Root 'mod-editor.html'
+                    if (Test-Path $edPath) {
+                        Send-Bytes -Response $resp -Bytes ([IO.File]::ReadAllBytes($edPath)) -ContentType 'text/html; charset=utf-8'
+                    } else {
+                        Send-Text -Response $resp -Text '{"ok":false,"msg":"找不到 mod-editor.html"}'
+                    }
+                }
+
                 '/api/state' {
                     $merged = Get-MergedState
                     Send-Text -Response $resp -Text ($merged | ConvertTo-Json -Depth 10 -Compress)

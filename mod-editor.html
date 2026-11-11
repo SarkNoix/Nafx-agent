@@ -223,7 +223,7 @@ async function loadTools() {
   if (!allTools.length) { box.innerHTML = '<span class="muted">没有工具</span>'; return; }
   let h = '';
   for (const t of allTools) {
-    const desc = (t.description || '').replace(/</g,'&lt;');
+    const desc = (t.description || t.desc || '').replace(/</g,'&lt;');
     h += '<div class="tool-item">';
     h += '<div class="tool-head">';
     h += '<input type="checkbox" data-tool-on="' + t.name + '" onchange="refreshPreview()">';

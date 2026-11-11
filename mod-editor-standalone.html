@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Nafx Mod 编辑器</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2128; --line:#30363d;
+    --fg:#e6edf3; --dim:#8b949e; --accent:#4a9eff; --ok:#3fb950; --warn:#d29922; --err:#f85149;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+       font:14px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  header{padding:14px 22px;border-bottom:1px solid var(--line);
+         display:flex;align-items:center;gap:14px;flex-wrap:wrap;background:var(--panel)}
+  h1{font-size:17px;margin:0;font-weight:600}
+  .sp{flex:1}
+  button{font:inherit;cursor:pointer;border-radius:6px;padding:7px 14px;
+         border:1px solid var(--line);background:var(--panel2);color:var(--fg);transition:.15s}
+  button:hover{background:#252c36;border-color:#484f58}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  button.primary:hover{background:#3a8ee6}
+  button.danger{color:var(--err)}
+  main{padding:18px 22px;max-width:1080px;margin:0 auto}
+  section{background:var(--panel);border:1px solid var(--line);border-radius:9px;
+          padding:16px 18px;margin-bottom:16px}
+  section h2{font-size:14px;margin:0 0 4px;font-weight:600;color:var(--accent)}
+  section .hint{font-size:12px;color:var(--dim);margin:0 0 14px}
+  label{display:block;font-size:12px;color:var(--dim);margin:10px 0 4px}
+  input[type=text],input[type=number],textarea,select{
+    width:100%;background:var(--bg);border:1px solid var(--line);border-radius:6px;
+    color:var(--fg);padding:8px 10px;font:inherit;font-family:ui-monospace,Consolas,monospace}
+  textarea{resize:vertical;min-height:80px}
+  input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+  .row{display:flex;align-items:center;gap:9px;margin:7px 0;font-size:13px}
+  .row input[type=checkbox]{width:15px;height:15px;accent-color:var(--accent)}
+  .tool-item{border:1px solid var(--line);border-radius:7px;padding:9px 11px;margin:7px 0;background:var(--panel2)}
+  .tool-head{display:flex;align-items:center;gap:9px;font-family:ui-monospace,Consolas,monospace;font-size:13px}
+  .tool-head input[type=text]{flex:1;font-size:12px;padding:5px 8px}
+  .doc-item{border:1px solid var(--line);border-radius:7px;padding:11px;margin:9px 0;background:var(--panel2)}
+  .muted{color:var(--dim);font-size:12px}
+  .tag{display:inline-block;padding:1px 7px;border-radius:4px;font-size:11px;
+       background:#21262d;color:var(--dim);border:1px solid var(--line)}
+  #toast{position:fixed;right:20px;bottom:20px;padding:11px 17px;border-radius:8px;
+         background:var(--panel2);border:1px solid var(--line);opacity:0;transform:translateY(8px);
+         transition:.25s;pointer-events:none;font-size:13px;max-width:380px}
+  #toast.show{opacity:1;transform:translateY(0)}
+  #toast.ok{border-color:var(--ok);color:var(--ok)}
+  #toast.err{border-color:var(--err);color:var(--err)}
+  pre{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:11px;
+      overflow:auto;max-height:280px;font-size:12px;margin:0}
+</style>
+<script>
+// ---- 内联数据（独立版：不依赖任何服务）----
+const INLINE_CONFIG = {
+    "_说明":  "改完这个文件要重启服务才生效。带「切换模型.bat」标记的建议用它自动改。",
+    "name":  "Nafx",
+    "model":  "models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+    "_model说明":  "模型文件路径。可以写相对路径（相对本文件）或绝对路径。换模型推荐用「切换模型.bat」，会自动处理上下文和内存。",
+    "modelLabel":  "Qwen3-4B-Instruct-2507",
+    "_modelLabel说明":  "显示在面板顶部的模型名字，随便写，不影响功能。",
+    "host":  "127.0.0.1",
+    "port":  8080,
+    "monitorPort":  8090,
+    "_端口说明":  "port 是模型服务，monitorPort 是面板。被占用时改这两个数字。",
+    "threads":  8,
+    "_threads说明":  "用几个 CPU 核心。0 = 自动（按核心数决定）。手动设可以试试 4 / 6 / 8。",
+    "context":  4096,
+    "_context说明":  "上下文长度（token）。越大能记住越多，但吃内存也越慢。4B 建议 8192，7B 建议 4096，内存紧就往下调。",
+    "maxTokens":  600,
+    "_maxTokens说明":  "单步最多生成多少 token。太小会截断工具调用，太大会变慢。600-800 比较稳。",
+    "maxSteps":  25,
+    "_maxSteps说明":  "一个任务最多走几步。给太大模型容易空转，给太小复杂任务做不完。30 比较合适。",
+    "workspace":  "workspace",
+    "_workspace说明":  "工作目录。模型默认只在这里面读写文件。",
+    "runTimeoutSeconds":  30,
+    "taskTimeoutSeconds":  1800,
+    "stepTimeoutSeconds":  240,
+    "_超时说明":  "单条命令 30 秒、整个任务 30 分钟、单步 180 秒。慢机器可以把 stepTimeoutSeconds 加大。",
+    "maxOutputChars":  800,
+    "_maxOutputChars说明":  "一次工具输出最多给模型看多少字符，超了截断。",
+    "temperature":  0.3,
+    "topP":  0.7,
+    "_采样说明":  "temperature 越低越死板稳定，越高越发散。干活建议 0.2-0.4。",
+    "loadMode":  "mmap",
+    "_loadMode说明":  "mmap = 边用边加载（省内存，启动快）；mlock = 全锁内存（快但吃内存）。内存够用 mlock。",
+    "allowAnyPath":  true,
+    "_allowAnyPath说明":  "true = 模型可以读写工作区以外的路径。自己用就开着，不放心就改 false。",
+    "allowGui":  true,
+    "allowAdmin":  false,
+    "_权限说明":  "allowGui = 能不能操作窗口；allowAdmin = 管理员权限（默认关，需要时在面板里开）。",
+    "parallel":  1,
+    "_parallel说明":  "同时跑几个任务。单机建议 1，否则模型会被抢。",
+    "modelProfile":  {
+                         "chatTemplate":  "jinja",
+                         "reasoning":  "off",
+                         "extraArgs":  ""
+                     },
+    "_modelProfile说明":  "模型相关的启动参数。换模型如果跑不起来，先看这里。chatTemplate: jinja=用模型的对话模板(多数模型)；none=不用。reasoning: on/off Qwen3 系才有。extraArgs: 额外参数，比如 \"--no-mmap -fa\"",
+    "kvCacheTypeK":  "f16",
+    "kvCacheTypeV":  "f16",
+    "flashAttn":  "auto",
+    "_内存说明":  "KV缓存量化：把注意力缓存从 fp16 压到 8bit/4bit，同样内存能装 2-4 倍的上下文。kvCacheTypeK/V 可选 f16(不压)/q8_0/q4_0，内存紧就用 q4_0。flashAttn 量化时建议开。改完重启生效。"
+};
+const INLINE_TOOLS  = [{"name":"write_file","description":"写文件。新建或整个覆盖。改某一行用 set_line，末尾追加用 append_file"},{"name":"read_file","description":"读文件内容。只看某几行用 read_lines，找关键词用 grep_file，都别用它硬读大文件"},{"name":"list_dir","description":"列目录。按名字找文件用 find_files，只数个数用 run_cmd，别用它翻大目录"},{"name":"hash_file","description":"算文件哈希。判断两个文件是否完全一样用这个，比 compare_files 更细"},{"name":"read_lines","description":"按行号范围读。大文件分段看用这个，别 read_file 整读（会截断）"},{"name":"sys_info","description":"看 CPU 核数、内存、磁盘空间。问机器配置用这个，别 run_cmd wmic"},{"name":"clipboard","description":"读写剪贴板。command 填 get 或 set；set 时正文放 content"},{"name":"now","description":"看当前日期和时间。问「今天几号」「现在几点」必须用它，别猜（模型不知道今天是什么日子）"},{"name":"zip_list","description":"不解压先看压缩包里有什么。支持 zip/docx/xlsx/pptx"},{"name":"diff_files","description":"两个文件逐行比，说清哪几行不一样。command 填第二个文件"},{"name":"json_format","description":"美化或压缩 JSON。command 填 pretty（缩进）或 compact（一行）"},{"name":"csv_preview","description":"先看 CSV 长什么样：列名 + 前几行。command 填看几行（默认 8）"},{"name":"date_calc","description":"算日期。command 填天数（3=三天后，-7=七天前）或日期（2024-01-01，算距今多少天）"},{"name":"download_file","description":"把网址上的文件下载到本地。path 填网址，command 填存到哪（留空用原文件名）"},{"name":"env_get","description":"看环境变量。command 填变量名（留空列常用的几个）"},{"name":"open_app","description":"打开程序或文件。command 填 notepad / calc / explorer / mspaint / taskmgr，或完整路径"},{"name":"kill_process","description":"结束进程。command 填进程名（如 notepad）或 PID。系统进程会被拒绝"},{"name":"run_python","description":"跑 Python。path 给 .py 文件，或 content 直接给代码。算复杂的东西比 PowerShell 顺手"},{"name":"write_script","description":"写 .ps1 脚本并立刻运行，一次调用就拿到输出。任务要「写脚本然后跑」时用这个，别拆成 write_file + run_ps1 两步"},{"name":"write_skill","description":"把一套做法写成技能说明文档，以后能查。path 填技能名，content 填 markdown 说明"},{"name":"project_doc","description":"查 Nafx 自己的文档：架构 / 工具 / 流程。command 填主题"},{"name":"unit_convert","description":"单位换算。command 写 100 km to miles、30 c to f、1 gb to mb"},{"name":"replace_in_file","description":"替换文件里的第一处原文。要换全部用 skill(replace_text)"},{"name":"set_line","description":"改第 N 行。整篇重写用 write_file，别用这个逐行改"},{"name":"append_file","description":"末尾追加"},{"name":"make_dir","description":"建目录"},{"name":"find_files","description":"按通配符找文件，递归，带大小。按名字找用这个，别用 list_dir 一个个翻"},{"name":"file_info","description":"看文件大小、修改时间、是否只读。问「多大」用这个，别 run_cmd dir"},{"name":"move_path","description":"移动或重命名文件和目录。目标路径填在 command"},{"name":"copy_path","description":"复制文件或目录。目标路径填在 command"},{"name":"grep_file","description":"在文件里搜关键词，返回行号和上下文。找内容用这个，别 read_file 整读"},{"name":"delete_path","description":"删除，不可逆"},{"name":"run_cmd","description":"跑一条 cmd 命令。一条命令能做完就别写脚本；要算数或对象改用 run_ps"},{"name":"run_ps","description":"跑 PowerShell 命令。要算数、处理对象、正则、JSON 用这个；普通文件操作别用它"},{"name":"run_ps1","description":"跑.ps1脚本"},{"name":"run_bat","description":"跑.bat脚本"},{"name":"run_js","description":"跑 .js 脚本（Windows 自带 JScript，不用装 Node）"},{"name":"skill","description":"现成技能。常见活儿（统计/找重复/转格式/求和/压缩）先来这儿找，别自己写。command 写 list 看全部"},{"name":"help","description":"查手册和工具详情"},{"name":"syshelp","description":"查命令参数"},{"name":"win_doc","description":"查微软官方文档"},{"name":"web_search","description":"搜索"},{"name":"web_fetch","description":"开网页"},{"name":"rethink","description":"走偏了重来。清空当前步骤，重新想"},{"name":"plan","description":"列任务清单"},{"name":"say","description":"问用户"},{"name":"learn","description":"记教训。path=任务关键词 find=踩的坑 replace=正确做法"},{"name":"unzip","description":"解压 zip/tar/gz/7z/rar"},{"name":"ps","description":"看进程。command 写 memory 或留空=按内存排序"},{"name":"install","description":"用winget装软件。command 写 search 关键词 只搜索"},{"name":"finish","description":"收尾并给答案。是工具不是文字，要在 tool_calls 里调"}];
+const INLINE_MODS   = [
+    {
+        "file":  "brief-mode.mod.json",
+        "id":  "brief-mode",
+        "name":  "极简模式",
+        "version":  "1.0",
+        "enabled":  true,
+        "hasPrompt":  true,
+        "docCount":  1,
+        "toolCount":  1,
+        "cfgCount":  1
+    },
+    {
+        "file":  "coder-mode.mod.json",
+        "id":  "coder-mode",
+        "name":  "程序员模式",
+        "version":  "1.0",
+        "enabled":  false,
+        "hasPrompt":  true,
+        "docCount":  1,
+        "toolCount":  1,
+        "cfgCount":  2
+    }
+];
+const STANDALONE = true;
+</script></head>
+<body>
+
+<header>
+  <h1>Nafx Mod 编辑器</h1>
+  <span class="tag">8070</span>
+  <div class="sp"></div>
+  <button onclick="loadExisting()">载入已有 mod</button>
+  <button onclick="resetAll()">清空</button>
+  <button onclick="refreshPreview()">刷新预览</button>
+  <button class="primary" onclick="downloadMod()">下载 mod 文件</button>
+</header>
+
+<main>
+
+<section>
+  <h2>它是怎么工作的</h2>
+  <p class="hint">
+    一个 mod 就是一个 <code>.mod.json</code> 文件。改完点右上角「下载 mod 文件」，
+    把下载到的东西放进 <code>E:\Nafx\mod\</code>，agent 下次运行时自动加载。
+    <br>不用重启模型，不用改任何源码。删掉文件就是卸载。
+  </p>
+</section>
+
+<section>
+  <h2>① 基本信息</h2>
+  <div class="grid3">
+    <div>
+      <label>id（英文，唯一）</label>
+      <input type="text" id="modId" placeholder="coder-mode">
+    </div>
+    <div>
+      <label>名字（面板上显示的）</label>
+      <input type="text" id="modName" placeholder="程序员模式">
+    </div>
+    <div>
+      <label>版本</label>
+      <input type="text" id="modVersion" value="1.0">
+    </div>
+  </div>
+  <div class="row" style="margin-top:12px">
+    <input type="checkbox" id="modEnabled" checked>
+    <label for="modEnabled" style="margin:0">启用（取消勾选就是停用这个 mod）</label>
+  </div>
+</section>
+
+<section>
+  <h2>② 改 Nafx 的配置</h2>
+  <p class="hint">
+    勾上才会写进 mod。注意：<b>context / maxTokens 改了要重启模型才生效</b>，
+    temperature / maxSteps 这类立即生效。
+  </p>
+  <div id="configList"></div>
+</section>
+
+<section>
+  <h2>③ 改工具</h2>
+  <p class="hint">
+    取消勾选 = 这个 mod 里禁用该工具。下面的输入框留空 = 不改描述，填了就替换。
+  </p>
+  <div id="toolList" class="muted">加载中…</div>
+</section>
+
+<section>
+  <h2>④ 人设 / 规则</h2>
+  <p class="hint">
+    这段文字会追加到系统提示词末尾。写「你是谁、怎么说话、什么必须做什么不许做」。
+  </p>
+  <textarea id="modPrompt" rows="7" placeholder="例如：&#10;你是我的编程助手，只在代码相关的事上发挥。&#10;改代码前先说清楚要改哪个文件、改什么。&#10;不许自己臆测文件内容，先读再改。"></textarea>
+</section>
+
+<section>
+  <h2>⑤ 补充文档（md）</h2>
+  <p class="hint">每份文档会跟着人设一起发给模型。适合放规范、术语表、项目背景。</p>
+  <div id="docList"></div>
+  <button onclick="addDoc()" style="margin-top:9px">+ 加一份文档</button>
+</section>
+
+<section>
+  <h2>⑥ 加载时执行的脚本</h2>
+  <p class="hint">
+    PowerShell 脚本，agent 每次启动时跑一次。能改环境变量、写文件、做初始化。
+    留空就不执行。
+  </p>
+  <textarea id="modScript" rows="5" placeholder="# 例如：&#10;$env:MY_MODE = 'coder'&#10;Write-Host 'coder-mode 已加载'"></textarea>
+</section>
+
+<section>
+  <h2>预览</h2>
+  <p class="hint">这是最终会被写进 <code>xxx.mod.json</code> 的内容。</p>
+  <pre id="preview">{}</pre>
+</section>
+
+</main>
+
+<div id="toast"></div>
+
+<script>
+let allTools = [];
+
+function toast(msg, kind) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'show ' + (kind || '');
+  clearTimeout(window._tt);
+  window._tt = setTimeout(() => { t.className = ''; }, 3200);
+}
+
+// 独立版：直接用内联数据；在线版：走 fetch
+const DATA = {
+  '/api/config': () => INLINE_CONFIG,
+  '/api/tools':  () => INLINE_TOOLS,
+  '/api/mods':   () => INLINE_MODS
+};
+
+async function jget(url) {
+  // 独立模式下不联网（file:// 下 fetch 也不允许）
+  if (typeof STANDALONE !== 'undefined' && STANDALONE && DATA[url]) {
+    return JSON.parse(JSON.stringify(DATA[url]()));
+  }
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return await r.json();
+}
+
+// ---------- 配置 ----------
+let cfgFields = [];
+async function loadConfig() {
+  const box = document.getElementById('configList');
+  let cfg = {};
+  try { cfg = await jget('/api/config'); } catch (e) {
+    box.innerHTML = '<span class="muted">读不到配置：' + e.message + '</span>';
+    return;
+  }
+  const keys = ['temperature','maxSteps','maxTokens','context','threads','stepTimeoutSeconds','personalPrompt','allowAdmin','loadMode'];
+  const labels = {
+    temperature:'temperature（越低越稳，0.1-0.4 适合干活）',
+    maxSteps:'maxSteps（最多几步，25 够用，复杂任务 40）',
+    maxTokens:'maxTokens（每次最多生成多少 token）',
+    context:'context（上下文窗口，改了要重启模型）',
+    threads:'threads（CPU 线程数）',
+    stepTimeoutSeconds:'stepTimeoutSeconds（单步超时秒数）',
+    personalPrompt:'personalPrompt（你的个人习惯，会拼进提示词）',
+    allowAdmin:'allowAdmin（是否允许管理员操作）',
+    loadMode:'loadMode（模型加载方式）'
+  };
+  cfgFields = keys.filter(k => cfg[k] !== undefined);
+  if (!cfgFields.length) { box.innerHTML = '<span class="muted">配置里没有可改的字段</span>'; return; }
+  let h = '';
+  for (const k of cfgFields) {
+    const v = cfg[k];
+    const isBool = (typeof v === 'boolean');
+    h += '<div class="row">';
+    h += '<input type="checkbox" data-cfg-on="' + k + '" onchange="refreshPreview()">';
+    h += '<span class="muted" style="min-width:300px">' + (labels[k] || k) + '</span>';
+    if (isBool) {
+      h += '<select data-cfg-val="' + k + '" style="width:120px" onchange="refreshPreview()">' +
+           '<option value="true"' + (v ? ' selected' : '') + '>true</option>' +
+           '<option value="false"' + (!v ? ' selected' : '') + '>false</option></select>';
+    } else {
+      h += '<input type="text" data-cfg-val="' + k + '" value="' + String(v).replace(/"/g,'&quot;') +
+           '" style="width:260px" onchange="refreshPreview()">';
+    }
+    h += '<span class="muted">当前 ' + JSON.stringify(v) + '</span>';
+    h += '</div>';
+  }
+  box.innerHTML = h;
+}
+
+// ---------- 工具 ----------
+async function loadTools() {
+  const box = document.getElementById('toolList');
+  try {
+    allTools = await jget('/api/tools');
+  } catch (e) {
+    box.innerHTML = '<span class="muted">读不到工具列表：' + e.message + '</span>';
+    return;
+  }
+  if (!allTools.length) { box.innerHTML = '<span class="muted">没有工具</span>'; return; }
+  let h = '';
+  for (const t of allTools) {
+    const desc = (t.description || '').replace(/</g,'&lt;');
+    h += '<div class="tool-item">';
+    h += '<div class="tool-head">';
+    h += '<input type="checkbox" data-tool-on="' + t.name + '" onchange="refreshPreview()">';
+    h += '<b>' + t.name + '</b>';
+    h += '<input type="text" data-tool-desc="' + t.name + '" placeholder="改描述（留空=不改）" onchange="refreshPreview()">';
+    h += '</div>';
+    h += '<div class="muted" style="margin-top:5px;font-size:11px">原描述：' + desc + '</div>';
+    h += '</div>';
+  }
+  box.innerHTML = h;
+}
+
+// ---------- 文档 ----------
+function addDoc(name, content) {
+  const box = document.getElementById('docList');
+  const d = document.createElement('div');
+  d.className = 'doc-item';
+  d.innerHTML =
+    '<div class="grid2">' +
+      '<div><label>文档名</label><input type="text" class="doc-name" placeholder="命名规范" value="' + (name || '').replace(/"/g,'&quot;') + '"></div>' +
+      '<div style="display:flex;align-items:flex-end"><button class="danger" onclick="this.closest(\'.doc-item\').remove();refreshPreview()">删掉这份</button></div>' +
+    '</div>' +
+    '<label>内容</label>' +
+    '<textarea class="doc-content" rows="4" onchange="refreshPreview()">' + (content || '').replace(/</g,'&lt;') + '</textarea>';
+  box.appendChild(d);
+  refreshPreview();
+}
+
+// ---------- 组装 ----------
+function buildMod() {
+  const id = document.getElementById('modId').value.trim() || 'untitled-mod';
+  const name = document.getElementById('modName').value.trim() || id;
+  const version = document.getElementById('modVersion').value.trim() || '1.0';
+  const enabled = document.getElementById('modEnabled').checked;
+
+  const mod = { id, name, version, enabled };
+
+  // config
+  const cfg = {};
+  let hasCfg = false;
+  document.querySelectorAll('[data-cfg-on]').forEach(chk => {
+    if (!chk.checked) return;
+    const k = chk.dataset.cfgOn;
+    const inp = document.querySelector('[data-cfg-val="' + k + '"]');
+    if (!inp) return;
+    let v = inp.value;
+    if (v === 'true') v = true;
+    else if (v === 'false') v = false;
+    else if (v !== '' && !isNaN(v)) v = Number(v);
+    cfg[k] = v;
+    hasCfg = true;
+  });
+  if (hasCfg) mod.config = cfg;
+
+  // tools
+  const tools = {};
+  let hasTools = false;
+  document.querySelectorAll('[data-tool-on]').forEach(chk => {
+    const k = chk.dataset.toolOn;
+    const descInp = document.querySelector('[data-tool-desc="' + k + '"]');
+    const desc = descInp ? descInp.value.trim() : '';
+    if (!chk.checked) { tools[k] = { enabled: false }; hasTools = true; }
+    else if (desc) { tools[k] = { description: desc }; hasTools = true; }
+  });
+  if (hasTools) mod.tools = tools;
+
+  // prompt
+  const prompt = document.getElementById('modPrompt').value.trim();
+  if (prompt) mod.prompt = prompt;
+
+  // docs
+  const docs = [];
+  document.querySelectorAll('.doc-item').forEach(d => {
+    const n = d.querySelector('.doc-name').value.trim();
+    const c = d.querySelector('.doc-content').value.trim();
+    if (n || c) docs.push({ name: n || '未命名', content: c });
+  });
+  if (docs.length) mod.docs = docs;
+
+  // script
+  const script = document.getElementById('modScript').value.trim();
+  if (script) mod.script = script;
+
+  return mod;
+}
+
+function refreshPreview() {
+  try {
+    document.getElementById('preview').textContent = JSON.stringify(buildMod(), null, 2);
+  } catch (e) {
+    document.getElementById('preview').textContent = '预览出错：' + e.message;
+  }
+}
+
+// ---------- 下载 ----------
+function downloadMod() {
+  const mod = buildMod();
+  if (!mod.prompt && !mod.config && !mod.tools && !mod.docs && !mod.script) {
+    toast('这个 mod 是空的，至少改一样东西', 'err');
+    return;
+  }
+  const txt = JSON.stringify(mod, null, 2);
+  const blob = new Blob([txt], { type: 'application/json;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = mod.id + '.mod.json';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000);
+  toast('已下载 ' + mod.id + '.mod.json，放进 E:\\Nafx\\mod\\ 就生效', 'ok');
+}
+
+// ---------- 已有 mod ----------
+async function loadExisting() {
+  let list = [];
+  try { list = await jget('/api/mods'); } catch (e) { toast('读不到已有 mod：' + e.message, 'err'); return; }
+  if (!list.length) { toast('mod 目录里还没有文件'); return; }
+  const names = list.map((x, i) => (i + 1) + '. ' + x.file).join('\n');
+  const pick = prompt('载入哪个？\n\n' + names + '\n\n输入序号：');
+  const i = parseInt(pick, 10) - 1;
+  if (isNaN(i) || i < 0 || i >= list.length) return;
+  let mod;
+  try { mod = JSON.parse(list[i].json); } catch (e) { toast('这个文件解析失败', 'err'); return; }
+  fillForm(mod);
+  toast('已载入 ' + list[i].file, 'ok');
+}
+
+function fillForm(mod) {
+  document.getElementById('modId').value = mod.id || '';
+  document.getElementById('modName').value = mod.name || '';
+  document.getElementById('modVersion').value = mod.version || '1.0';
+  document.getElementById('modEnabled').checked = mod.enabled !== false;
+  document.getElementById('modPrompt').value = mod.prompt || '';
+  document.getElementById('modScript').value = mod.script || '';
+  document.getElementById('docList').innerHTML = '';
+  if (mod.docs) for (const d of mod.docs) addDoc(d.name, d.content);
+  // config
+  if (mod.config) {
+    for (const k in mod.config) {
+      const chk = document.querySelector('[data-cfg-on="' + k + '"]');
+      const inp = document.querySelector('[data-cfg-val="' + k + '"]');
+      if (chk) chk.checked = true;
+      if (inp) inp.value = String(mod.config[k]);
+    }
+  }
+  // tools
+  if (mod.tools) {
+    for (const k in mod.tools) {
+      const chk = document.querySelector('[data-tool-on="' + k + '"]');
+      const inp = document.querySelector('[data-tool-desc="' + k + '"]');
+      if (chk && mod.tools[k].enabled === false) chk.checked = false;
+      if (inp && mod.tools[k].description) inp.value = mod.tools[k].description;
+    }
+  }
+  refreshPreview();
+}
+
+function resetAll() {
+  if (!confirm('清空所有输入？')) return;
+  document.getElementById('modId').value = '';
+  document.getElementById('modName').value = '';
+  document.getElementById('modVersion').value = '1.0';
+  document.getElementById('modEnabled').checked = true;
+  document.getElementById('modPrompt').value = '';
+  document.getElementById('modScript').value = '';
+  document.getElementById('docList').innerHTML = '';
+  document.querySelectorAll('[data-cfg-on]').forEach(c => c.checked = false);
+  document.querySelectorAll('[data-tool-on]').forEach(c => c.checked = true);
+  document.querySelectorAll('[data-tool-desc]').forEach(c => c.value = '');
+  refreshPreview();
+}
+
+// ---------- 启动 ----------
+(async function () {
+  await loadConfig();
+  await loadTools();
+  refreshPreview();
+  document.querySelectorAll('input,textarea').forEach(el => {
+    el.addEventListener('input', refreshPreview);
+  });
+})();
+</script>
+</body>
+</html>

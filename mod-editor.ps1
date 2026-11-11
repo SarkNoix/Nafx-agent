@@ -15,10 +15,16 @@ param([int]$Port = 8070)
 
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
+# ---- 启动日志（Write-Host 在重定向下会丢，所以直接写文件）----
+$BootLog = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) 'logs\editor-boot.log'
+function BootLog { param([string]$m) try { [IO.File]::AppendAllText($BootLog, ((Get-Date -Format 'HH:mm:ss') + ' ' + $m + [Environment]::NewLine), (New-Object Text.UTF8Encoding($false))) } catch { } }
+BootLog '脚本开始'
+
 $HtmlPath = Join-Path $Root 'mod-editor.html'
 $ModDir = Join-Path $Root 'mod'
 
 if (-not (Test-Path $HtmlPath)) {
+BootLog ("HtmlPath=" + $HtmlPath + " 存在=" + (Test-Path $HtmlPath))
     Write-Host "找不到 mod-editor.html，应该在：$HtmlPath" -ForegroundColor Red
     exit 1
 }
@@ -55,6 +61,7 @@ catch {
 }
 
 Write-Host ""
+BootLog ("监听 " + $Port + " 成功")
 Write-Host "  Nafx Mod 编辑器" -ForegroundColor Cyan
 Write-Host "  http://127.0.0.1:$Port/" -ForegroundColor Green
 Write-Host ""
