@@ -17,7 +17,7 @@ param([int]$Port = 8070)
 
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
-# ---- 启动日志（Write-Host 在重定向下会丢，所以直接写文件）----
+# ---- 启动日志（写文件，不依赖控制台）----
 $BootLog = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) 'logs\editor-boot.log'
 function BootLog { param([string]$m) try { [IO.File]::AppendAllText($BootLog, ((Get-Date -Format 'HH:mm:ss') + ' ' + $m + [Environment]::NewLine), (New-Object Text.UTF8Encoding($false))) } catch { } }
 BootLog '脚本开始'
@@ -27,7 +27,7 @@ $ModDir = Join-Path $Root 'mod'
 
 if (-not (Test-Path $HtmlPath)) {
 BootLog ("HtmlPath=" + $HtmlPath + " 存在=" + (Test-Path $HtmlPath))
-    Write-Host "找不到 mod-editor.html，应该在：$HtmlPath" -ForegroundColor Red
+    Write-Output "找不到 mod-editor.html，应该在：$HtmlPath"
     exit 1
 }
 
@@ -49,6 +49,15 @@ function Send-Bytes {
     } catch { }
 }
 
+function Read-Body {
+    param($Request)
+    try {
+        $reader = New-Object System.IO.StreamReader($Request.InputStream, [Text.Encoding]::UTF8)
+        $text = $reader.ReadToEnd()
+        $reader.Close()
+        return $text
+    } catch { return '' }
+}
 function Send-Json {
     param($Response, [string]$Json, [int]$Code = 200)
     Send-Bytes -Response $Response -Bytes ([Text.Encoding]::UTF8.GetBytes($Json)) -ContentType 'application/json; charset=utf-8' -Code $Code
@@ -58,18 +67,18 @@ $listener = New-Object System.Net.HttpListener
 $listener.Prefixes.Add("http://127.0.0.1:$Port/")
 try { $listener.Start() }
 catch {
-    Write-Host "8070 端口起不来（可能被占用）：$($_.Exception.Message)" -ForegroundColor Red
+    Write-Output "8070 端口起不来（可能被占用）：$($_.Exception.Message)"
     exit 1
 }
 
-Write-Host ""
-BootLog ("监听 " + $Port + " 成功")
-Write-Host "  Nafx Mod 编辑器" -ForegroundColor Cyan
-Write-Host "  http://127.0.0.1:$Port/" -ForegroundColor Green
-Write-Host ""
-Write-Host "  改完点「下载 mod 文件」，把下载到的 .mod.json 放进：" -ForegroundColor DarkGray
-Write-Host "  $ModDir" -ForegroundColor DarkGray
-Write-Host ""
+Write-Output ""
+BootLog ("监听 " + $Port + " 成功 IsListening=" + $listener.IsListening + " Prefixes=" + ($listener.Prefixes -join ',') + " Auth=" + $listener.AuthenticationSchemes)
+Write-Output "  Nafx Mod 编辑器"
+Write-Output "  http://127.0.0.1:$Port/"
+Write-Output ""
+Write-Output "  改完点「下载 mod 文件」，把下载到的 .mod.json 放进："
+Write-Output "  $ModDir"
+Write-Output ""
 
 try {
     while ($listener.IsListening) {
@@ -86,7 +95,19 @@ try {
                     Send-Bytes -Response $res -Bytes ([Text.Encoding]::UTF8.GetBytes($html)) -ContentType 'text/html; charset=utf-8'
                 }
                 '/api/tools' {
-                    # 现有工具名 + 描述，给「改工具」那块用
+                    # 工具名 + 描述 + 分组。51 个平铺太长，编辑器里要折叠和搜索。
+                    $groups = @{
+                        '文件' = @('write_file','read_file','list_dir','hash_file','read_lines','zip_list','diff_files','replace_in_file','set_line','append_file','make_dir','find_files','file_info','move_path','copy_path','grep_file','delete_path')
+                        '执行' = @('run_cmd','run_ps','run_ps1','run_bat','run_js','run_python','write_script')
+                        '系统' = @('sys_info','clipboard','env_get','open_app','kill_process','ps','install')
+                        '网络' = @('download_file','web_search','web_fetch')
+                        '数据' = @('json_format','csv_preview')
+                        '查询' = @('now','date_calc','unit_convert','project_doc','help','syshelp','win_doc')
+                        '流程' = @('say','rethink','plan','learn','finish')
+                        '技能' = @('skill','write_skill','unzip')
+                    }
+                    $nameToGroup = @{}
+                    foreach ($gName in $groups.Keys) { foreach ($tn in $groups[$gName]) { $nameToGroup[$tn] = $gName } }
                     $schemaPath = Join-Path $Root 'agent\tools-schema.json'
                     $arr = @()
                     if (Test-Path $schemaPath) {
@@ -94,7 +115,9 @@ try {
                             $raw = [IO.File]::ReadAllText($schemaPath, [Text.Encoding]::UTF8)
                             $items = $raw | ConvertFrom-Json
                             foreach ($it in $items) {
-                                $arr += ('{"name":' + (J $it.function.name) + ',"description":' + (J $it.function.description) + '}')
+                                $tn = [string]$it.function.name
+                                $grp = if ($nameToGroup.ContainsKey($tn)) { $nameToGroup[$tn] } else { '其他' }
+                                $arr += ('{"name":' + (J $tn) + ',"description":' + (J $it.function.description) + ',"group":' + (J $grp) + '}')
                             }
                         } catch { }
                     }
@@ -112,6 +135,36 @@ try {
                         }
                     }
                     Send-Json -Response $res -Json ('[' + ($arr -join ',') + ']')
+                }
+                '/api/checkscript' {
+                    # 语法检查。手写 mod 最容易漏逗号，提前查出来比加载失败强。
+                    if ($req.HttpMethod -ne 'POST') { Send-Json -Response $res -Json '{"ok":false,"msg":"只接受 POST"}' -Code 405; break }
+                    $b = $null
+                    try { $b = (Read-Body $req) | ConvertFrom-Json } catch { }
+                    $ckType = if ($b -and $b.type) { [string]$b.type } else { 'ps1' }
+                    $ckCode = if ($b -and $null -ne $b.code) { [string]$b.code } else { '' }
+                    $errs = New-Object System.Collections.ArrayList
+                    $ckOk = $true
+                    if (-not [string]::IsNullOrWhiteSpace($ckCode)) {
+                        if ($ckType -eq 'json') {
+                            try { $null = ($ckCode | ConvertFrom-Json) }
+                            catch {
+                                $ckOk = $false
+                                [void]$errs.Add('{"line":0,"col":0,"msg":' + (J ([string]$_.Exception.Message)) + '}')
+                            }
+                        } else {
+                            $pe = $null
+                            [void][System.Management.Automation.Language.Parser]::ParseInput($ckCode, [ref]$null, [ref]$pe)
+                            if ($pe -and @($pe).Count -gt 0) {
+                                $ckOk = $false
+                                foreach ($one in @($pe)) {
+                                    [void]$errs.Add('{"line":' + $one.Extent.StartLineNumber + ',"col":' + $one.Extent.StartColumnNumber + ',"msg":' + (J ([string]$one.Message)) + '}')
+                                }
+                            }
+                        }
+                    }
+                    $errJson = if ($errs.Count -gt 0) { '[' + ($errs -join ',') + ']' } else { '[]' }
+                    Send-Json -Response $res -Json ('{"ok":' + $(if ($ckOk) { 'true' } else { 'false' }) + ',"errors":' + $errJson + '}')
                 }
                 '/api/config' {
                     # 当前配置，给表单预填
@@ -144,5 +197,5 @@ try {
     }
 } finally {
     try { $listener.Stop(); $listener.Close() } catch { }
-    Write-Host "  编辑器已停止" -ForegroundColor DarkGray
+    Write-Output "  编辑器已停止"
 }

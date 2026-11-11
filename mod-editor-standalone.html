@@ -6,414 +6,908 @@
 <title>Nafx Mod 编辑器</title>
 <style>
   :root{
-    --bg:#0d1117; --panel:#161b22; --panel2:#1c2128; --line:#30363d;
-    --fg:#e6edf3; --dim:#8b949e; --accent:#4a9eff; --ok:#3fb950; --warn:#d29922; --err:#f85149;
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2128; --panel3:#21262d;
+    --line:#30363d; --line2:#484f58;
+    --fg:#e6edf3; --fg2:#c9d1d9; --dim:#8b949e; --dim2:#6e7681;
+    --accent:#4a9eff; --ok:#3fb950; --warn:#d29922; --err:#f85149;
   }
   *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--fg);
-       font:14px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
-  header{padding:14px 22px;border-bottom:1px solid var(--line);
-         display:flex;align-items:center;gap:14px;flex-wrap:wrap;background:var(--panel)}
-  h1{font-size:17px;margin:0;font-weight:600}
-  .sp{flex:1}
-  button{font:inherit;cursor:pointer;border-radius:6px;padding:7px 14px;
-         border:1px solid var(--line);background:var(--panel2);color:var(--fg);transition:.15s}
-  button:hover{background:#252c36;border-color:#484f58}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg);color:var(--fg);
+    font:14px/1.65 -apple-system,"Segoe UI","Microsoft YaHei",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  code,pre,.mono{font-family:ui-monospace,"Cascadia Code",Consolas,monospace}
+
+  header{
+    position:sticky;top:0;z-index:100;
+    background:rgba(22,27,34,.96);border-bottom:1px solid var(--line);
+    padding:11px 22px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  }
+  header h1{font-size:16px;margin:0;font-weight:650}
+  header .badge{
+    font-size:11px;padding:2px 8px;border-radius:20px;
+    background:var(--panel3);border:1px solid var(--line);color:var(--dim);
+    font-family:ui-monospace,monospace;
+  }
+  .spacer{flex:1}
+  button{
+    font:inherit;font-size:13px;cursor:pointer;
+    border-radius:7px;padding:6px 13px;
+    border:1px solid var(--line);background:var(--panel2);color:var(--fg2);
+    transition:background .13s,border-color .13s,color .13s;
+    white-space:nowrap;
+  }
+  button:hover{background:var(--panel3);border-color:var(--line2);color:var(--fg)}
   button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
-  button.primary:hover{background:#3a8ee6}
-  button.danger{color:var(--err)}
-  main{padding:18px 22px;max-width:1080px;margin:0 auto}
-  section{background:var(--panel);border:1px solid var(--line);border-radius:9px;
-          padding:16px 18px;margin-bottom:16px}
-  section h2{font-size:14px;margin:0 0 4px;font-weight:600;color:var(--accent)}
-  section .hint{font-size:12px;color:var(--dim);margin:0 0 14px}
-  label{display:block;font-size:12px;color:var(--dim);margin:10px 0 4px}
+  button.primary:hover{background:#5aa7ff}
+  button.primary:disabled{background:var(--panel3);border-color:var(--line);color:var(--dim2);cursor:not-allowed}
+  button.ghost{background:transparent}
+  button.ghost:hover{background:var(--panel2)}
+  button.sm{padding:4px 9px;font-size:12px}
+  button.danger{color:var(--err);border-color:#5c2e2e}
+  button.danger:hover{background:#2d1516;border-color:var(--err)}
+  button.ok{color:var(--ok);border-color:#2d4a2e}
+  button.ok:hover{background:#16261a}
+
+  .statusbar{
+    position:sticky;top:53px;z-index:99;
+    background:var(--panel2);border-bottom:1px solid var(--line);
+    padding:6px 22px;display:flex;align-items:center;gap:18px;flex-wrap:wrap;
+    font-size:12px;color:var(--dim);
+  }
+  .statusbar .stat{display:flex;align-items:center;gap:5px}
+  .statusbar .stat b{color:var(--fg2);font-weight:600}
+  .statusbar .stat.warn b{color:var(--warn)}
+  .statusbar .stat.bad b{color:var(--err)}
+  .statusbar .stat.good b{color:var(--ok)}
+
+  main{padding:16px 22px 90px;max-width:1120px;margin:0 auto}
+
+  section{
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    margin-bottom:14px;overflow:hidden;
+  }
+  section > .sec-head{
+    padding:11px 17px;display:flex;align-items:center;gap:10px;cursor:pointer;
+    user-select:none;transition:background .12s;
+  }
+  section > .sec-head:hover{background:var(--panel2)}
+  .sec-head h2{
+    font-size:13px;margin:0;font-weight:650;color:var(--accent);
+    display:flex;align-items:center;gap:7px;
+  }
+  .sec-head .num{
+    display:inline-flex;align-items:center;justify-content:center;
+    width:19px;height:19px;border-radius:50%;
+    background:var(--panel3);border:1px solid var(--line);
+    font-size:11px;color:var(--dim);font-weight:600;
+  }
+  .sec-head .chev{margin-left:auto;color:var(--dim2);font-size:11px;transition:transform .18s}
+  section.collapsed .chev{transform:rotate(-90deg)}
+  section.collapsed .sec-body{display:none}
+  .sec-body{padding:4px 17px 17px}
+  .hint{font-size:12px;color:var(--dim);margin:0 0 12px;line-height:1.6}
+  .hint code{background:var(--panel3);padding:1px 5px;border-radius:4px;font-size:11.5px;color:var(--fg2)}
+
+  label.fld{display:block;font-size:12px;color:var(--dim);margin:9px 0 4px}
   input[type=text],input[type=number],textarea,select{
     width:100%;background:var(--bg);border:1px solid var(--line);border-radius:6px;
-    color:var(--fg);padding:8px 10px;font:inherit;font-family:ui-monospace,Consolas,monospace}
-  textarea{resize:vertical;min-height:80px}
+    color:var(--fg);padding:7px 10px;font:inherit;font-size:13px;
+    transition:border-color .13s;
+  }
+  input[type=text],input[type=number],textarea,select{font-family:ui-monospace,Consolas,monospace}
+  textarea{resize:vertical;min-height:76px;line-height:1.6}
   input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent)}
-  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
-  .row{display:flex;align-items:center;gap:9px;margin:7px 0;font-size:13px}
-  .row input[type=checkbox]{width:15px;height:15px;accent-color:var(--accent)}
-  .tool-item{border:1px solid var(--line);border-radius:7px;padding:9px 11px;margin:7px 0;background:var(--panel2)}
-  .tool-head{display:flex;align-items:center;gap:9px;font-family:ui-monospace,Consolas,monospace;font-size:13px}
-  .tool-head input[type=text]{flex:1;font-size:12px;padding:5px 8px}
-  .doc-item{border:1px solid var(--line);border-radius:7px;padding:11px;margin:9px 0;background:var(--panel2)}
+  input.err{border-color:var(--err)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:11px}
+  .row{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px}
+  .row input[type=checkbox]{width:15px;height:15px;accent-color:var(--accent);flex-shrink:0;cursor:pointer}
   .muted{color:var(--dim);font-size:12px}
-  .tag{display:inline-block;padding:1px 7px;border-radius:4px;font-size:11px;
-       background:#21262d;color:var(--dim);border:1px solid var(--line)}
-  #toast{position:fixed;right:20px;bottom:20px;padding:11px 17px;border-radius:8px;
-         background:var(--panel2);border:1px solid var(--line);opacity:0;transform:translateY(8px);
-         transition:.25s;pointer-events:none;font-size:13px;max-width:380px}
+  .dim2{color:var(--dim2);font-size:11.5px}
+
+  .cfg-group{margin:12px 0 4px}
+  .cfg-group-title{
+    font-size:11.5px;color:var(--dim);letter-spacing:.5px;
+    margin-bottom:7px;display:flex;align-items:center;gap:7px;
+  }
+  .cfg-group-title::after{content:'';flex:1;height:1px;background:var(--line)}
+  .cfg-item{
+    display:grid;grid-template-columns:26px 1fr 190px 140px;gap:10px;align-items:center;
+    padding:6px 0;border-bottom:1px solid rgba(48,54,61,.4);
+  }
+  .cfg-item:last-child{border-bottom:none}
+  .cfg-item .name{font-family:ui-monospace,monospace;font-size:12.5px;color:var(--fg2)}
+  .cfg-item .cur{font-family:ui-monospace,monospace;font-size:11.5px;color:var(--dim2);text-align:right}
+  .cfg-item input[type=text]{font-size:12px;padding:5px 8px}
+  .cfg-item input[type=checkbox]{width:15px;height:15px;accent-color:var(--accent);cursor:pointer}
+  .cfg-item.disabled .name,.cfg-item.disabled .cur{opacity:.45}
+
+  .tool-toolbar{display:flex;gap:8px;align-items:center;margin-bottom:11px;flex-wrap:wrap}
+  .tool-toolbar input[type=text]{flex:1;min-width:150px;padding:6px 10px;font-size:12.5px}
+  .tool-group{margin:9px 0}
+  .tool-group-head{
+    display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;
+    background:var(--panel2);cursor:pointer;user-select:none;font-size:12.5px;
+  }
+  .tool-group-head:hover{background:var(--panel3)}
+  .tool-group-head .cnt{color:var(--dim2);font-size:11.5px;font-family:ui-monospace,monospace}
+  .tool-group-head .chev{color:var(--dim2);font-size:10px;transition:transform .15s}
+  .tool-group.collapsed .tool-group-head .chev{transform:rotate(-90deg)}
+  .tool-group.collapsed .tool-group-body{display:none}
+  .tool-group-body{padding:3px 0 3px 8px}
+  .tool-item{
+    display:grid;grid-template-columns:26px 150px 1fr;gap:9px;align-items:start;
+    padding:6px 8px;border-radius:6px;transition:background .1s;
+  }
+  .tool-item:hover{background:var(--panel2)}
+  .tool-item input[type=checkbox]{width:15px;height:15px;accent-color:var(--accent);cursor:pointer;margin-top:3px}
+  .tool-item .tname{font-family:ui-monospace,monospace;font-size:12.5px;color:var(--fg2);word-break:break-all}
+  .tool-item .tdesc-input{
+    width:100%;font-size:11.5px;padding:4px 7px;border-radius:5px;
+    background:var(--bg);border:1px solid transparent;color:var(--dim);
+    font-family:ui-monospace,monospace;
+  }
+  .tool-item .tdesc-input:hover{border-color:var(--line)}
+  .tool-item .tdesc-input:focus{border-color:var(--accent);color:var(--fg);background:var(--panel2)}
+  .tool-item .tdesc-input.modified{border-color:var(--warn);color:var(--fg)}
+  .tool-item.off .tname,.tool-item.off .tdesc-input{opacity:.4;text-decoration:line-through}
+
+  .doc-item{border:1px solid var(--line);border-radius:8px;margin:9px 0;background:var(--panel2);overflow:hidden}
+  .doc-head{display:flex;align-items:center;gap:8px;padding:7px 11px;background:var(--panel3);border-bottom:1px solid var(--line)}
+  .doc-head input[type=text]{flex:1;padding:4px 8px;font-size:12.5px;background:var(--bg)}
+  .doc-head .btns{display:flex;gap:4px}
+  .doc-body{padding:9px 11px}
+  .doc-body textarea{min-height:70px;font-size:12.5px}
+
+  pre#preview{
+    background:var(--bg);border:1px solid var(--line);border-radius:7px;
+    padding:11px 13px;overflow:auto;max-height:340px;
+    font-size:12px;line-height:1.6;margin:0;color:var(--fg2);
+  }
+  .validate-box{
+    margin:10px 0 0;padding:9px 12px;border-radius:7px;font-size:12.5px;
+    border:1px solid var(--line);background:var(--panel2);
+  }
+  .validate-box.ok{border-color:#2d4a2e;background:#0f1a12;color:var(--ok)}
+  .validate-box.bad{border-color:#5c2e2e;background:#1a0f10;color:var(--err)}
+  .validate-box ul{margin:5px 0 0;padding-left:18px}
+  .validate-box li{margin:2px 0}
+
+  #toast{
+    position:fixed;right:22px;bottom:22px;z-index:999;
+    padding:11px 17px;border-radius:9px;max-width:420px;
+    background:var(--panel2);border:1px solid var(--line);
+    font-size:13px;line-height:1.5;
+    opacity:0;transform:translateY(10px);pointer-events:none;
+    transition:opacity .22s,transform .22s;
+    box-shadow:0 8px 28px rgba(0,0,0,.5);
+  }
   #toast.show{opacity:1;transform:translateY(0)}
-  #toast.ok{border-color:var(--ok);color:var(--ok)}
-  #toast.err{border-color:var(--err);color:var(--err)}
-  pre{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:11px;
-      overflow:auto;max-height:280px;font-size:12px;margin:0}
+  #toast.ok{border-color:#2d4a2e;color:var(--ok)}
+  #toast.err{border-color:#5c2e2e;color:var(--err)}
+  #toast.warn{border-color:#5c4a1e;color:var(--warn)}
+
+  .footbar{
+    position:fixed;bottom:0;left:0;right:0;z-index:98;
+    background:rgba(22,27,34,.97);border-top:1px solid var(--line);
+    padding:9px 22px;display:flex;align-items:center;gap:12px;
+  }
+  .footbar .info{font-size:12px;color:var(--dim);flex:1}
+
+  @media (max-width:820px){
+    .grid2,.grid3{grid-template-columns:1fr}
+    .cfg-item{grid-template-columns:26px 1fr;gap:6px}
+    .cfg-item .cur{display:none}
+    .tool-item{grid-template-columns:26px 1fr}
+    .tool-item .tdesc-input{grid-column:2}
+    main{padding:12px 12px 90px}
+    header,.statusbar,.footbar{padding-left:12px;padding-right:12px}
+  }
 </style>
 <script>
-// ---- 内联数据（独立版：不依赖任何服务）----
-const INLINE_CONFIG = {
-    "_说明":  "改完这个文件要重启服务才生效。带「切换模型.bat」标记的建议用它自动改。",
-    "name":  "Nafx",
-    "model":  "models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
-    "_model说明":  "模型文件路径。可以写相对路径（相对本文件）或绝对路径。换模型推荐用「切换模型.bat」，会自动处理上下文和内存。",
-    "modelLabel":  "Qwen3-4B-Instruct-2507",
-    "_modelLabel说明":  "显示在面板顶部的模型名字，随便写，不影响功能。",
-    "host":  "127.0.0.1",
-    "port":  8080,
-    "monitorPort":  8090,
-    "_端口说明":  "port 是模型服务，monitorPort 是面板。被占用时改这两个数字。",
-    "threads":  8,
-    "_threads说明":  "用几个 CPU 核心。0 = 自动（按核心数决定）。手动设可以试试 4 / 6 / 8。",
-    "context":  4096,
-    "_context说明":  "上下文长度（token）。越大能记住越多，但吃内存也越慢。4B 建议 8192，7B 建议 4096，内存紧就往下调。",
-    "maxTokens":  600,
-    "_maxTokens说明":  "单步最多生成多少 token。太小会截断工具调用，太大会变慢。600-800 比较稳。",
-    "maxSteps":  25,
-    "_maxSteps说明":  "一个任务最多走几步。给太大模型容易空转，给太小复杂任务做不完。30 比较合适。",
-    "workspace":  "workspace",
-    "_workspace说明":  "工作目录。模型默认只在这里面读写文件。",
-    "runTimeoutSeconds":  30,
-    "taskTimeoutSeconds":  1800,
-    "stepTimeoutSeconds":  240,
-    "_超时说明":  "单条命令 30 秒、整个任务 30 分钟、单步 180 秒。慢机器可以把 stepTimeoutSeconds 加大。",
-    "maxOutputChars":  800,
-    "_maxOutputChars说明":  "一次工具输出最多给模型看多少字符，超了截断。",
-    "temperature":  0.3,
-    "topP":  0.7,
-    "_采样说明":  "temperature 越低越死板稳定，越高越发散。干活建议 0.2-0.4。",
-    "loadMode":  "mmap",
-    "_loadMode说明":  "mmap = 边用边加载（省内存，启动快）；mlock = 全锁内存（快但吃内存）。内存够用 mlock。",
-    "allowAnyPath":  true,
-    "_allowAnyPath说明":  "true = 模型可以读写工作区以外的路径。自己用就开着，不放心就改 false。",
-    "allowGui":  true,
-    "allowAdmin":  false,
-    "_权限说明":  "allowGui = 能不能操作窗口；allowAdmin = 管理员权限（默认关，需要时在面板里开）。",
-    "parallel":  1,
-    "_parallel说明":  "同时跑几个任务。单机建议 1，否则模型会被抢。",
-    "modelProfile":  {
-                         "chatTemplate":  "jinja",
-                         "reasoning":  "off",
-                         "extraArgs":  ""
-                     },
-    "_modelProfile说明":  "模型相关的启动参数。换模型如果跑不起来，先看这里。chatTemplate: jinja=用模型的对话模板(多数模型)；none=不用。reasoning: on/off Qwen3 系才有。extraArgs: 额外参数，比如 \"--no-mmap -fa\"",
-    "kvCacheTypeK":  "f16",
-    "kvCacheTypeV":  "f16",
-    "flashAttn":  "auto",
-    "_内存说明":  "KV缓存量化：把注意力缓存从 fp16 压到 8bit/4bit，同样内存能装 2-4 倍的上下文。kvCacheTypeK/V 可选 f16(不压)/q8_0/q4_0，内存紧就用 q4_0。flashAttn 量化时建议开。改完重启生效。"
+/* 独立版内联数据 - 生成时间 2026-11-11 21:16:25 */
+const INLINE_DATA = {
+  '/api/config': {"name":"Nafx","model":"models/Qwen3-4B-Instruct-2507-Q4_K_M.gguf","modelLabel":"Qwen3-4B-Instruct-2507","host":"127.0.0.1","port":8080,"monitorPort":8090,"threads":8,"context":6144,"maxTokens":600,"maxSteps":25,"workspace":"workspace","runTimeoutSeconds":30,"taskTimeoutSeconds":1800,"stepTimeoutSeconds":240,"maxOutputChars":800,"temperature":"0.3","topP":"0.7","loadMode":"mmap","allowAnyPath":true,"allowGui":true,"allowAdmin":false,"parallel":1,"modelProfile":"@{chatTemplate=jinja; reasoning=off; extraArgs=}","kvCacheTypeK":"f16","kvCacheTypeV":"f16","flashAttn":"auto"},
+  '/api/tools':  [{"name":"write_file","description":"写文件。新建或整个覆盖。改某一行用 set_line，末尾追加用 append_file","group":"文件"},{"name":"read_file","description":"读文件内容。只看某几行用 read_lines，找关键词用 grep_file，都别用它硬读大文件","group":"文件"},{"name":"list_dir","description":"列目录。按名字找文件用 find_files，只数个数用 run_cmd，别用它翻大目录","group":"文件"},{"name":"hash_file","description":"算文件哈希。判断两个文件是否完全一样用这个，比 compare_files 更细","group":"文件"},{"name":"read_lines","description":"按行号范围读。大文件分段看用这个，别 read_file 整读（会截断）","group":"文件"},{"name":"sys_info","description":"看 CPU 核数、内存、磁盘空间。问机器配置用这个，别 run_cmd wmic","group":"系统"},{"name":"clipboard","description":"读写剪贴板。command 填 get 或 set；set 时正文放 content","group":"系统"},{"name":"now","description":"看当前日期和时间。问「今天几号」「现在几点」必须用它，别猜（模型不知道今天是什么日子）","group":"查询"},{"name":"zip_list","description":"不解压先看压缩包里有什么。支持 zip/docx/xlsx/pptx","group":"文件"},{"name":"diff_files","description":"两个文件逐行比，说清哪几行不一样。command 填第二个文件","group":"文件"},{"name":"json_format","description":"美化或压缩 JSON。command 填 pretty（缩进）或 compact（一行）","group":"数据"},{"name":"csv_preview","description":"先看 CSV 长什么样：列名 + 前几行。command 填看几行（默认 8）","group":"数据"},{"name":"date_calc","description":"算日期。command 填天数（3=三天后，-7=七天前）或日期（2024-01-01，算距今多少天）","group":"查询"},{"name":"download_file","description":"把网址上的文件下载到本地。path 填网址，command 填存到哪（留空用原文件名）","group":"网络"},{"name":"env_get","description":"看环境变量。command 填变量名（留空列常用的几个）","group":"系统"},{"name":"open_app","description":"打开程序或文件。command 填 notepad / calc / explorer / mspaint / taskmgr，或完整路径","group":"系统"},{"name":"kill_process","description":"结束进程。command 填进程名（如 notepad）或 PID。系统进程会被拒绝","group":"系统"},{"name":"run_python","description":"跑 Python。path 给 .py 文件，或 content 直接给代码。算复杂的东西比 PowerShell 顺手","group":"执行"},{"name":"write_script","description":"写 .ps1 脚本并立刻运行，一次调用就拿到输出。任务要「写脚本然后跑」时用这个，别拆成 write_file + run_ps1 两步","group":"执行"},{"name":"write_skill","description":"把一套做法写成技能说明文档，以后能查。path 填技能名，content 填 markdown 说明","group":"技能"},{"name":"project_doc","description":"查 Nafx 自己的文档：架构 / 工具 / 流程。command 填主题","group":"查询"},{"name":"unit_convert","description":"单位换算。command 写 100 km to miles、30 c to f、1 gb to mb","group":"查询"},{"name":"replace_in_file","description":"替换文件里的第一处原文。要换全部用 skill(replace_text)","group":"文件"},{"name":"set_line","description":"改第 N 行。整篇重写用 write_file，别用这个逐行改","group":"文件"},{"name":"append_file","description":"末尾追加","group":"文件"},{"name":"make_dir","description":"建目录","group":"文件"},{"name":"find_files","description":"按通配符找文件，递归，带大小。按名字找用这个，别用 list_dir 一个个翻","group":"文件"},{"name":"file_info","description":"看文件大小、修改时间、是否只读。问「多大」用这个，别 run_cmd dir","group":"文件"},{"name":"move_path","description":"移动或重命名文件和目录。目标路径填在 command","group":"文件"},{"name":"copy_path","description":"复制文件或目录。目标路径填在 command","group":"文件"},{"name":"grep_file","description":"在文件里搜关键词，返回行号和上下文。找内容用这个，别 read_file 整读","group":"文件"},{"name":"delete_path","description":"删除，不可逆","group":"文件"},{"name":"run_cmd","description":"跑一条 cmd 命令。一条命令能做完就别写脚本；要算数或对象改用 run_ps","group":"执行"},{"name":"run_ps","description":"跑 PowerShell 命令。要算数、处理对象、正则、JSON 用这个；普通文件操作别用它","group":"执行"},{"name":"run_ps1","description":"跑.ps1脚本","group":"执行"},{"name":"run_bat","description":"跑.bat脚本","group":"执行"},{"name":"run_js","description":"跑 .js 脚本（Windows 自带 JScript，不用装 Node）","group":"执行"},{"name":"skill","description":"现成技能。常见活儿（统计/找重复/转格式/求和/压缩）先来这儿找，别自己写。command 写 list 看全部","group":"技能"},{"name":"help","description":"查手册和工具详情","group":"查询"},{"name":"syshelp","description":"查命令参数","group":"查询"},{"name":"win_doc","description":"查微软官方文档","group":"查询"},{"name":"web_search","description":"搜索","group":"网络"},{"name":"web_fetch","description":"开网页","group":"网络"},{"name":"rethink","description":"走偏了重来。清空当前步骤，重新想","group":"流程"},{"name":"plan","description":"列任务清单","group":"流程"},{"name":"say","description":"问用户","group":"流程"},{"name":"learn","description":"记教训。path=任务关键词 find=踩的坑 replace=正确做法","group":"流程"},{"name":"unzip","description":"解压 zip/tar/gz/7z/rar","group":"技能"},{"name":"ps","description":"看进程。command 写 memory 或留空=按内存排序","group":"系统"},{"name":"install","description":"用winget装软件。command 写 search 关键词 只搜索","group":"系统"},{"name":"finish","description":"收尾并给答案。是工具不是文字，要在 tool_calls 里调","group":"流程"}],
+  '/api/mods':   [{"file":"brief-mode.mod.json","id":"brief-mode","name":"极简模式","version":"1.0","enabled":false,"hasPrompt":true,"docCount":1,"toolCount":1,"cfgCount":1},{"file":"coder-mode.mod.json","id":"coder-mode","name":"程序员模式","version":"1.0","enabled":false,"hasPrompt":true,"docCount":1,"toolCount":1,"cfgCount":2}]
 };
-const INLINE_TOOLS  = [{"name":"write_file","description":"写文件。新建或整个覆盖。改某一行用 set_line，末尾追加用 append_file"},{"name":"read_file","description":"读文件内容。只看某几行用 read_lines，找关键词用 grep_file，都别用它硬读大文件"},{"name":"list_dir","description":"列目录。按名字找文件用 find_files，只数个数用 run_cmd，别用它翻大目录"},{"name":"hash_file","description":"算文件哈希。判断两个文件是否完全一样用这个，比 compare_files 更细"},{"name":"read_lines","description":"按行号范围读。大文件分段看用这个，别 read_file 整读（会截断）"},{"name":"sys_info","description":"看 CPU 核数、内存、磁盘空间。问机器配置用这个，别 run_cmd wmic"},{"name":"clipboard","description":"读写剪贴板。command 填 get 或 set；set 时正文放 content"},{"name":"now","description":"看当前日期和时间。问「今天几号」「现在几点」必须用它，别猜（模型不知道今天是什么日子）"},{"name":"zip_list","description":"不解压先看压缩包里有什么。支持 zip/docx/xlsx/pptx"},{"name":"diff_files","description":"两个文件逐行比，说清哪几行不一样。command 填第二个文件"},{"name":"json_format","description":"美化或压缩 JSON。command 填 pretty（缩进）或 compact（一行）"},{"name":"csv_preview","description":"先看 CSV 长什么样：列名 + 前几行。command 填看几行（默认 8）"},{"name":"date_calc","description":"算日期。command 填天数（3=三天后，-7=七天前）或日期（2024-01-01，算距今多少天）"},{"name":"download_file","description":"把网址上的文件下载到本地。path 填网址，command 填存到哪（留空用原文件名）"},{"name":"env_get","description":"看环境变量。command 填变量名（留空列常用的几个）"},{"name":"open_app","description":"打开程序或文件。command 填 notepad / calc / explorer / mspaint / taskmgr，或完整路径"},{"name":"kill_process","description":"结束进程。command 填进程名（如 notepad）或 PID。系统进程会被拒绝"},{"name":"run_python","description":"跑 Python。path 给 .py 文件，或 content 直接给代码。算复杂的东西比 PowerShell 顺手"},{"name":"write_script","description":"写 .ps1 脚本并立刻运行，一次调用就拿到输出。任务要「写脚本然后跑」时用这个，别拆成 write_file + run_ps1 两步"},{"name":"write_skill","description":"把一套做法写成技能说明文档，以后能查。path 填技能名，content 填 markdown 说明"},{"name":"project_doc","description":"查 Nafx 自己的文档：架构 / 工具 / 流程。command 填主题"},{"name":"unit_convert","description":"单位换算。command 写 100 km to miles、30 c to f、1 gb to mb"},{"name":"replace_in_file","description":"替换文件里的第一处原文。要换全部用 skill(replace_text)"},{"name":"set_line","description":"改第 N 行。整篇重写用 write_file，别用这个逐行改"},{"name":"append_file","description":"末尾追加"},{"name":"make_dir","description":"建目录"},{"name":"find_files","description":"按通配符找文件，递归，带大小。按名字找用这个，别用 list_dir 一个个翻"},{"name":"file_info","description":"看文件大小、修改时间、是否只读。问「多大」用这个，别 run_cmd dir"},{"name":"move_path","description":"移动或重命名文件和目录。目标路径填在 command"},{"name":"copy_path","description":"复制文件或目录。目标路径填在 command"},{"name":"grep_file","description":"在文件里搜关键词，返回行号和上下文。找内容用这个，别 read_file 整读"},{"name":"delete_path","description":"删除，不可逆"},{"name":"run_cmd","description":"跑一条 cmd 命令。一条命令能做完就别写脚本；要算数或对象改用 run_ps"},{"name":"run_ps","description":"跑 PowerShell 命令。要算数、处理对象、正则、JSON 用这个；普通文件操作别用它"},{"name":"run_ps1","description":"跑.ps1脚本"},{"name":"run_bat","description":"跑.bat脚本"},{"name":"run_js","description":"跑 .js 脚本（Windows 自带 JScript，不用装 Node）"},{"name":"skill","description":"现成技能。常见活儿（统计/找重复/转格式/求和/压缩）先来这儿找，别自己写。command 写 list 看全部"},{"name":"help","description":"查手册和工具详情"},{"name":"syshelp","description":"查命令参数"},{"name":"win_doc","description":"查微软官方文档"},{"name":"web_search","description":"搜索"},{"name":"web_fetch","description":"开网页"},{"name":"rethink","description":"走偏了重来。清空当前步骤，重新想"},{"name":"plan","description":"列任务清单"},{"name":"say","description":"问用户"},{"name":"learn","description":"记教训。path=任务关键词 find=踩的坑 replace=正确做法"},{"name":"unzip","description":"解压 zip/tar/gz/7z/rar"},{"name":"ps","description":"看进程。command 写 memory 或留空=按内存排序"},{"name":"install","description":"用winget装软件。command 写 search 关键词 只搜索"},{"name":"finish","description":"收尾并给答案。是工具不是文字，要在 tool_calls 里调"}];
-const INLINE_MODS   = [
-    {
-        "file":  "brief-mode.mod.json",
-        "id":  "brief-mode",
-        "name":  "极简模式",
-        "version":  "1.0",
-        "enabled":  true,
-        "hasPrompt":  true,
-        "docCount":  1,
-        "toolCount":  1,
-        "cfgCount":  1
-    },
-    {
-        "file":  "coder-mode.mod.json",
-        "id":  "coder-mode",
-        "name":  "程序员模式",
-        "version":  "1.0",
-        "enabled":  false,
-        "hasPrompt":  true,
-        "docCount":  1,
-        "toolCount":  1,
-        "cfgCount":  2
-    }
-];
-const STANDALONE = true;
-</script></head>
+const STANDALONE_MODE = true;
+</script>
+</head>
 <body>
 
 <header>
   <h1>Nafx Mod 编辑器</h1>
-  <span class="tag">8070</span>
-  <div class="sp"></div>
-  <button onclick="loadExisting()">载入已有 mod</button>
+  <span class="badge">独立版</span>
+  <div class="spacer"></div>
+  <button onclick="importMod()" title="从本地 .json 文件读入">导入</button>
+  <button onclick="loadExisting()">载入已有</button>
   <button onclick="resetAll()">清空</button>
-  <button onclick="refreshPreview()">刷新预览</button>
-  <button class="primary" onclick="downloadMod()">下载 mod 文件</button>
+  <button onclick="downloadMod()" class="primary" id="btnDownload">下载 mod 文件</button>
 </header>
+
+<div class="statusbar" id="statusbar"></div>
 
 <main>
 
-<section>
-  <h2>它是怎么工作的</h2>
-  <p class="hint">
-    一个 mod 就是一个 <code>.mod.json</code> 文件。改完点右上角「下载 mod 文件」，
-    把下载到的东西放进 <code>E:\Nafx\mod\</code>，agent 下次运行时自动加载。
-    <br>不用重启模型，不用改任何源码。删掉文件就是卸载。
-  </p>
-</section>
-
-<section>
-  <h2>① 基本信息</h2>
-  <div class="grid3">
-    <div>
-      <label>id（英文，唯一）</label>
-      <input type="text" id="modId" placeholder="coder-mode">
+<section id="sec1">
+  <div class="sec-head" onclick="toggleSec('sec1')">
+    <h2><span class="num">1</span>基本信息</h2>
+    <span class="chev">&#9662;</span>
+  </div>
+  <div class="sec-body">
+    <p class="hint">
+      <code>id</code> 是文件名主体，只能用英文、数字、点、下划线、连字符。下载后叫 <code>id.mod.json</code>。
+    </p>
+    <div class="grid3">
+      <div>
+        <label class="fld">id *</label>
+        <input type="text" id="modId" placeholder="coder-mode" oninput="onIdInput()">
+        <div class="dim2" id="idMsg" style="margin-top:3px;min-height:16px"></div>
+      </div>
+      <div>
+        <label class="fld">显示名</label>
+        <input type="text" id="modName" placeholder="程序员模式" oninput="refresh()">
+      </div>
+      <div>
+        <label class="fld">版本</label>
+        <input type="text" id="modVersion" value="1.0" oninput="refresh()">
+      </div>
     </div>
-    <div>
-      <label>名字（面板上显示的）</label>
-      <input type="text" id="modName" placeholder="程序员模式">
-    </div>
-    <div>
-      <label>版本</label>
-      <input type="text" id="modVersion" value="1.0">
+    <div class="row" style="margin-top:12px">
+      <input type="checkbox" id="modEnabled" checked onchange="refresh()">
+      <label for="modEnabled" style="margin:0;font-size:13px;color:var(--fg2)">
+        启用（取消勾选 = 暂时不生效，文件还在）
+      </label>
     </div>
   </div>
-  <div class="row" style="margin-top:12px">
-    <input type="checkbox" id="modEnabled" checked>
-    <label for="modEnabled" style="margin:0">启用（取消勾选就是停用这个 mod）</label>
+</section>
+
+<section id="sec2">
+  <div class="sec-head" onclick="toggleSec('sec2')">
+    <h2><span class="num">2</span>改配置</h2>
+    <span class="chev">&#9662;</span>
+  </div>
+  <div class="sec-body">
+    <p class="hint">勾上左边的框才会写进 mod。只勾你真正想改的。</p>
+    <div id="cfgArea" class="muted">加载中…</div>
   </div>
 </section>
 
-<section>
-  <h2>② 改 Nafx 的配置</h2>
-  <p class="hint">
-    勾上才会写进 mod。注意：<b>context / maxTokens 改了要重启模型才生效</b>，
-    temperature / maxSteps 这类立即生效。
-  </p>
-  <div id="configList"></div>
+<section id="sec3">
+  <div class="sec-head" onclick="toggleSec('sec3')">
+    <h2><span class="num">3</span>改工具</h2>
+    <span class="chev">&#9662;</span>
+  </div>
+  <div class="sec-body">
+    <p class="hint">
+      取消勾选 = 禁用这个工具。右边输入框填了字 = 换掉工具说明（模型看到的就是这句）。
+      <b>改描述对行为影响很大。</b>
+    </p>
+    <div class="tool-toolbar">
+      <input type="text" id="toolSearch" placeholder="搜索工具名或描述…" oninput="renderTools()">
+      <button class="sm" onclick="setAllTools(true)">全选</button>
+      <button class="sm" onclick="setAllTools(false)">全不选</button>
+      <button class="sm" onclick="filterChanged()" id="btnChanged">只看已改</button>
+    </div>
+    <div id="toolArea" class="muted">加载中…</div>
+  </div>
 </section>
 
-<section>
-  <h2>③ 改工具</h2>
-  <p class="hint">
-    取消勾选 = 这个 mod 里禁用该工具。下面的输入框留空 = 不改描述，填了就替换。
-  </p>
-  <div id="toolList" class="muted">加载中…</div>
+<section id="sec4">
+  <div class="sec-head" onclick="toggleSec('sec4')">
+    <h2><span class="num">4</span>人设 / 规则</h2>
+    <span class="chev">&#9662;</span>
+  </div>
+  <div class="sec-body">
+    <p class="hint">这段会追加到系统提示词末尾。写「你是谁、怎么说话、什么必须做、什么不许做」。</p>
+    <div class="row" style="margin-bottom:8px">
+      <select id="promptTpl" style="width:auto;padding:5px 9px;font-size:12.5px" onchange="applyPromptTpl()">
+        <option value="">— 插入现成模板 —</option>
+        <option value="coder">程序员助手</option>
+        <option value="strict">严谨模式（不许编）</option>
+        <option value="brief">极简模式（话少）</option>
+        <option value="teacher">讲清楚型（解释原理）</option>
+      </select>
+      <span class="dim2" id="promptCount">0 字</span>
+    </div>
+    <textarea id="modPrompt" rows="7" placeholder="例如：&#10;你在程序员的电脑上干活。&#10;改任何文件前先读清楚现有内容，不许凭印象改。" oninput="onPromptInput()"></textarea>
+  </div>
 </section>
 
-<section>
-  <h2>④ 人设 / 规则</h2>
-  <p class="hint">
-    这段文字会追加到系统提示词末尾。写「你是谁、怎么说话、什么必须做什么不许做」。
-  </p>
-  <textarea id="modPrompt" rows="7" placeholder="例如：&#10;你是我的编程助手，只在代码相关的事上发挥。&#10;改代码前先说清楚要改哪个文件、改什么。&#10;不许自己臆测文件内容，先读再改。"></textarea>
+<section id="sec5">
+  <div class="sec-head" onclick="toggleSec('sec5')">
+    <h2><span class="num">5</span>补充文档</h2>
+    <span class="chev">&#9662;</span>
+  </div>
+  <div class="sec-body">
+    <p class="hint">每份文档会跟着人设一起发给模型。适合放命名规范、术语表、项目背景。</p>
+    <div id="docArea"></div>
+    <button class="sm" onclick="addDoc()" style="margin-top:9px">+ 加一份文档</button>
+  </div>
 </section>
 
-<section>
-  <h2>⑤ 补充文档（md）</h2>
-  <p class="hint">每份文档会跟着人设一起发给模型。适合放规范、术语表、项目背景。</p>
-  <div id="docList"></div>
-  <button onclick="addDoc()" style="margin-top:9px">+ 加一份文档</button>
+<section id="sec6">
+  <div class="sec-head" onclick="toggleSec('sec6')">
+    <h2><span class="num">6</span>加载时执行的脚本</h2>
+    <span class="chev">&#9662;</span>
+  </div>
+  <div class="sec-body">
+    <p class="hint">
+      PowerShell 脚本，agent 每次启动时跑一次。留空就不执行。
+      <span style="color:var(--warn)">注意：这是真的执行代码，权限和 agent 一样。</span>
+    </p>
+    <div class="row" style="margin-bottom:8px">
+      <button class="sm" onclick="checkScript()">检查语法</button>
+      <span class="dim2" id="scriptCheck"></span>
+    </div>
+    <textarea id="modScript" rows="6" placeholder="# 例如：&#10;$env:MY_MODE = 'coder'&#10;Write-Output 'coder-mode 已加载'" oninput="onScriptInput()"></textarea>
+  </div>
 </section>
 
-<section>
-  <h2>⑥ 加载时执行的脚本</h2>
-  <p class="hint">
-    PowerShell 脚本，agent 每次启动时跑一次。能改环境变量、写文件、做初始化。
-    留空就不执行。
-  </p>
-  <textarea id="modScript" rows="5" placeholder="# 例如：&#10;$env:MY_MODE = 'coder'&#10;Write-Host 'coder-mode 已加载'"></textarea>
-</section>
-
-<section>
-  <h2>预览</h2>
-  <p class="hint">这是最终会被写进 <code>xxx.mod.json</code> 的内容。</p>
-  <pre id="preview">{}</pre>
+<section id="sec7">
+  <div class="sec-head" onclick="toggleSec('sec7')">
+    <h2><span class="num">7</span>预览 &amp; 校验</h2>
+    <span class="chev">&#9662;</span>
+  </div>
+  <div class="sec-body">
+    <p class="hint">这就是最终写进 <code>xxx.mod.json</code> 的内容。</p>
+    <pre id="preview">{}</pre>
+    <div class="validate-box" id="validateBox">—</div>
+  </div>
 </section>
 
 </main>
 
+<div class="footbar">
+  <span class="info" id="footInfo">—</span>
+  <button onclick="copyJson()">复制 JSON</button>
+  <button onclick="downloadMod()" class="primary">下载 mod 文件</button>
+</div>
+
 <div id="toast"></div>
 
 <script>
-let allTools = [];
+let CFG = {};
+let TOOLS = [];
+let EXISTING = [];
+let TOOL_STATE = {};
+let DOCS = [];
+let onlyChanged = false;
 
-function toast(msg, kind) {
-  const t = document.getElementById('toast');
+const CFG_GROUPS = {
+  '立即生效': ['temperature','maxSteps','maxTokens','personalPrompt','allowAdmin'],
+  '需重启模型': ['context','threads','loadMode']
+};
+
+const CFG_LABELS = {
+  temperature:'temperature（越低越稳）',
+  maxSteps:'maxSteps（最多几步）',
+  maxTokens:'maxTokens（每次最多生成）',
+  personalPrompt:'personalPrompt（你的个人习惯）',
+  allowAdmin:'allowAdmin（允许管理员操作）',
+  context:'context（上下文窗口）',
+  threads:'threads（CPU 线程数）',
+  loadMode:'loadMode（模型加载方式）'
+};
+
+const PROMPT_TPLS = {
+  coder: "你在程序员的电脑上干活。三条硬规矩：\n\n1. 改任何文件前，先 read_file 看清楚现在是什么样，不许凭印象改。\n2. 只改该改的那几行，别顺手重排、别动格式、别改注释。\n3. 报错信息原样贴出来，别翻译、别概括。",
+  strict: "三条硬规矩：\n\n1. 所有数字必须来自工具返回，不许估算、不许编。\n2. 文件不存在就说不存在，不许猜内容。\n3. 没查清楚就说「不确定」，不许装作知道。",
+  brief: "回答一律不超过一句话。不解释过程、不加前言、不总结。\n只有我明确问「为什么」才多说两句。",
+  teacher: "讲东西要讲清楚原理：先说结论，再说为什么，最后给个例子。\n代码要能直接跑，别写伪代码。"
+};
+
+function $(id){ return document.getElementById(id); }
+
+function toast(msg, kind){
+  const t = $('toast');
   t.textContent = msg;
   t.className = 'show ' + (kind || '');
   clearTimeout(window._tt);
-  window._tt = setTimeout(() => { t.className = ''; }, 3200);
+  window._tt = setTimeout(function(){ t.className = ''; }, 3400);
 }
 
-// 独立版：直接用内联数据；在线版：走 fetch
-const DATA = {
-  '/api/config': () => INLINE_CONFIG,
-  '/api/tools':  () => INLINE_TOOLS,
-  '/api/mods':   () => INLINE_MODS
-};
-
-async function jget(url) {
-  // 独立模式下不联网（file:// 下 fetch 也不允许）
-  if (typeof STANDALONE !== 'undefined' && STANDALONE && DATA[url]) {
-    return JSON.parse(JSON.stringify(DATA[url]()));
+async function jget(url){
+  // 独立版：直接返回内联数据（file:// 下 fetch 会被浏览器拦掉）
+  if (typeof STANDALONE_MODE !== 'undefined' && STANDALONE_MODE && INLINE_DATA[url]) {
+    return JSON.parse(JSON.stringify(INLINE_DATA[url]));
   }
   const r = await fetch(url);
   if (!r.ok) throw new Error('HTTP ' + r.status);
   return await r.json();
 }
 
-// ---------- 配置 ----------
-let cfgFields = [];
-async function loadConfig() {
-  const box = document.getElementById('configList');
-  let cfg = {};
-  try { cfg = await jget('/api/config'); } catch (e) {
-    box.innerHTML = '<span class="muted">读不到配置：' + e.message + '</span>';
+function esc(s){
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+
+function countTokens(text){
+  if (!text) return 0;
+  const cjk = (text.match(/[\u4e00-\u9fa5\u3040-\u30ff]/g) || []).length;
+  const other = text.length - cjk;
+  return Math.ceil(cjk * 1.05 + other / 3.6);
+}
+
+function toggleSec(id){ $(id).classList.toggle('collapsed'); }
+
+/* ---------- 配置 ---------- */
+async function loadConfig(){
+  try { CFG = await jget('/api/config'); }
+  catch(e){
+    $('cfgArea').innerHTML = '<span style="color:var(--err)">读不到配置：' + esc(e.message) + '</span>';
     return;
   }
-  const keys = ['temperature','maxSteps','maxTokens','context','threads','stepTimeoutSeconds','personalPrompt','allowAdmin','loadMode'];
-  const labels = {
-    temperature:'temperature（越低越稳，0.1-0.4 适合干活）',
-    maxSteps:'maxSteps（最多几步，25 够用，复杂任务 40）',
-    maxTokens:'maxTokens（每次最多生成多少 token）',
-    context:'context（上下文窗口，改了要重启模型）',
-    threads:'threads（CPU 线程数）',
-    stepTimeoutSeconds:'stepTimeoutSeconds（单步超时秒数）',
-    personalPrompt:'personalPrompt（你的个人习惯，会拼进提示词）',
-    allowAdmin:'allowAdmin（是否允许管理员操作）',
-    loadMode:'loadMode（模型加载方式）'
-  };
-  cfgFields = keys.filter(k => cfg[k] !== undefined);
-  if (!cfgFields.length) { box.innerHTML = '<span class="muted">配置里没有可改的字段</span>'; return; }
-  let h = '';
-  for (const k of cfgFields) {
-    const v = cfg[k];
-    const isBool = (typeof v === 'boolean');
-    h += '<div class="row">';
-    h += '<input type="checkbox" data-cfg-on="' + k + '" onchange="refreshPreview()">';
-    h += '<span class="muted" style="min-width:300px">' + (labels[k] || k) + '</span>';
-    if (isBool) {
-      h += '<select data-cfg-val="' + k + '" style="width:120px" onchange="refreshPreview()">' +
-           '<option value="true"' + (v ? ' selected' : '') + '>true</option>' +
-           '<option value="false"' + (!v ? ' selected' : '') + '>false</option></select>';
-    } else {
-      h += '<input type="text" data-cfg-val="' + k + '" value="' + String(v).replace(/"/g,'&quot;') +
-           '" style="width:260px" onchange="refreshPreview()">';
+  renderConfig();
+}
+
+function renderConfig(){
+  const area = $('cfgArea');
+  const keys = Object.keys(CFG).filter(function(k){ return k.indexOf('_') !== 0; });
+  if (!keys.length){ area.innerHTML = '<span class="muted">配置里没有可改的字段</span>'; return; }
+
+  const grouped = { '立即生效': [], '需重启模型': [], '其他': [] };
+  for (let i = 0; i < keys.length; i++){
+    const k = keys[i];
+    let placed = false;
+    for (const g in CFG_GROUPS){
+      if (CFG_GROUPS[g].indexOf(k) >= 0){ grouped[g].push(k); placed = true; break; }
     }
-    h += '<span class="muted">当前 ' + JSON.stringify(v) + '</span>';
+    if (!placed) grouped['其他'].push(k);
+  }
+
+  let h = '';
+  for (const g in grouped){
+    if (!grouped[g].length) continue;
+    h += '<div class="cfg-group"><div class="cfg-group-title">' + esc(g);
+    if (g === '需重启模型') h += ' <span style="color:var(--warn)">&#9888; 要重启模型</span>';
+    h += '</div>';
+    for (let i = 0; i < grouped[g].length; i++){
+      const k = grouped[g][i];
+      const v = CFG[k];
+      const isBool = typeof v === 'boolean';
+      h += '<div class="cfg-item disabled" id="cfgrow-' + esc(k) + '">';
+      h += '<input type="checkbox" data-cfg-on="' + esc(k) + '" onchange="onCfgToggle(\'' + esc(k) + '\')">';
+      h += '<span class="name">' + esc(CFG_LABELS[k] || k) + '</span>';
+      if (isBool){
+        h += '<select data-cfg-val="' + esc(k) + '" onchange="refresh()" style="font-size:12px;padding:4px 7px">' +
+             '<option value="true"' + (v ? ' selected' : '') + '>true</option>' +
+             '<option value="false"' + (!v ? ' selected' : '') + '>false</option></select>';
+      } else {
+        h += '<input type="text" data-cfg-val="' + esc(k) + '" value="' + esc(v) +
+             '" oninput="refresh()" style="font-size:12px;padding:4px 7px">';
+      }
+      h += '<span class="cur">' + esc(JSON.stringify(v)) + '</span>';
+      h += '</div>';
+    }
     h += '</div>';
   }
-  box.innerHTML = h;
+  area.innerHTML = h;
 }
 
-// ---------- 工具 ----------
-async function loadTools() {
-  const box = document.getElementById('toolList');
-  try {
-    allTools = await jget('/api/tools');
-  } catch (e) {
-    box.innerHTML = '<span class="muted">读不到工具列表：' + e.message + '</span>';
+function onCfgToggle(k){
+  const row = $('cfgrow-' + k);
+  if (!row) return;
+  const chk = row.querySelector('[data-cfg-on]');
+  if (chk.checked) row.classList.remove('disabled');
+  else row.classList.add('disabled');
+  refresh();
+}
+
+/* ---------- 工具 ---------- */
+async function loadTools(){
+  try { TOOLS = await jget('/api/tools'); }
+  catch(e){
+    $('toolArea').innerHTML = '<span style="color:var(--err)">读不到工具列表：' + esc(e.message) + '</span>';
     return;
   }
-  if (!allTools.length) { box.innerHTML = '<span class="muted">没有工具</span>'; return; }
-  let h = '';
-  for (const t of allTools) {
-    const desc = (t.description || '').replace(/</g,'&lt;');
-    h += '<div class="tool-item">';
-    h += '<div class="tool-head">';
-    h += '<input type="checkbox" data-tool-on="' + t.name + '" onchange="refreshPreview()">';
-    h += '<b>' + t.name + '</b>';
-    h += '<input type="text" data-tool-desc="' + t.name + '" placeholder="改描述（留空=不改）" onchange="refreshPreview()">';
-    h += '</div>';
-    h += '<div class="muted" style="margin-top:5px;font-size:11px">原描述：' + desc + '</div>';
-    h += '</div>';
+  if (!TOOLS.length){ $('toolArea').innerHTML = '<span class="muted">没有工具</span>'; return; }
+  for (let i = 0; i < TOOLS.length; i++){
+    const nm = TOOLS[i].name;
+    if (!TOOL_STATE[nm]) TOOL_STATE[nm] = { enabled: true, desc: '' };
   }
-  box.innerHTML = h;
+  renderTools();
 }
 
-// ---------- 文档 ----------
-function addDoc(name, content) {
-  const box = document.getElementById('docList');
-  const d = document.createElement('div');
-  d.className = 'doc-item';
-  d.innerHTML =
-    '<div class="grid2">' +
-      '<div><label>文档名</label><input type="text" class="doc-name" placeholder="命名规范" value="' + (name || '').replace(/"/g,'&quot;') + '"></div>' +
-      '<div style="display:flex;align-items:flex-end"><button class="danger" onclick="this.closest(\'.doc-item\').remove();refreshPreview()">删掉这份</button></div>' +
-    '</div>' +
-    '<label>内容</label>' +
-    '<textarea class="doc-content" rows="4" onchange="refreshPreview()">' + (content || '').replace(/</g,'&lt;') + '</textarea>';
-  box.appendChild(d);
-  refreshPreview();
+function renderTools(){
+  const area = $('toolArea');
+  const q = ($('toolSearch').value || '').trim().toLowerCase();
+
+  const groups = {};
+  for (let i = 0; i < TOOLS.length; i++){
+    const t = TOOLS[i];
+    const g = t.group || '其他';
+    if (!groups[g]) groups[g] = [];
+    groups[g].push(t);
+  }
+
+  let totalShown = 0;
+  let h = '';
+  for (const g in groups){
+    let items = groups[g];
+    if (q){
+      items = items.filter(function(t){
+        return t.name.toLowerCase().indexOf(q) >= 0 ||
+               (t.description || '').toLowerCase().indexOf(q) >= 0;
+      });
+    }
+    if (onlyChanged){
+      items = items.filter(function(t){
+        const st = TOOL_STATE[t.name];
+        return st && (!st.enabled || st.desc);
+      });
+    }
+    if (!items.length) continue;
+    totalShown += items.length;
+
+    const collapsed = (q === '' && !onlyChanged) ? ' collapsed' : '';
+    h += '<div class="tool-group' + collapsed + '" data-group="' + esc(g) + '">';
+    h += '<div class="tool-group-head" onclick="toggleGroup(this)">';
+    h += '<span class="chev">&#9662;</span><b>' + esc(g) + '</b>';
+    h += '<span class="cnt">' + items.length + '</span>';
+    h += '</div>';
+    h += '<div class="tool-group-body">';
+    for (let i = 0; i < items.length; i++){
+      const t = items[i];
+      const st = TOOL_STATE[t.name] || { enabled: true, desc: '' };
+      const off = !st.enabled ? ' off' : '';
+      const modified = st.desc ? ' modified' : '';
+      h += '<div class="tool-item' + off + '" id="tool-' + esc(t.name) + '">';
+      h += '<input type="checkbox" data-tool-on="' + esc(t.name) + '"' + (st.enabled ? ' checked' : '') +
+           ' onchange="onToolToggle(\'' + esc(t.name) + '\')">';
+      h += '<span class="tname">' + esc(t.name) + '</span>';
+      h += '<input type="text" class="tdesc-input' + modified + '" data-tool-desc="' + esc(t.name) +
+           '" placeholder="改描述（点这里输入）" value="' + esc(st.desc) +
+           '" title="' + esc(t.description || '') + '" oninput="onToolDesc(\'' + esc(t.name) + '\', this.value)">';
+      h += '</div>';
+    }
+    h += '</div></div>';
+  }
+
+  if (!totalShown){
+    h = '<div class="muted">' + (onlyChanged ? '还没有任何改动' : '没匹配到工具') + '</div>';
+  }
+  area.innerHTML = h;
 }
 
-// ---------- 组装 ----------
-function buildMod() {
-  const id = document.getElementById('modId').value.trim() || 'untitled-mod';
-  const name = document.getElementById('modName').value.trim() || id;
-  const version = document.getElementById('modVersion').value.trim() || '1.0';
-  const enabled = document.getElementById('modEnabled').checked;
+function toggleGroup(el){
+  const g = el.parentNode;
+  if (g) g.classList.toggle('collapsed');
+}
 
-  const mod = { id, name, version, enabled };
+function onToolToggle(name){
+  const chk = document.querySelector('[data-tool-on="' + name + '"]');
+  const item = $('tool-' + name);
+  if (TOOL_STATE[name]) TOOL_STATE[name].enabled = chk.checked;
+  if (item){
+    if (chk.checked) item.classList.remove('off');
+    else item.classList.add('off');
+  }
+  refresh();
+}
 
-  // config
+function onToolDesc(name, val){
+  if (TOOL_STATE[name]) TOOL_STATE[name].desc = val;
+  const inp = document.querySelector('[data-tool-desc="' + name + '"]');
+  if (inp){
+    if (val) inp.classList.add('modified');
+    else inp.classList.remove('modified');
+  }
+  refresh();
+}
+
+function setAllTools(on){
+  for (const k in TOOL_STATE) TOOL_STATE[k].enabled = on;
+  renderTools();
+  refresh();
+}
+
+function filterChanged(){
+  onlyChanged = !onlyChanged;
+  $('btnChanged').className = 'sm' + (onlyChanged ? ' ok' : '');
+  renderTools();
+}
+
+/* ---------- 人设 ---------- */
+function onPromptInput(){
+  $('promptCount').textContent = ($('modPrompt').value || '').length + ' 字';
+  refresh();
+}
+
+function applyPromptTpl(){
+  const tpl = $('promptTpl').value;
+  if (!tpl) return;
+  const text = PROMPT_TPLS[tpl];
+  if (!text) return;
+  const cur = $('modPrompt').value.trim();
+  $('modPrompt').value = cur ? (cur + '\n\n' + text) : text;
+  $('promptTpl').value = '';
+  onPromptInput();
+  toast('已插入模板', 'ok');
+}
+
+/* ---------- 文档 ---------- */
+function addDoc(name, content){
+  DOCS.push({ name: name || '', content: content || '' });
+  renderDocs();
+  refresh();
+}
+
+function renderDocs(){
+  const area = $('docArea');
+  if (!DOCS.length){
+    area.innerHTML = '<div class="muted" style="padding:6px 0">还没有文档。需要规范、术语表、项目背景时加一份。</div>';
+    return;
+  }
+  let h = '';
+  for (let i = 0; i < DOCS.length; i++){
+    const d = DOCS[i];
+    h += '<div class="doc-item">';
+    h += '<div class="doc-head">';
+    h += '<input type="text" placeholder="文档名，比如「命名规范」" value="' + esc(d.name) +
+         '" oninput="onDocName(' + i + ', this.value)">';
+    h += '<div class="btns">';
+    if (i > 0) h += '<button class="sm" onclick="moveDoc(' + i + ',-1)" title="上移">&#8593;</button>';
+    if (i < DOCS.length - 1) h += '<button class="sm" onclick="moveDoc(' + i + ',1)" title="下移">&#8595;</button>';
+    h += '<button class="sm danger" onclick="delDoc(' + i + ')" title="删掉">&times;</button>';
+    h += '</div></div>';
+    h += '<div class="doc-body">';
+    h += '<textarea placeholder="文档内容，markdown 格式" oninput="onDocContent(' + i + ', this.value)">' +
+         esc(d.content) + '</textarea>';
+    h += '</div></div>';
+  }
+  area.innerHTML = h;
+}
+
+function onDocName(i, v){ DOCS[i].name = v; refresh(); }
+function onDocContent(i, v){ DOCS[i].content = v; refresh(); }
+function delDoc(i){ DOCS.splice(i, 1); renderDocs(); refresh(); }
+function moveDoc(i, dir){
+  const j = i + dir;
+  if (j < 0 || j >= DOCS.length) return;
+  const tmp = DOCS[i]; DOCS[i] = DOCS[j]; DOCS[j] = tmp;
+  renderDocs(); refresh();
+}
+
+/* ---------- 脚本 ---------- */
+function onScriptInput(){
+  $('scriptCheck').textContent = '';
+  refresh();
+}
+
+async function checkScript(){
+  const code = $('modScript').value;
+  const box = $('scriptCheck');
+  if (!code.trim()){ box.textContent = '（空，不检查）'; return; }
+  box.textContent = '检查中…';
+  try {
+    const r = await fetch('/api/checkscript', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'ps1', code: code })
+    });
+    const j = await r.json();
+    if (j.ok){
+      box.textContent = '✓ 语法没问题';
+      box.style.color = 'var(--ok)';
+    } else {
+      const e0 = (j.errors && j.errors[0]) || {};
+      box.textContent = '✗ 第 ' + (e0.line || '?') + ' 行：' + (e0.msg || '语法错误');
+      box.style.color = 'var(--err)';
+    }
+  } catch(e){
+    box.textContent = '检查失败：' + e.message;
+    box.style.color = 'var(--err)';
+  }
+}
+
+/* ---------- 组装 ---------- */
+function buildMod(){
+  const id = ($('modId').value || '').trim() || 'untitled-mod';
+  const name = ($('modName').value || '').trim() || id;
+  const version = ($('modVersion').value || '').trim() || '1.0';
+  const enabled = $('modEnabled').checked;
+
+  const mod = { id: id, name: name, version: version, enabled: enabled };
+
   const cfg = {};
   let hasCfg = false;
-  document.querySelectorAll('[data-cfg-on]').forEach(chk => {
-    if (!chk.checked) return;
+  const cfgChks = document.querySelectorAll('[data-cfg-on]');
+  for (let i = 0; i < cfgChks.length; i++){
+    const chk = cfgChks[i];
+    if (!chk.checked) continue;
     const k = chk.dataset.cfgOn;
     const inp = document.querySelector('[data-cfg-val="' + k + '"]');
-    if (!inp) return;
+    if (!inp) continue;
     let v = inp.value;
-    if (v === 'true') v = true;
-    else if (v === 'false') v = false;
-    else if (v !== '' && !isNaN(v)) v = Number(v);
+    const orig = CFG[k];
+    if (typeof orig === 'boolean') v = (v === 'true');
+    else if (typeof orig === 'number'){ v = Number(v); if (isNaN(v)) v = 0; }
     cfg[k] = v;
     hasCfg = true;
-  });
+  }
   if (hasCfg) mod.config = cfg;
 
-  // tools
   const tools = {};
   let hasTools = false;
-  document.querySelectorAll('[data-tool-on]').forEach(chk => {
-    const k = chk.dataset.toolOn;
-    const descInp = document.querySelector('[data-tool-desc="' + k + '"]');
-    const desc = descInp ? descInp.value.trim() : '';
-    if (!chk.checked) { tools[k] = { enabled: false }; hasTools = true; }
-    else if (desc) { tools[k] = { description: desc }; hasTools = true; }
-  });
+  for (let i = 0; i < TOOLS.length; i++){
+    const nm = TOOLS[i].name;
+    const st = TOOL_STATE[nm];
+    if (!st) continue;
+    if (!st.enabled){ tools[nm] = { enabled: false }; hasTools = true; }
+    else if (st.desc && st.desc.trim()){ tools[nm] = { description: st.desc.trim() }; hasTools = true; }
+  }
   if (hasTools) mod.tools = tools;
 
-  // prompt
-  const prompt = document.getElementById('modPrompt').value.trim();
+  const prompt = ($('modPrompt').value || '').trim();
   if (prompt) mod.prompt = prompt;
 
-  // docs
   const docs = [];
-  document.querySelectorAll('.doc-item').forEach(d => {
-    const n = d.querySelector('.doc-name').value.trim();
-    const c = d.querySelector('.doc-content').value.trim();
-    if (n || c) docs.push({ name: n || '未命名', content: c });
-  });
+  for (let i = 0; i < DOCS.length; i++){
+    const d = DOCS[i];
+    if ((d.name || '').trim() || (d.content || '').trim()){
+      docs.push({ name: (d.name || '').trim() || '未命名', content: d.content || '' });
+    }
+  }
   if (docs.length) mod.docs = docs;
 
-  // script
-  const script = document.getElementById('modScript').value.trim();
+  const script = ($('modScript').value || '').trim();
   if (script) mod.script = script;
 
   return mod;
 }
 
-function refreshPreview() {
-  try {
-    document.getElementById('preview').textContent = JSON.stringify(buildMod(), null, 2);
-  } catch (e) {
-    document.getElementById('preview').textContent = '预览出错：' + e.message;
+function validate(mod){
+  const errs = [];
+  const warns = [];
+
+  if (!mod.id || mod.id === 'untitled-mod') errs.push('id 不能为空');
+  if (mod.id && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(mod.id))
+    errs.push('id 只能用英文、数字、点、下划线、连字符，且以字母或数字开头');
+  if (mod.id){
+    const dup = EXISTING.filter(function(e){ return e.id === mod.id; });
+    if (dup.length) warns.push('已有同名 mod「' + mod.id + '」，下载后会覆盖同名文件');
   }
+
+  const hasAny = mod.config || mod.tools || mod.prompt || mod.docs || mod.script;
+  if (!hasAny) errs.push('这个 mod 什么都没改，至少改一样东西');
+
+  if (mod.config){
+    for (const k in mod.config){
+      const v = mod.config[k];
+      if (k === 'temperature' && (typeof v !== 'number' || v < 0 || v > 2))
+        errs.push('temperature 要在 0 到 2 之间');
+      if (k === 'maxSteps' && (typeof v !== 'number' || v < 1 || v > 200))
+        errs.push('maxSteps 要在 1 到 200 之间');
+      if (k === 'context' && (typeof v !== 'number' || v < 1024 || v > 131072))
+        errs.push('context 要在 1024 到 131072 之间');
+    }
+  }
+
+  if (mod.docs && mod.docs.length > 20) warns.push('文档超过 20 份，会挤占上下文');
+
+  return { errs: errs, warns: warns };
 }
 
-// ---------- 下载 ----------
-function downloadMod() {
-  const mod = buildMod();
-  if (!mod.prompt && !mod.config && !mod.tools && !mod.docs && !mod.script) {
-    toast('这个 mod 是空的，至少改一样东西', 'err');
-    return;
+function estimateDelta(mod){
+  let extra = 0;
+  if (mod.prompt) extra += countTokens(mod.prompt);
+  if (mod.docs){
+    for (let i = 0; i < mod.docs.length; i++){
+      extra += countTokens(mod.docs[i].name) + countTokens(mod.docs[i].content) + 4;
+    }
   }
+  if (mod.config && mod.config.personalPrompt) extra += countTokens(String(mod.config.personalPrompt));
+  if (mod.tools){
+    for (const k in mod.tools){
+      if (mod.tools[k].description) extra += countTokens(mod.tools[k].description) - 20;
+    }
+  }
+  return extra > 0 ? extra : 0;
+}
+
+/* ---------- refresh ---------- */
+function refresh(){
+  let mod;
+  try { mod = buildMod(); }
+  catch(e){ $('preview').textContent = '组装出错：' + e.message; return; }
+
+  $('preview').textContent = JSON.stringify(mod, null, 2);
+
+  const v = validate(mod);
+  const box = $('validateBox');
+  if (v.errs.length){
+    box.className = 'validate-box bad';
+    let eh = '<b>先修掉这些问题：</b><ul>';
+    for (let i = 0; i < v.errs.length; i++) eh += '<li>' + esc(v.errs[i]) + '</li>';
+    eh += '</ul>';
+    if (v.warns.length){
+      eh += '<div style="margin-top:6px;color:var(--warn)">';
+      for (let i = 0; i < v.warns.length; i++) eh += '· ' + esc(v.warns[i]) + '<br>';
+      eh += '</div>';
+    }
+    box.innerHTML = eh;
+    box.style.borderColor = '';
+  } else if (v.warns.length){
+    box.className = 'validate-box';
+    box.style.borderColor = 'var(--warn)';
+    let wh = '';
+    for (let i = 0; i < v.warns.length; i++) wh += '· ' + esc(v.warns[i]) + '<br>';
+    box.innerHTML = '<span style="color:var(--warn)">' + wh + '</span>';
+  } else {
+    box.className = 'validate-box ok';
+    box.style.borderColor = '';
+    box.innerHTML = '✓ 可以下载了';
+  }
+
+  const parts = [];
+  if (mod.config) parts.push(['配置', Object.keys(mod.config).length]);
+  if (mod.tools){
+    let off = 0, desc = 0;
+    for (const k in mod.tools){
+      if (mod.tools[k].enabled === false) off++;
+      if (mod.tools[k].description) desc++;
+    }
+    const s = [];
+    if (off) s.push('禁' + off);
+    if (desc) s.push('改' + desc);
+    parts.push(['工具', s.length ? s.join(' ') : Object.keys(mod.tools).length]);
+  }
+  if (mod.prompt) parts.push(['人设', mod.prompt.length + '字']);
+  if (mod.docs) parts.push(['文档', mod.docs.length]);
+  if (mod.script) parts.push(['脚本', mod.script.split('\n').length + '行']);
+
+  let sb = '';
+  for (let i = 0; i < parts.length; i++){
+    sb += '<span class="stat">' + esc(parts[i][0]) + ' <b>' + esc(parts[i][1]) + '</b></span>';
+  }
+  if (!parts.length) sb = '<span class="stat">还没改任何东西</span>';
+
+  const delta = estimateDelta(mod);
+  if (delta > 0){
+    const cls = delta > 1200 ? 'bad' : (delta > 600 ? 'warn' : 'good');
+    sb += '<span class="stat ' + cls + '">预估 +<b>' + delta + '</b> token</span>';
+  }
+  sb += '<span class="stat">' + (mod.enabled ? '<b style="color:var(--ok)">启用中</b>' : '<b style="color:var(--dim2)">停用</b>') + '</span>';
+  $('statusbar').innerHTML = sb;
+
+  $('footInfo').textContent = mod.id + '.mod.json  ·  ' + JSON.stringify(mod).length + ' 字节' +
+    (delta > 600 ? '  ·  ⚠ 会占不少上下文' : '');
+
+  $('btnDownload').disabled = v.errs.length > 0;
+}
+
+/* ---------- id ---------- */
+function onIdInput(){
+  const id = ($('modId').value || '').trim();
+  const msg = $('idMsg');
+  const inp = $('modId');
+  if (!id){ msg.textContent = ''; inp.classList.remove('err'); refresh(); return; }
+
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id)){
+    msg.innerHTML = '<span style="color:var(--err)">只能英文数字和 . _ -</span>';
+    inp.classList.add('err');
+  } else if (EXISTING.some(function(e){ return e.id === id; })){
+    msg.innerHTML = '<span style="color:var(--warn)">已存在同名 mod（会覆盖）</span>';
+    inp.classList.remove('err');
+  } else {
+    msg.innerHTML = '<span style="color:var(--ok)">✓ ' + esc(id) + '.mod.json</span>';
+    inp.classList.remove('err');
+  }
+  refresh();
+}
+
+/* ---------- 下载 / 导入 / 清空 ---------- */
+function downloadMod(){
+  const mod = buildMod();
+  const v = validate(mod);
+  if (v.errs.length){ toast('先修掉：' + v.errs[0], 'err'); return; }
+
   const txt = JSON.stringify(mod, null, 2);
   const blob = new Blob([txt], { type: 'application/json;charset=utf-8' });
   const url = URL.createObjectURL(blob);
@@ -422,78 +916,165 @@ function downloadMod() {
   a.download = mod.id + '.mod.json';
   document.body.appendChild(a);
   a.click();
-  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000);
-  toast('已下载 ' + mod.id + '.mod.json，放进 E:\\Nafx\\mod\\ 就生效', 'ok');
+  setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); }, 1200);
+
+  toast('下载完成：' + mod.id + '.mod.json，放进 E:\\Nafx\\mod\\ 就生效', 'ok');
 }
 
-// ---------- 已有 mod ----------
-async function loadExisting() {
+function importMod(){
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = '.json,.mod.json,application/json';
+  inp.onchange = function(){
+    const f = inp.files && inp.files[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = function(){
+      try {
+        const obj = JSON.parse(reader.result);
+        fillForm(obj);
+        toast('已导入 ' + f.name, 'ok');
+      } catch(e){
+        toast('这个文件不是合法 JSON：' + e.message, 'err');
+      }
+    };
+    reader.readAsText(f, 'utf-8');
+  };
+  inp.click();
+}
+
+async function loadExisting(){
   let list = [];
-  try { list = await jget('/api/mods'); } catch (e) { toast('读不到已有 mod：' + e.message, 'err'); return; }
-  if (!list.length) { toast('mod 目录里还没有文件'); return; }
-  const names = list.map((x, i) => (i + 1) + '. ' + x.file).join('\n');
-  const pick = prompt('载入哪个？\n\n' + names + '\n\n输入序号：');
+  try { list = await jget('/api/mods'); }
+  catch(e){ toast('读不到已有 mod：' + e.message, 'err'); return; }
+  if (!list.length){ toast('mod 目录里还没有文件'); return; }
+
+  const lines = list.map(function(x, i){
+    return (i + 1) + '. ' + (x.name || x.id) + '  (' + x.file + ')';
+  }).join('\n');
+  const pick = prompt('载入哪个？\n\n' + lines + '\n\n输入序号：');
   const i = parseInt(pick, 10) - 1;
   if (isNaN(i) || i < 0 || i >= list.length) return;
-  let mod;
-  try { mod = JSON.parse(list[i].json); } catch (e) { toast('这个文件解析失败', 'err'); return; }
-  fillForm(mod);
-  toast('已载入 ' + list[i].file, 'ok');
+
+  toast('请点「导入」选 ' + list[i].file + '（服务器只返回元数据，完整内容要读文件）', 'warn');
 }
 
-function fillForm(mod) {
-  document.getElementById('modId').value = mod.id || '';
-  document.getElementById('modName').value = mod.name || '';
-  document.getElementById('modVersion').value = mod.version || '1.0';
-  document.getElementById('modEnabled').checked = mod.enabled !== false;
-  document.getElementById('modPrompt').value = mod.prompt || '';
-  document.getElementById('modScript').value = mod.script || '';
-  document.getElementById('docList').innerHTML = '';
-  if (mod.docs) for (const d of mod.docs) addDoc(d.name, d.content);
-  // config
-  if (mod.config) {
-    for (const k in mod.config) {
+function fillForm(mod){
+  $('modId').value = mod.id || '';
+  $('modName').value = mod.name || '';
+  $('modVersion').value = mod.version || '1.0';
+  $('modEnabled').checked = mod.enabled !== false;
+  $('modPrompt').value = mod.prompt || '';
+  $('modScript').value = mod.script || '';
+
+  const chks = document.querySelectorAll('[data-cfg-on]');
+  for (let i = 0; i < chks.length; i++){
+    chks[i].checked = false;
+    const row = chks[i].closest('.cfg-item');
+    if (row) row.classList.add('disabled');
+  }
+  if (mod.config){
+    for (const k in mod.config){
       const chk = document.querySelector('[data-cfg-on="' + k + '"]');
       const inp = document.querySelector('[data-cfg-val="' + k + '"]');
-      if (chk) chk.checked = true;
+      if (chk){
+        chk.checked = true;
+        const row = $('cfgrow-' + k);
+        if (row) row.classList.remove('disabled');
+      }
       if (inp) inp.value = String(mod.config[k]);
     }
   }
-  // tools
-  if (mod.tools) {
-    for (const k in mod.tools) {
-      const chk = document.querySelector('[data-tool-on="' + k + '"]');
-      const inp = document.querySelector('[data-tool-desc="' + k + '"]');
-      if (chk && mod.tools[k].enabled === false) chk.checked = false;
-      if (inp && mod.tools[k].description) inp.value = mod.tools[k].description;
+
+  for (const k in TOOL_STATE) TOOL_STATE[k] = { enabled: true, desc: '' };
+  if (mod.tools){
+    for (const k in mod.tools){
+      if (!TOOL_STATE[k]) TOOL_STATE[k] = { enabled: true, desc: '' };
+      if (mod.tools[k].enabled === false) TOOL_STATE[k].enabled = false;
+      if (mod.tools[k].description) TOOL_STATE[k].desc = mod.tools[k].description;
     }
   }
-  refreshPreview();
+  renderTools();
+
+  DOCS = [];
+  if (mod.docs){
+    for (let i = 0; i < mod.docs.length; i++){
+      DOCS.push({ name: mod.docs[i].name || '', content: mod.docs[i].content || '' });
+    }
+  }
+  renderDocs();
+
+  onPromptInput();
+  onIdInput();
+  refresh();
 }
 
-function resetAll() {
-  if (!confirm('清空所有输入？')) return;
-  document.getElementById('modId').value = '';
-  document.getElementById('modName').value = '';
-  document.getElementById('modVersion').value = '1.0';
-  document.getElementById('modEnabled').checked = true;
-  document.getElementById('modPrompt').value = '';
-  document.getElementById('modScript').value = '';
-  document.getElementById('docList').innerHTML = '';
-  document.querySelectorAll('[data-cfg-on]').forEach(c => c.checked = false);
-  document.querySelectorAll('[data-tool-on]').forEach(c => c.checked = true);
-  document.querySelectorAll('[data-tool-desc]').forEach(c => c.value = '');
-  refreshPreview();
+function resetAll(){
+  if (!confirm('清空所有输入？（不影响已经存在的 mod 文件）')) return;
+  $('modId').value = '';
+  $('modName').value = '';
+  $('modVersion').value = '1.0';
+  $('modEnabled').checked = true;
+  $('modPrompt').value = '';
+  $('modScript').value = '';
+  $('scriptCheck').textContent = '';
+  DOCS = [];
+  renderDocs();
+  const chks = document.querySelectorAll('[data-cfg-on]');
+  for (let i = 0; i < chks.length; i++){
+    chks[i].checked = false;
+    const row = chks[i].closest('.cfg-item');
+    if (row) row.classList.add('disabled');
+  }
+  for (const k in TOOL_STATE) TOOL_STATE[k] = { enabled: true, desc: '' };
+  renderTools();
+  onPromptInput();
+  onIdInput();
+  refresh();
 }
 
-// ---------- 启动 ----------
-(async function () {
+function copyJson(){
+  const txt = $('preview').textContent;
+  if (navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(function(){ toast('已复制到剪贴板', 'ok'); })
+      .catch(function(){ toast('复制失败，手动选中吧', 'err'); });
+  } else {
+    const ta = document.createElement('textarea');
+    ta.value = txt;
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); toast('已复制到剪贴板', 'ok'); }
+    catch(e){ toast('复制失败', 'err'); }
+    ta.remove();
+  }
+}
+
+/* ---------- 快捷键 ---------- */
+document.addEventListener('keydown', function(e){
+  const mod = e.ctrlKey || e.metaKey;
+  if (mod && e.key === 's'){ e.preventDefault(); downloadMod(); }
+  if (mod && e.key === 'k'){ e.preventDefault(); $('toolSearch').focus(); }
+  if (e.key === 'Escape' && document.activeElement && document.activeElement.blur){
+    document.activeElement.blur();
+  }
+});
+
+/* ---------- 启动 ---------- */
+(async function init(){
+  try { EXISTING = await jget('/api/mods'); } catch(e){ EXISTING = []; }
   await loadConfig();
   await loadTools();
-  refreshPreview();
-  document.querySelectorAll('input,textarea').forEach(el => {
-    el.addEventListener('input', refreshPreview);
-  });
+  renderDocs();
+
+  $('sec2').classList.add('collapsed');
+  $('sec3').classList.add('collapsed');
+  $('sec5').classList.add('collapsed');
+  $('sec6').classList.add('collapsed');
+  $('sec7').classList.add('collapsed');
+
+  onPromptInput();
+  onIdInput();
+  refresh();
 })();
 </script>
 </body>

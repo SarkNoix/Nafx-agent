@@ -471,6 +471,68 @@ powershell -ExecutionPolicy Bypass -File train\train.ps1 -DryRun
 
 ---
 
+## 插件（mod）系统
+
+一个 mod 就是一个 `.mod.json` 文件，扔进 `mod/` 目录，**不用改源码、不用重启模型**，agent 下次跑任务自动加载。删掉文件就是卸载。
+
+### 它能改五样东西
+
+```json
+{
+  "id": "coder-mode",
+  "name": "程序员模式",
+  "enabled": true,
+
+  "config": { "temperature": 0.1, "maxSteps": 40 },
+  "tools":  { "run_cmd": { "description": "跑命令前先说清楚要跑什么" } },
+  "prompt": "改任何文件前先读清楚现有内容，不许凭印象改。",
+  "docs":   [{ "name": "命名规范", "content": "变量用驼峰。" }],
+  "script": "$env:MY_MODE = 'coder'"
+}
+```
+
+| 字段 | 作用 | 生效时机 |
+|---|---|---|
+| `config` | 覆盖配置（温度、步数、个人习惯…） | 立即（`context`/`threads` 要重启模型） |
+| `tools` | 禁用工具，或换掉工具说明 | 立即 |
+| `prompt` | 追加人设/规则到系统提示词 | 立即 |
+| `docs` | 追加 md 文档 | 立即 |
+| `script` | PowerShell，加载时跑一次 | 立即 |
+
+**改工具描述比想象中有用**——模型很依赖说明的措辞，换个说法就能改行为。
+
+### 编辑器
+
+三种打开方式，功能完全一样：
+
+| 方式 | 说明 |
+|---|---|
+| 双击 `run-mod-editor.bat` | 起 8070 服务 + 自动开浏览器（推荐） |
+| 双击 `mod-editor-standalone.html` | 不依赖服务，数据内联在页面里 |
+| `http://127.0.0.1:8090/editor` | 借用面板的进程（面板在跑时） |
+
+编辑器能改：基本信息、配置（26 项，分「立即生效 / 需重启」）、工具（51 个，8 组，可搜索/折叠/只看已改）、人设（带 4 个模板）、文档（可增删排序）、加载脚本（带语法检查）。
+
+改完点「下载 mod 文件」，把下载到的 `xxx.mod.json` 放进 `mod/` 就生效。
+
+右上角有 **预估 +N token**——mod 的 prompt 和 docs 都会进提示词，超过 600 要留意，超过 1200 会挤占正常任务的上下文。
+
+### 技术细节
+
+- **加载器**：`agent/mods.ps1`，agent 启动时调 `Get-Mods` / `Apply-ModConfig` / `Apply-ModTools` / `Get-ModPrompt` / `Invoke-ModScripts`
+- **多个 mod 叠加**：按文件名排序，后面的覆盖前面的；人设和文档是全叠加
+- **8070 服务**：`mod-editor-server.py`（Python，主）/ `mod-editor.ps1`（PowerShell，备用）
+- **为什么主用 Python**：PowerShell 进程在没有控制台时，`Write-Host` 配合 `$ErrorActionPreference='Stop'` 会静默退出——实测 `Start-Process` / `start /b` 起的进程连脚本第一行都跑不到。Python 没这毛病，而且只占 30 MB
+
+### 自带两个例子（默认停用）
+
+```
+mod/coder-mode.mod.json   程序员模式：温度 0.1、40 步、改前必须先读
+mod/brief-mode.mod.json   极简模式：回答一句话，200 token 封顶
+```
+
+详细说明看 `mod/README.md`。
+
 ## 实测性能（i3-10105F / 8 GB / 无显卡）
 
 下面这些数字全部来自这台机器上的真实运行，不是估算。
@@ -592,15 +654,28 @@ Nafx/
 ├── switch-model.ps1      换模型的逻辑
 ├── agent/
 │   ├── agent.ps1         主循环
-│   ├── tools.ps1         23 个工具的实现
+│   ├── tools.ps1         51 个工具的实现
 │   ├── tools-schema.json 工具定义（给模型看的）
+│   ├── mods.ps1          插件加载器
 │   ├── prompt.md         系统提示词（常驻）
 │   ├── project.md        项目相关提示词（按需加载）
 │   ├── dashboard.html    面板
 │   ├── 工具手册.md
 │   ├── shell手册.md
 │   └── 错误处理.md
+├── mod/                  插件目录（放 .mod.json）
+│   ├── README.md         插件系统说明
+│   ├── coder-mode.mod.json   示例：程序员模式（默认停用）
+│   └── brief-mode.mod.json   示例：极简模式（默认停用）
+├── mod-editor.html       插件编辑器（网页）
+├── mod-editor-server.py  编辑器服务（8070，Python）
+├── mod-editor.ps1        编辑器服务（PowerShell 备用）
+├── mod-editor-standalone.html  编辑器独立版（双击可用）
+├── gen-standalone.ps1    重新生成独立版
+├── run-mod-editor.bat    启动编辑器
+├── stop-mod-editor.bat   停止编辑器
 ├── skills/               24 个技能
+├── train/                自动训练器
 ├── workspace/            工作目录（模型只能动这里）
 ├── models/               模型放这儿（.gguf，要自己下）
 └── llama/                llama.cpp 运行时

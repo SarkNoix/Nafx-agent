@@ -770,9 +770,21 @@ while ($listener.IsListening) {
                 }
 
                 '/api/tools' {
-                    # 面板的工具列表。以前是硬编码在前端的，加了新工具就看不到。
-                    # 现在直接读 tools-schema.json，加几个就显示几个。
+                    # 面板/编辑器的工具列表。直接读 tools-schema.json，加几个就显示几个。
+                    # 顺便按语义分组——51 个工具平铺太长，编辑器里要能折叠和搜索。
                     $toolsPath = Join-Path $Root 'agent\tools-schema.json'
+                    $groups = @{
+                        '文件' = @('write_file','read_file','list_dir','hash_file','read_lines','zip_list','diff_files','replace_in_file','set_line','append_file','make_dir','find_files','file_info','move_path','copy_path','grep_file','delete_path')
+                        '执行' = @('run_cmd','run_ps','run_ps1','run_bat','run_js','run_python','write_script')
+                        '系统' = @('sys_info','clipboard','env_get','open_app','kill_process','ps','install')
+                        '网络' = @('download_file','web_search','web_fetch')
+                        '数据' = @('json_format','csv_preview')
+                        '查询' = @('now','date_calc','unit_convert','project_doc','help','syshelp','win_doc')
+                        '流程' = @('say','rethink','plan','learn','finish')
+                        '技能' = @('skill','write_skill','unzip')
+                    }
+                    $nameToGroup = @{}
+                    foreach ($gName in $groups.Keys) { foreach ($tn in $groups[$gName]) { $nameToGroup[$tn] = $gName } }
                     $list = New-Object System.Collections.ArrayList
                     if (Test-Path $toolsPath) {
                         try {
@@ -780,9 +792,12 @@ while ($listener.IsListening) {
                             foreach ($tool in @($arr)) {
                                 $fn = $tool.function
                                 if (-not $fn -or -not $fn.name) { continue }
+                                $tn = [string]$fn.name
+                                $grp = if ($nameToGroup.ContainsKey($tn)) { $nameToGroup[$tn] } else { '其他' }
                                 [void]$list.Add([pscustomobject]@{
-                                    name = [string]$fn.name
+                                    name = $tn
                                     desc = [string]$fn.description
+                                    group = $grp
                                 })
                             }
                         } catch { }
@@ -790,6 +805,37 @@ while ($listener.IsListening) {
                     Send-Text -Response $resp -Text (ConvertTo-Json -InputObject $list.ToArray() -Depth 4 -Compress)
                 }
 
+                '/api/checkscript' {
+                    # 语法检查。编辑器里写的 PowerShell 和生成的 JSON 都在这里过一遍。
+                    # 手写 mod 最容易漏逗号，提前查出来比加载失败强。
+                    if ($method -ne 'POST') { Send-Text -Response $resp -Text '{"ok":false,"msg":"只接受 POST"}' -Code 405; break }
+                    $b = $null
+                    try { $b = (Read-Body $ctx.Request) | ConvertFrom-Json } catch { }
+                    $ckType = if ($b -and $b.type) { [string]$b.type } else { 'ps1' }
+                    $ckCode = if ($b -and $null -ne $b.code) { [string]$b.code } else { '' }
+                    $errs = New-Object System.Collections.ArrayList
+                    $ckOk = $true
+                    if (-not [string]::IsNullOrWhiteSpace($ckCode)) {
+                        if ($ckType -eq 'json') {
+                            try { $null = ($ckCode | ConvertFrom-Json) }
+                            catch {
+                                $ckOk = $false
+                                [void]$errs.Add('{"line":0,"col":0,"msg":' + (J ([string]$_.Exception.Message)) + '}')
+                            }
+                        } else {
+                            $pe = $null
+                            [void][System.Management.Automation.Language.Parser]::ParseInput($ckCode, [ref]$null, [ref]$pe)
+                            if ($pe -and @($pe).Count -gt 0) {
+                                $ckOk = $false
+                                foreach ($one in @($pe)) {
+                                    [void]$errs.Add('{"line":' + $one.Extent.StartLineNumber + ',"col":' + $one.Extent.StartColumnNumber + ',"msg":' + (J ([string]$one.Message)) + '}')
+                                }
+                            }
+                        }
+                    }
+                    $errJson = if ($errs.Count -gt 0) { '[' + ($errs -join ',') + ']' } else { '[]' }
+                    Send-Text -Response $resp -Text ('{"ok":' + $(if ($ckOk) { 'true' } else { 'false' }) + ',"errors":' + $errJson + '}')
+                }
                 '/api/mods' {
                     # 面板显示已加载的 mod。读的是 mod/*.mod.json 的文件名和元数据，
                     # 不 execute 里面的脚本（那由 agent 在启动时做）。
