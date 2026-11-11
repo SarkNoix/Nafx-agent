@@ -778,6 +778,32 @@ while ($listener.IsListening) {
                     Send-Text -Response $resp -Text (ConvertTo-Json -InputObject $list.ToArray() -Depth 4 -Compress)
                 }
 
+                '/api/mods' {
+                    # 面板显示已加载的 mod。读的是 mod/*.mod.json 的文件名和元数据，
+                    # 不 execute 里面的脚本（那由 agent 在启动时做）。
+                    $modDir2 = Join-Path $Root 'mod'
+                    $modList = New-Object System.Collections.ArrayList
+                    if (Test-Path $modDir2) {
+                        foreach ($mf in @(Get-ChildItem $modDir2 -Filter '*.mod.json' -File -ErrorAction SilentlyContinue | Sort-Object Name)) {
+                            try {
+                                $mj = Get-Content $mf.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
+                                [void]$modList.Add([pscustomobject]@{
+                                    file    = [string]$mf.Name
+                                    id      = [string]$mj.id
+                                    name    = [string]$mj.name
+                                    version = [string]$mj.version
+                                    enabled = $(if ($null -eq $mj.enabled) { $true } else { [bool]$mj.enabled })
+                                    hasPrompt = [bool]$mj.prompt
+                                    docCount  = @($mj.docs).Count
+                                    toolCount = @($mj.tools.PSObject.Properties).Count
+                                    cfgCount  = @($mj.config.PSObject.Properties).Count
+                                })
+                            } catch { }
+                        }
+                    }
+                    Send-Text -Response $resp -Text (ConvertTo-Json -InputObject $modList.ToArray() -Depth 4)
+                }
+
                 '/api/files' {
                     # 工作区文件清单，给面板左侧的文件栏用
                     $wsFull = if ([IO.Path]::IsPathRooted([string]$Cfg.workspace)) { [string]$Cfg.workspace } else { Join-Path $Root ([string]$Cfg.workspace) }

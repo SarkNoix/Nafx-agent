@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Nafx Mod 编辑器</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2128; --line:#30363d;
+    --fg:#e6edf3; --dim:#8b949e; --accent:#4a9eff; --ok:#3fb950; --warn:#d29922; --err:#f85149;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+       font:14px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  header{padding:14px 22px;border-bottom:1px solid var(--line);
+         display:flex;align-items:center;gap:14px;flex-wrap:wrap;background:var(--panel)}
+  h1{font-size:17px;margin:0;font-weight:600}
+  .sp{flex:1}
+  button{font:inherit;cursor:pointer;border-radius:6px;padding:7px 14px;
+         border:1px solid var(--line);background:var(--panel2);color:var(--fg);transition:.15s}
+  button:hover{background:#252c36;border-color:#484f58}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  button.primary:hover{background:#3a8ee6}
+  button.danger{color:var(--err)}
+  main{padding:18px 22px;max-width:1080px;margin:0 auto}
+  section{background:var(--panel);border:1px solid var(--line);border-radius:9px;
+          padding:16px 18px;margin-bottom:16px}
+  section h2{font-size:14px;margin:0 0 4px;font-weight:600;color:var(--accent)}
+  section .hint{font-size:12px;color:var(--dim);margin:0 0 14px}
+  label{display:block;font-size:12px;color:var(--dim);margin:10px 0 4px}
+  input[type=text],input[type=number],textarea,select{
+    width:100%;background:var(--bg);border:1px solid var(--line);border-radius:6px;
+    color:var(--fg);padding:8px 10px;font:inherit;font-family:ui-monospace,Consolas,monospace}
+  textarea{resize:vertical;min-height:80px}
+  input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+  .row{display:flex;align-items:center;gap:9px;margin:7px 0;font-size:13px}
+  .row input[type=checkbox]{width:15px;height:15px;accent-color:var(--accent)}
+  .tool-item{border:1px solid var(--line);border-radius:7px;padding:9px 11px;margin:7px 0;background:var(--panel2)}
+  .tool-head{display:flex;align-items:center;gap:9px;font-family:ui-monospace,Consolas,monospace;font-size:13px}
+  .tool-head input[type=text]{flex:1;font-size:12px;padding:5px 8px}
+  .doc-item{border:1px solid var(--line);border-radius:7px;padding:11px;margin:9px 0;background:var(--panel2)}
+  .muted{color:var(--dim);font-size:12px}
+  .tag{display:inline-block;padding:1px 7px;border-radius:4px;font-size:11px;
+       background:#21262d;color:var(--dim);border:1px solid var(--line)}
+  #toast{position:fixed;right:20px;bottom:20px;padding:11px 17px;border-radius:8px;
+         background:var(--panel2);border:1px solid var(--line);opacity:0;transform:translateY(8px);
+         transition:.25s;pointer-events:none;font-size:13px;max-width:380px}
+  #toast.show{opacity:1;transform:translateY(0)}
+  #toast.ok{border-color:var(--ok);color:var(--ok)}
+  #toast.err{border-color:var(--err);color:var(--err)}
+  pre{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:11px;
+      overflow:auto;max-height:280px;font-size:12px;margin:0}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Nafx Mod 编辑器</h1>
+  <span class="tag">8070</span>
+  <div class="sp"></div>
+  <button onclick="loadExisting()">载入已有 mod</button>
+  <button onclick="resetAll()">清空</button>
+  <button onclick="refreshPreview()">刷新预览</button>
+  <button class="primary" onclick="downloadMod()">下载 mod 文件</button>
+</header>
+
+<main>
+
+<section>
+  <h2>它是怎么工作的</h2>
+  <p class="hint">
+    一个 mod 就是一个 <code>.mod.json</code> 文件。改完点右上角「下载 mod 文件」，
+    把下载到的东西放进 <code>E:\Nafx\mod\</code>，agent 下次运行时自动加载。
+    <br>不用重启模型，不用改任何源码。删掉文件就是卸载。
+  </p>
+</section>
+
+<section>
+  <h2>① 基本信息</h2>
+  <div class="grid3">
+    <div>
+      <label>id（英文，唯一）</label>
+      <input type="text" id="modId" placeholder="coder-mode">
+    </div>
+    <div>
+      <label>名字（面板上显示的）</label>
+      <input type="text" id="modName" placeholder="程序员模式">
+    </div>
+    <div>
+      <label>版本</label>
+      <input type="text" id="modVersion" value="1.0">
+    </div>
+  </div>
+  <div class="row" style="margin-top:12px">
+    <input type="checkbox" id="modEnabled" checked>
+    <label for="modEnabled" style="margin:0">启用（取消勾选就是停用这个 mod）</label>
+  </div>
+</section>
+
+<section>
+  <h2>② 改 Nafx 的配置</h2>
+  <p class="hint">
+    勾上才会写进 mod。注意：<b>context / maxTokens 改了要重启模型才生效</b>，
+    temperature / maxSteps 这类立即生效。
+  </p>
+  <div id="configList"></div>
+</section>
+
+<section>
+  <h2>③ 改工具</h2>
+  <p class="hint">
+    取消勾选 = 这个 mod 里禁用该工具。下面的输入框留空 = 不改描述，填了就替换。
+  </p>
+  <div id="toolList" class="muted">加载中…</div>
+</section>
+
+<section>
+  <h2>④ 人设 / 规则</h2>
+  <p class="hint">
+    这段文字会追加到系统提示词末尾。写「你是谁、怎么说话、什么必须做什么不许做」。
+  </p>
+  <textarea id="modPrompt" rows="7" placeholder="例如：&#10;你是我的编程助手，只在代码相关的事上发挥。&#10;改代码前先说清楚要改哪个文件、改什么。&#10;不许自己臆测文件内容，先读再改。"></textarea>
+</section>
+
+<section>
+  <h2>⑤ 补充文档（md）</h2>
+  <p class="hint">每份文档会跟着人设一起发给模型。适合放规范、术语表、项目背景。</p>
+  <div id="docList"></div>
+  <button onclick="addDoc()" style="margin-top:9px">+ 加一份文档</button>
+</section>
+
+<section>
+  <h2>⑥ 加载时执行的脚本</h2>
+  <p class="hint">
+    PowerShell 脚本，agent 每次启动时跑一次。能改环境变量、写文件、做初始化。
+    留空就不执行。
+  </p>
+  <textarea id="modScript" rows="5" placeholder="# 例如：&#10;$env:MY_MODE = 'coder'&#10;Write-Host 'coder-mode 已加载'"></textarea>
+</section>
+
+<section>
+  <h2>预览</h2>
+  <p class="hint">这是最终会被写进 <code>xxx.mod.json</code> 的内容。</p>
+  <pre id="preview">{}</pre>
+</section>
+
+</main>
+
+<div id="toast"></div>
+
+<script>
+let allTools = [];
+
+function toast(msg, kind) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'show ' + (kind || '');
+  clearTimeout(window._tt);
+  window._tt = setTimeout(() => { t.className = ''; }, 3200);
+}
+
+async function jget(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return await r.json();
+}
+
+// ---------- 配置 ----------
+let cfgFields = [];
+async function loadConfig() {
+  const box = document.getElementById('configList');
+  let cfg = {};
+  try { cfg = await jget('/api/config'); } catch (e) {
+    box.innerHTML = '<span class="muted">读不到配置：' + e.message + '</span>';
+    return;
+  }
+  const keys = ['temperature','maxSteps','maxTokens','context','threads','stepTimeoutSeconds','personalPrompt','allowAdmin','loadMode'];
+  const labels = {
+    temperature:'temperature（越低越稳，0.1-0.4 适合干活）',
+    maxSteps:'maxSteps（最多几步，25 够用，复杂任务 40）',
+    maxTokens:'maxTokens（每次最多生成多少 token）',
+    context:'context（上下文窗口，改了要重启模型）',
+    threads:'threads（CPU 线程数）',
+    stepTimeoutSeconds:'stepTimeoutSeconds（单步超时秒数）',
+    personalPrompt:'personalPrompt（你的个人习惯，会拼进提示词）',
+    allowAdmin:'allowAdmin（是否允许管理员操作）',
+    loadMode:'loadMode（模型加载方式）'
+  };
+  cfgFields = keys.filter(k => cfg[k] !== undefined);
+  if (!cfgFields.length) { box.innerHTML = '<span class="muted">配置里没有可改的字段</span>'; return; }
+  let h = '';
+  for (const k of cfgFields) {
+    const v = cfg[k];
+    const isBool = (typeof v === 'boolean');
+    h += '<div class="row">';
+    h += '<input type="checkbox" data-cfg-on="' + k + '" onchange="refreshPreview()">';
+    h += '<span class="muted" style="min-width:300px">' + (labels[k] || k) + '</span>';
+    if (isBool) {
+      h += '<select data-cfg-val="' + k + '" style="width:120px" onchange="refreshPreview()">' +
+           '<option value="true"' + (v ? ' selected' : '') + '>true</option>' +
+           '<option value="false"' + (!v ? ' selected' : '') + '>false</option></select>';
+    } else {
+      h += '<input type="text" data-cfg-val="' + k + '" value="' + String(v).replace(/"/g,'&quot;') +
+           '" style="width:260px" onchange="refreshPreview()">';
+    }
+    h += '<span class="muted">当前 ' + JSON.stringify(v) + '</span>';
+    h += '</div>';
+  }
+  box.innerHTML = h;
+}
+
+// ---------- 工具 ----------
+async function loadTools() {
+  const box = document.getElementById('toolList');
+  try {
+    allTools = await jget('/api/tools');
+  } catch (e) {
+    box.innerHTML = '<span class="muted">读不到工具列表：' + e.message + '</span>';
+    return;
+  }
+  if (!allTools.length) { box.innerHTML = '<span class="muted">没有工具</span>'; return; }
+  let h = '';
+  for (const t of allTools) {
+    const desc = (t.description || '').replace(/</g,'&lt;');
+    h += '<div class="tool-item">';
+    h += '<div class="tool-head">';
+    h += '<input type="checkbox" data-tool-on="' + t.name + '" onchange="refreshPreview()">';
+    h += '<b>' + t.name + '</b>';
+    h += '<input type="text" data-tool-desc="' + t.name + '" placeholder="改描述（留空=不改）" onchange="refreshPreview()">';
+    h += '</div>';
+    h += '<div class="muted" style="margin-top:5px;font-size:11px">原描述：' + desc + '</div>';
+    h += '</div>';
+  }
+  box.innerHTML = h;
+}
+
+// ---------- 文档 ----------
+function addDoc(name, content) {
+  const box = document.getElementById('docList');
+  const d = document.createElement('div');
+  d.className = 'doc-item';
+  d.innerHTML =
+    '<div class="grid2">' +
+      '<div><label>文档名</label><input type="text" class="doc-name" placeholder="命名规范" value="' + (name || '').replace(/"/g,'&quot;') + '"></div>' +
+      '<div style="display:flex;align-items:flex-end"><button class="danger" onclick="this.closest(\'.doc-item\').remove();refreshPreview()">删掉这份</button></div>' +
+    '</div>' +
+    '<label>内容</label>' +
+    '<textarea class="doc-content" rows="4" onchange="refreshPreview()">' + (content || '').replace(/</g,'&lt;') + '</textarea>';
+  box.appendChild(d);
+  refreshPreview();
+}
+
+// ---------- 组装 ----------
+function buildMod() {
+  const id = document.getElementById('modId').value.trim() || 'untitled-mod';
+  const name = document.getElementById('modName').value.trim() || id;
+  const version = document.getElementById('modVersion').value.trim() || '1.0';
+  const enabled = document.getElementById('modEnabled').checked;
+
+  const mod = { id, name, version, enabled };
+
+  // config
+  const cfg = {};
+  let hasCfg = false;
+  document.querySelectorAll('[data-cfg-on]').forEach(chk => {
+    if (!chk.checked) return;
+    const k = chk.dataset.cfgOn;
+    const inp = document.querySelector('[data-cfg-val="' + k + '"]');
+    if (!inp) return;
+    let v = inp.value;
+    if (v === 'true') v = true;
+    else if (v === 'false') v = false;
+    else if (v !== '' && !isNaN(v)) v = Number(v);
+    cfg[k] = v;
+    hasCfg = true;
+  });
+  if (hasCfg) mod.config = cfg;
+
+  // tools
+  const tools = {};
+  let hasTools = false;
+  document.querySelectorAll('[data-tool-on]').forEach(chk => {
+    const k = chk.dataset.toolOn;
+    const descInp = document.querySelector('[data-tool-desc="' + k + '"]');
+    const desc = descInp ? descInp.value.trim() : '';
+    if (!chk.checked) { tools[k] = { enabled: false }; hasTools = true; }
+    else if (desc) { tools[k] = { description: desc }; hasTools = true; }
+  });
+  if (hasTools) mod.tools = tools;
+
+  // prompt
+  const prompt = document.getElementById('modPrompt').value.trim();
+  if (prompt) mod.prompt = prompt;
+
+  // docs
+  const docs = [];
+  document.querySelectorAll('.doc-item').forEach(d => {
+    const n = d.querySelector('.doc-name').value.trim();
+    const c = d.querySelector('.doc-content').value.trim();
+    if (n || c) docs.push({ name: n || '未命名', content: c });
+  });
+  if (docs.length) mod.docs = docs;
+
+  // script
+  const script = document.getElementById('modScript').value.trim();
+  if (script) mod.script = script;
+
+  return mod;
+}
+
+function refreshPreview() {
+  try {
+    document.getElementById('preview').textContent = JSON.stringify(buildMod(), null, 2);
+  } catch (e) {
+    document.getElementById('preview').textContent = '预览出错：' + e.message;
+  }
+}
+
+// ---------- 下载 ----------
+function downloadMod() {
+  const mod = buildMod();
+  if (!mod.prompt && !mod.config && !mod.tools && !mod.docs && !mod.script) {
+    toast('这个 mod 是空的，至少改一样东西', 'err');
+    return;
+  }
+  const txt = JSON.stringify(mod, null, 2);
+  const blob = new Blob([txt], { type: 'application/json;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = mod.id + '.mod.json';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000);
+  toast('已下载 ' + mod.id + '.mod.json，放进 E:\\Nafx\\mod\\ 就生效', 'ok');
+}
+
+// ---------- 已有 mod ----------
+async function loadExisting() {
+  let list = [];
+  try { list = await jget('/api/mods'); } catch (e) { toast('读不到已有 mod：' + e.message, 'err'); return; }
+  if (!list.length) { toast('mod 目录里还没有文件'); return; }
+  const names = list.map((x, i) => (i + 1) + '. ' + x.file).join('\n');
+  const pick = prompt('载入哪个？\n\n' + names + '\n\n输入序号：');
+  const i = parseInt(pick, 10) - 1;
+  if (isNaN(i) || i < 0 || i >= list.length) return;
+  let mod;
+  try { mod = JSON.parse(list[i].json); } catch (e) { toast('这个文件解析失败', 'err'); return; }
+  fillForm(mod);
+  toast('已载入 ' + list[i].file, 'ok');
+}
+
+function fillForm(mod) {
+  document.getElementById('modId').value = mod.id || '';
+  document.getElementById('modName').value = mod.name || '';
+  document.getElementById('modVersion').value = mod.version || '1.0';
+  document.getElementById('modEnabled').checked = mod.enabled !== false;
+  document.getElementById('modPrompt').value = mod.prompt || '';
+  document.getElementById('modScript').value = mod.script || '';
+  document.getElementById('docList').innerHTML = '';
+  if (mod.docs) for (const d of mod.docs) addDoc(d.name, d.content);
+  // config
+  if (mod.config) {
+    for (const k in mod.config) {
+      const chk = document.querySelector('[data-cfg-on="' + k + '"]');
+      const inp = document.querySelector('[data-cfg-val="' + k + '"]');
+      if (chk) chk.checked = true;
+      if (inp) inp.value = String(mod.config[k]);
+    }
+  }
+  // tools
+  if (mod.tools) {
+    for (const k in mod.tools) {
+      const chk = document.querySelector('[data-tool-on="' + k + '"]');
+      const inp = document.querySelector('[data-tool-desc="' + k + '"]');
+      if (chk && mod.tools[k].enabled === false) chk.checked = false;
+      if (inp && mod.tools[k].description) inp.value = mod.tools[k].description;
+    }
+  }
+  refreshPreview();
+}
+
+function resetAll() {
+  if (!confirm('清空所有输入？')) return;
+  document.getElementById('modId').value = '';
+  document.getElementById('modName').value = '';
+  document.getElementById('modVersion').value = '1.0';
+  document.getElementById('modEnabled').checked = true;
+  document.getElementById('modPrompt').value = '';
+  document.getElementById('modScript').value = '';
+  document.getElementById('docList').innerHTML = '';
+  document.querySelectorAll('[data-cfg-on]').forEach(c => c.checked = false);
+  document.querySelectorAll('[data-tool-on]').forEach(c => c.checked = true);
+  document.querySelectorAll('[data-tool-desc]').forEach(c => c.value = '');
+  refreshPreview();
+}
+
+// ---------- 启动 ----------
+(async function () {
+  await loadConfig();
+  await loadTools();
+  refreshPreview();
+  document.querySelectorAll('input,textarea').forEach(el => {
+    el.addEventListener('input', refreshPreview);
+  });
+})();
+</script>
+</body>
+</html>

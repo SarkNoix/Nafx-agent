@@ -25,6 +25,21 @@ $cfgName  = if ($env:NAFX_CONFIG) { [string]$env:NAFX_CONFIG } else { 'config.js
 $cfgPath  = if ([IO.Path]::IsPathRooted($cfgName)) { $cfgName } else { Join-Path $Root $cfgName }
 $Cfg      = Get-Content $cfgPath -Raw -Encoding UTF8 | ConvertFrom-Json
 
+# ---- 加载 mod（<项目根>\mod\*.mod.json）----
+# mod 能在不改源码的前提下改配置、改工具、加人设、塞文档。
+# 必须在读 Cfg 之后、用 Cfg.maxSteps 之前，否则 mod 改的 maxSteps 不生效。
+$modsLoader = Join-Path $AgentDir 'mods.ps1'
+if (Test-Path $modsLoader) {
+    . $modsLoader
+    $script:ActiveMods = @(Get-Mods -Root $Root)
+    if ($script:ActiveMods.Count -gt 0) {
+        $cfgRes = Apply-ModConfig -Mods $script:ActiveMods -Cfg $Cfg
+        $Cfg = $cfgRes.Cfg
+        foreach ($ap in $cfgRes.Applied) { Write-Host ("  [mod] 配置 " + $ap) -ForegroundColor DarkCyan }
+        Write-Host ("  已加载 " + $script:ActiveMods.Count + " 个 mod：" + (($script:ActiveMods | ForEach-Object { $_.name }) -join '、')) -ForegroundColor DarkCyan
+    } else { $script:ActiveMods = @() }
+} else { $script:ActiveMods = @() }
+
 if (-not $Task) { $Task = [string]$env:NAFX_TASK }
 if (-not $Task) { $Task = '你好' }
 if ($MaxSteps -le 0) { $MaxSteps = [int]$Cfg.maxSteps }
@@ -76,6 +91,12 @@ try {
         if ($n) { $script:ToolSchemaMap[$n] = (ConvertTo-Json -InputObject $s -Depth 10 -Compress) }
     }
 } catch { }
+
+# mod 改工具：禁用按钮、改描述
+if ($script:ActiveMods -and $script:ActiveMods.Count -gt 0) {
+    $toolLog = Apply-ModTools -Mods $script:ActiveMods -ToolMap $script:ToolSchemaMap
+    foreach ($tl in $toolLog) { Write-Host ("  [mod] " + $tl) -ForegroundColor DarkCyan }
+}
 
 $SessionFile = Join-Path $LogDir 'session.jsonl'
 $HistFile    = Join-Path $LogDir 'history.jsonl'
@@ -726,6 +747,16 @@ $hasTarget = ($TaskText -match '[A-Za-z0-9_\-\u4e00-\u9fa5]+\.(txt|md|log|csv|js
 if ($isVague -and -not $hasTarget -and $TaskText.Length -lt 20) {
     $sysFull = $sysFull + "`n`n## 这个任务没说清楚`n`n用户只说了「$TaskText」，没说对什么东西做。**你必须先用 say 问一句具体要处理哪个目录、按什么方式，问完等回答再动手。别自己挑一个做。**"
     Write-Log ("  任务太模糊，要求它先问")
+}
+# mod 追加的人设 / 规则 / 文档
+if ($script:ActiveMods -and $script:ActiveMods.Count -gt 0) {
+    $modPromptText = Get-ModPrompt -Mods $script:ActiveMods
+    if ($modPromptText) {
+        $sysFull = $sysFull + "`n" + $modPromptText
+        Write-Host ("  [mod] 追加人设/文档 " + $modPromptText.Length + " 字符") -ForegroundColor DarkCyan
+    }
+    $modScriptLog = Invoke-ModScripts -Mods $script:ActiveMods -Root $Root
+    foreach ($ml in $modScriptLog) { Write-Host ("  [mod] " + $ml) -ForegroundColor DarkCyan }
 }
 $history = @(@{ role = 'system'; content = $sysFull })
 foreach ($sm in $sessionMsgs) { $history += $sm }

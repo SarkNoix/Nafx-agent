@@ -1,0 +1,15 @@
+{
+  "id": "brief-mode",
+  "name": "极简模式",
+  "version": "1.0",
+  "enabled": false,
+  "config": {
+    "maxTokens": 200
+  },
+  "prompt": "回答一律不超过一句话。不解释过程、不加前言、不总结。\n只有用户明确问「为什么」才多说两句。",
+  "tools": {
+    "say": {
+      "description": "只在任务真的缺关键信息时用。能自己查到的别问"
+    }
+  }
+}
