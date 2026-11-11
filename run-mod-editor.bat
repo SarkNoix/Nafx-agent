@@ -1,13 +1,22 @@
 @echo off
 chcp 65001 >nul
+setlocal
 cd /d "%~dp0"
+
 echo.
-echo   Nafx Mod 编辑器
-echo   http://127.0.0.1:8070/
+echo   ================================================
+echo    Nafx Mod 编辑器
+echo   ================================================
 echo.
-echo   改完点「下载 mod 文件」，把下载到的 .mod.json 放进 mod\ 目录
-echo   关掉这个窗口就是停止编辑
+echo    关掉这个窗口 = 停止编辑器
 echo.
-start "" "http://127.0.0.1:8070"
-powershell -NoProfile -ExecutionPolicy Bypass -File "mod-editor.ps1"
+
+rem 3 秒后自动开浏览器（等服务器起来）
+start "" /min cmd /c "timeout /t 3 >nul & start """" http://127.0.0.1:8070/"
+
+rem 前台跑服务（必须有 console，不能用 -WindowStyle Hidden）
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0mod-editor.ps1"
+
+echo.
+echo   编辑器已停止
 pause

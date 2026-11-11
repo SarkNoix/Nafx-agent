@@ -12,6 +12,8 @@
 # ============================================================
 
 param([int]$Port = 8070)
+[IO.File]::WriteAllText('E:\Nafx\logs\p1.txt', 'param 之后能跑到', (New-Object Text.UTF8Encoding($false)))
+
 
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
