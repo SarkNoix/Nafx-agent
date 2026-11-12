@@ -202,7 +202,11 @@ button.sm{padding:5px 10px;font-size:12px}
 .theme-switch button{padding:5px 10px;font-size:11.5px;border:none;background:transparent;
   border-radius:var(--radius);color:var(--dim)}
 .theme-switch button.on{background:var(--panel);color:var(--fg);box-shadow:var(--shadow-sm)}
-[data-theme="glass"] .theme-switch button.on{background:rgba(255,255,255,.32);color:#fff}
+[data-theme="glass"] .theme-switch button.on{background:rgba(72,28,102,.80);color:#fff;box-shadow:0 2px 10px rgba(38,8,58,.35)}
+/* 玻璃主题：未选中的按钮也要压住底色。--dim 在 glass 下是白色，
+   叠在浅紫半透明底上一样糊，所以单独指定深紫。 */
+[data-theme="glass"] .theme-switch button{color:rgba(58,24,84,.82)}
+[data-theme="glass"] .theme-switch button:hover{color:rgba(58,24,84,1);background:rgba(255,255,255,.28)}
 
 /* ---------- 主体 ---------- */
 main{position:relative;z-index:1;flex:1;display:flex;min-height:0}
@@ -802,23 +806,10 @@ button:disabled{opacity:.42;cursor:not-allowed;transform:none!important}
 .hbar b{font-family:ui-monospace,Consolas,monospace;font-size:11.5px}
 
 /* ---------- 主题切换一体 ---------- */
-.theme-switch{
-  display:flex;gap:0;border:1px solid var(--line);border-radius:9px;
-  overflow:hidden;background:var(--panel2);
-}
-.theme-switch button{
-  border:none!important;border-radius:0!important;background:transparent!important;
-  padding:5px 12px;font-size:11.5px;color:var(--dim);
-  box-shadow:none;
-}
-.theme-switch button:hover{background:var(--panel3)!important;color:var(--fg)}
-.theme-switch button.on{
-  background:var(--accent)!important;color:var(--primary-fg);font-weight:600;
-}
 
 /* ---------- 侧栏：更紧凑 ---------- */
 .side{gap:11px!important}
-.side-block{padding:13px 14px;border-radius:12px;transition:border-color .18s}
+.side-block{padding:13px 14px;border-radius:var(--radius-lg);transition:border-color .18s}
 .side-block:hover{border-color:var(--line2)}
 .side-block h3{
   font-size:11px;font-weight:650;letter-spacing:.6px;
@@ -840,7 +831,7 @@ button:disabled{opacity:.42;cursor:not-allowed;transform:none!important}
 .cfg-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .cfg-cell{
   background:var(--panel3);border:1px solid transparent;
-  border-radius:8px;padding:7px 9px;
+  border-radius:var(--radius);padding:7px 9px;
   display:flex;flex-direction:column;gap:2px;
   min-width:0;transition:border-color .16s;
 }
@@ -890,7 +881,7 @@ button:disabled{opacity:.42;cursor:not-allowed;transform:none!important}
 /* ---------- 工具：搜索 + chip 微调 ---------- */
 .tool-search{
   width:100%;padding:6px 10px;font-size:11.5px;
-  background:var(--bg);border:1px solid var(--line);border-radius:8px;
+  background:var(--bg);border:1px solid var(--line);border-radius:var(--radius);
   color:var(--fg);font-family:ui-monospace,Consolas,monospace;
   margin:0 0 9px;transition:border-color .16s,box-shadow .16s;
 }
@@ -902,7 +893,7 @@ button:disabled{opacity:.42;cursor:not-allowed;transform:none!important}
 
 .tools-grid{gap:5px}
 .tool-chip{
-  font-size:10.5px;padding:4px 8px;border-radius:6px;
+  font-size:10.5px;padding:4px 8px;border-radius:calc(var(--radius) * .6);
   background:var(--panel3);border:1px solid transparent;color:var(--accent);
 }
 .tool-chip:hover{
@@ -927,12 +918,12 @@ button:disabled{opacity:.42;cursor:not-allowed;transform:none!important}
 }
 .side-actions button{
   width:100%!important;padding:8px 6px!important;
-  font-size:12px!important;text-align:center!important;border-radius:8px!important;
+  font-size:12px!important;text-align:center!important;border-radius:var(--radius)!important;
 }
 /* 4 个按钮 2×2 均匀排布 */
 
 /* ---------- 会话区 ---------- */
-.bubble{border-radius:14px}
+.bubble{border-radius:var(--radius-lg)}
 .thread{padding:20px 24px 12px}
 
 /* 空状态淡入 */
@@ -946,7 +937,7 @@ button:disabled{opacity:.42;cursor:not-allowed;transform:none!important}
 .composer{padding:14px 18px 12px}
 .composer-inner{gap:11px}
 .composer textarea{
-  border-radius:14px;
+  border-radius:var(--radius-lg);
   transition:border-color .16s,box-shadow .16s;
 }
 .composer textarea:focus{
@@ -954,7 +945,7 @@ button:disabled{opacity:.42;cursor:not-allowed;transform:none!important}
   box-shadow:0 0 0 3px rgba(110,168,254,.10);
 }
 .composer button.primary{
-  border-radius:14px;
+  border-radius:var(--radius-lg);
   transition:background .16s,transform .1s,box-shadow .16s;
 }
 .composer button.primary:hover{box-shadow:0 4px 16px rgba(110,168,254,.26)}
@@ -966,6 +957,11 @@ button:disabled{opacity:.42;cursor:not-allowed;transform:none!important}
 /* ---------- 窄屏微调 ---------- */
 @media(max-width:1180px){ .cfg-grid{grid-template-columns:1fr} }
 @media(max-width:980px){ .hbar{gap:5px} .hbar > span{padding:3px 8px;font-size:10.5px} }
+/* ---------- 圆角统一（玻璃主题下这些会更大：--radius 16px / --radius-lg 22px）---------- */
+.drawer{border-radius:var(--radius-lg) 0 0 var(--radius-lg)}
+.egg-bubble{border-radius:var(--radius-lg)}
+.file-item{border-radius:var(--radius)}
+.code-block,.raw-out,.step-obs,.answer-box{border-radius:var(--radius-lg)}
 </style>
 </head>
 <body>
