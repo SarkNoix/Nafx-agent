@@ -880,13 +880,35 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
         }
 
         $noToolCount++
+        # 有结果就收，没结果才认输。
+        # 「列出当前目录有哪些文件」就是卡在这：list_dir 早就返回内容了，
+        # 模型却一直空转，最后被判定 failed，答案白白丢掉。
+        if ($noToolCount -ge 2 -and $state.steps.Count -gt 0) {
+            $lastObsI = ''
+            for ($si = $state.steps.Count - 1; $si -ge 0; $si--) {
+                $oI = [string]$state.steps[$si].obs
+                if ($oI.Trim()) { $lastObsI = $oI; break }
+            }
+            if ($lastObsI.Trim()) {
+                $finalI = ($lastObsI -split "`n" | Where-Object { $_.Trim() } | Select-Object -First 15) -join "`n"
+                $state.status = 'done'
+                $state.answer = $finalI
+                $state.summary = $finalI
+                $state.elapsed = $clock.Elapsed.TotalSeconds
+                Write-State $state
+                Write-Log ("连续 $noToolCount 次不调工具，但已有结果，直接收尾")
+                Write-Closing -State $state -Status 'done' -Summary $state.summary -StepCount $step
+                $finished = $true
+                break
+            }
+        }
         if ($noToolCount -ge 3) {
             $state.status = 'failed'
-            $state.answer = '出错了：模型连续三次没有调用工具，任务没法继续。'
+            $state.answer = '出错了：模型连续三次没有调用工具，也没拿到任何结果。'
             $state.summary = '出错了：模型只说话不动手。'
             $state.elapsed = $clock.Elapsed.TotalSeconds
             Write-State $state
-            Write-Log '连续三次不调工具，收尾'
+            Write-Log '连续三次不调工具且没有任何观察，收尾'
             Write-Closing -State $state -Status 'failed' -Summary $state.summary -StepCount $step
             $finished = $true
             break
@@ -1249,12 +1271,31 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
 }
 
 if (-not $finished) {
-    $state.status = 'maxsteps'
-    $state.elapsed = $clock.Elapsed.TotalSeconds
-    $state.answer = "步数用完了（$MaxSteps 步），任务还没做完。"
-    $state.summary = "出错了：跑满 $MaxSteps 步还没收尾。"
-    Write-State $state
-    Write-Closing -State $state -Status 'maxsteps' -Summary $state.summary -StepCount $MaxSteps
+    # 步数用完了，但很可能已经有结果了——别丢掉，用最后一次观察收尾。
+    # 之前这里直接写「步数用完了，任务还没做完」，导致「列出当前目录有哪些文件」
+    # 明明 list_dir 早就返回了内容，最后却是 0 分。
+    $lastObsM = ''
+    for ($si = $state.steps.Count - 1; $si -ge 0; $si--) {
+        $oM = [string]$state.steps[$si].obs
+        if ($oM.Trim()) { $lastObsM = $oM; break }
+    }
+    if ($lastObsM.Trim()) {
+        $finalM = ($lastObsM -split "`n" | Where-Object { $_.Trim() } | Select-Object -First 15) -join "`n"
+        $state.status = 'done'
+        $state.answer = $finalM
+        $state.summary = $finalM
+        $state.elapsed = $clock.Elapsed.TotalSeconds
+        Write-State $state
+        Write-Log ("跑满 $MaxSteps 步，但已有结果，用最后一次观察收尾")
+        Write-Closing -State $state -Status 'done' -Summary $state.summary -StepCount $MaxSteps
+    } else {
+        $state.status = 'maxsteps'
+        $state.elapsed = $clock.Elapsed.TotalSeconds
+        $state.answer = "步数用完了（$MaxSteps 步），任务还没做完。"
+        $state.summary = "出错了：跑满 $MaxSteps 步还没收尾。"
+        Write-State $state
+        Write-Closing -State $state -Status 'maxsteps' -Summary $state.summary -StepCount $MaxSteps
+    }
 }
 
 # ---------- 记进会话 ----------

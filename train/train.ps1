@@ -74,7 +74,7 @@ function Repair-StaleConfig {
         if ([IO.Path]::IsPathRooted($fix)) { $script:RealWorkspace = $fix }
         else { $script:RealWorkspace = [IO.Path]::GetFullPath((Join-Path $NafxRoot $fix)) }
         $script:CfgOriginalText = [IO.File]::ReadAllText($CfgPath, [Text.Encoding]::UTF8)
-        Write-Host ("  [自愈] 上次训练没还原干净，已把 workspace 改回：{0}" -f $fix) -ForegroundColor Yellow
+        Write-Line ("  [自愈] 上次训练没还原干净，已把 workspace 改回：{0}" -f $fix) 'Yellow'
     }
 }
 Repair-StaleConfig
@@ -114,7 +114,7 @@ function Set-SandboxWorkspace {
 $null = Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action { Restore-WorkspaceConfig } 2>$null
 
 if ([string]::IsNullOrWhiteSpace($BankPath)) { $BankPath = Join-Path $TrainDir 'bank.json' }
-if (-not (Test-Path $BankPath)) { Write-Host "找不到题库：$BankPath" -ForegroundColor Red; exit 1 }
+if (-not (Test-Path $BankPath)) { Say "找不到题库：$BankPath" 'Red'; exit 1 }
 
 $PromptPath = Join-Path $AgentDir 'prompt.md'
 $ModelPath  = Join-Path $NafxRoot ([string]$Cfg.model)
@@ -128,8 +128,22 @@ $Stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
 # ------------------------------------------------------------
 #  配色输出
 # ------------------------------------------------------------
-function Say { param([string]$Text, [string]$Color = 'Gray') Write-Host $Text -ForegroundColor $Color }
-function Rule { param([string]$Ch = '─', [string]$Color = 'DarkGray') Write-Host ($Ch * 70) -ForegroundColor $Color }
+# 有控制台时用彩色输出，被重定向时退回 Write-Output。
+# 原因：Write-Host 在 PS 5.1 写的是 Information 流，进程没有控制台时会出问题，
+# 之前 8070 编辑器就这么卡死的。训练器要能在后台跑，所以得兼容两种。
+function Write-Line {
+    param([string]$Text, [string]$Color = 'Gray')
+    $redirected = $false
+    try { $redirected = [Console]::IsOutputRedirected } catch { }
+    if ($Host.Name -eq 'ConsoleHost' -and -not $redirected) {
+        Write-Host $Text -ForegroundColor $Color
+    } else {
+        Write-Output $Text
+    }
+}
+
+function Say { param([string]$Text, [string]$Color = 'Gray') Write-Line $Text $Color }
+function Rule { param([string]$Ch = '─', [string]$Color = 'DarkGray') Write-Line ($Ch * 70) $Color }
 
 # ------------------------------------------------------------
 #  1. 服务检查
