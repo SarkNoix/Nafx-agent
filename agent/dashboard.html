@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN" data-theme="dark">
 <head>
 <meta charset="utf-8">
@@ -755,6 +755,217 @@ textarea::placeholder{color:var(--faint)}
 }
 .cfg-save:disabled{opacity:.5}
 .cfg-note{font-size:10.5px;color:var(--faint);margin-top:6px;line-height:1.5}
+/* ============================================================
+   UI 优化（追加覆盖，不改上面任何原有规则）
+   ============================================================ */
+
+/* ---------- 滚动条统一 ---------- */
+*{scrollbar-width:thin;scrollbar-color:var(--line2) transparent}
+*::-webkit-scrollbar{width:10px;height:10px}
+*::-webkit-scrollbar-track{background:transparent}
+*::-webkit-scrollbar-thumb{
+  background:var(--line2);border-radius:10px;
+  border:2px solid transparent;background-clip:content-box;
+}
+*::-webkit-scrollbar-thumb:hover{background:var(--faint);background-clip:content-box}
+
+/* ---------- 焦点可见 ---------- */
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible{
+  outline:2px solid var(--accent);outline-offset:2px;
+}
+
+/* ---------- 按钮微交互 ---------- */
+header button,.side button,.tool-chip{
+  transition:background .16s cubic-bezier(.4,0,.2,1),
+             border-color .16s cubic-bezier(.4,0,.2,1),
+             color .16s cubic-bezier(.4,0,.2,1),
+             transform .1s cubic-bezier(.4,0,.2,1),
+             box-shadow .16s;
+}
+header button:active,.side button:active{transform:translateY(1px)}
+button:disabled{opacity:.42;cursor:not-allowed;transform:none!important}
+
+/* ---------- 顶栏：hbar 改胶囊 ---------- */
+.hbar{gap:7px;font-size:11.5px;align-items:center}
+.hbar > span{
+  display:inline-flex;align-items:center;gap:5px;
+  padding:4px 11px;border-radius:20px;
+  background:var(--panel2);border:1px solid var(--line);
+  color:var(--dim);white-space:nowrap;
+  transition:border-color .16s,background .16s,color .16s;
+}
+.hbar > span:hover{border-color:var(--line2);background:var(--panel3);color:var(--fg)}
+.hbar b{font-family:ui-monospace,Consolas,monospace;font-size:11.5px}
+
+/* ---------- 主题切换一体 ---------- */
+.theme-switch{
+  display:flex;gap:0;border:1px solid var(--line);border-radius:9px;
+  overflow:hidden;background:var(--panel2);
+}
+.theme-switch button{
+  border:none!important;border-radius:0!important;background:transparent!important;
+  padding:5px 12px;font-size:11.5px;color:var(--dim);
+  box-shadow:none;
+}
+.theme-switch button:hover{background:var(--panel3)!important;color:var(--fg)}
+.theme-switch button.on{
+  background:var(--accent)!important;color:var(--primary-fg);font-weight:600;
+}
+
+/* ---------- 侧栏：更紧凑 ---------- */
+.side{gap:11px!important}
+.side-block{padding:13px 14px;border-radius:12px;transition:border-color .18s}
+.side-block:hover{border-color:var(--line2)}
+.side-block h3{
+  font-size:11px;font-weight:650;letter-spacing:.6px;
+  text-transform:uppercase;color:var(--faint);
+  margin:0 0 10px;display:flex;align-items:center;gap:6px;
+}
+.side-block h3 .cnt{
+  font-size:10px;font-weight:400;letter-spacing:0;text-transform:none;
+  color:var(--faint);background:var(--panel3);
+  padding:1px 7px;border-radius:20px;margin-left:auto;
+}
+.side-block .quote{
+  font-size:11px;color:var(--faint);font-style:italic;
+  margin:0 0 10px;padding-left:8px;
+  border-left:2px solid var(--line2);line-height:1.6;
+}
+
+/* ---------- 配置：2 列网格 ---------- */
+.cfg-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.cfg-cell{
+  background:var(--panel3);border:1px solid transparent;
+  border-radius:8px;padding:7px 9px;
+  display:flex;flex-direction:column;gap:2px;
+  min-width:0;transition:border-color .16s;
+}
+.cfg-cell:hover{border-color:var(--line2)}
+.cfg-cell i{
+  font-style:normal;font-size:10px;color:var(--faint);
+  letter-spacing:.2px;white-space:nowrap;
+}
+.cfg-cell b{
+  font-family:ui-monospace,Consolas,monospace;
+  font-size:11.5px;color:var(--fg);font-weight:600;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.cfg-cell b.val-ok{color:var(--ok)}
+.cfg-cell b.val-warn{color:var(--warn)}
+.cfg-cell.wide{grid-column:1 / -1}
+
+/* ---------- 上下文：总条 + 图例 ---------- */
+.ctx-total{margin:0 0 2px}
+.ctx-total-head{
+  display:flex;justify-content:space-between;align-items:baseline;
+  font-size:11px;color:var(--dim);margin-bottom:6px;
+}
+.ctx-total-head b{
+  font-family:ui-monospace,Consolas,monospace;
+  color:var(--fg);font-weight:600;font-size:12.5px;
+}
+.ctx-bar{
+  display:flex;height:9px;border-radius:9px;overflow:hidden;
+  background:var(--panel3);gap:1px;
+}
+.ctx-seg{height:100%;transition:width .45s cubic-bezier(.4,0,.2,1)}
+.ctx-seg.seg-prompt{background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.ctx-seg.seg-tools{background:linear-gradient(90deg,var(--warn),#f59e0b)}
+.ctx-legend{
+  display:flex;gap:12px;margin-top:7px;font-size:10.5px;
+  color:var(--faint);flex-wrap:wrap;
+}
+.ctx-legend span{display:inline-flex;align-items:center;gap:5px}
+.ctx-legend i{
+  width:8px;height:8px;border-radius:2px;
+  font-style:normal;display:inline-block;
+}
+.ctx-legend i.lg-prompt{background:var(--accent)}
+.ctx-legend i.lg-tools{background:var(--warn)}
+
+/* ---------- 工具：搜索 + chip 微调 ---------- */
+.tool-search{
+  width:100%;padding:6px 10px;font-size:11.5px;
+  background:var(--bg);border:1px solid var(--line);border-radius:8px;
+  color:var(--fg);font-family:ui-monospace,Consolas,monospace;
+  margin:0 0 9px;transition:border-color .16s,box-shadow .16s;
+}
+.tool-search:focus{
+  outline:none;border-color:var(--accent);
+  box-shadow:0 0 0 3px rgba(110,168,254,.10);
+}
+.tool-search::placeholder{color:var(--faint)}
+
+.tools-grid{gap:5px}
+.tool-chip{
+  font-size:10.5px;padding:4px 8px;border-radius:6px;
+  background:var(--panel3);border:1px solid transparent;color:var(--accent);
+}
+.tool-chip:hover{
+  border-color:var(--accent);background:transparent;
+  box-shadow:0 0 0 3px rgba(110,168,254,.09);
+}
+.tool-group{
+  font-size:10px;font-weight:600;letter-spacing:.6px;color:var(--faint);
+  margin:11px 0 5px;display:flex;align-items:center;gap:6px;
+}
+.tool-group::after{content:'';flex:1;height:1px;background:var(--line)}
+.tool-group .tg-cnt{
+  font-style:normal;font-size:9.5px;font-weight:400;
+  background:var(--panel3);padding:0 6px;border-radius:20px;order:-1;
+}
+
+/* ---------- 操作按钮：2 列网格 ---------- */
+.side-actions{
+  display:grid!important;grid-template-columns:1fr 1fr;
+  gap:7px!important;margin-top:auto;
+  padding-top:13px;border-top:1px solid var(--line);
+}
+.side-actions button{
+  width:100%!important;padding:8px 6px!important;
+  font-size:12px!important;text-align:center!important;border-radius:8px!important;
+}
+/* 4 个按钮 2×2 均匀排布 */
+
+/* ---------- 会话区 ---------- */
+.bubble{border-radius:14px}
+.thread{padding:20px 24px 12px}
+
+/* 空状态淡入 */
+.empty{animation:emptyIn .45s cubic-bezier(.4,0,.2,1)}
+@keyframes emptyIn{
+  from{opacity:0;transform:translateY(10px)}
+  to{opacity:1;transform:translateY(0)}
+}
+
+/* ---------- 输入区 ---------- */
+.composer{padding:14px 18px 12px}
+.composer-inner{gap:11px}
+.composer textarea{
+  border-radius:14px;
+  transition:border-color .16s,box-shadow .16s;
+}
+.composer textarea:focus{
+  border-color:var(--accent);
+  box-shadow:0 0 0 3px rgba(110,168,254,.10);
+}
+.composer button.primary{
+  border-radius:14px;
+  transition:background .16s,transform .1s,box-shadow .16s;
+}
+.composer button.primary:hover{box-shadow:0 4px 16px rgba(110,168,254,.26)}
+.composer .hint{
+  display:flex;gap:14px;font-size:11px;color:var(--faint);
+  margin:9px auto 0;max-width:900px;flex-wrap:wrap;
+}
+
+/* ---------- 窄屏微调 ---------- */
+@media(max-width:1180px){ .cfg-grid{grid-template-columns:1fr} }
+@media(max-width:980px){ .hbar{gap:5px} .hbar > span{padding:3px 8px;font-size:10.5px} }
 </style>
 </head>
 <body>
@@ -783,19 +994,35 @@ textarea::placeholder{color:var(--faint)}
 <main>
   <aside class="side">
     <div class="side-block">
-      <h3>配置</h3>
-      <div class="quote">困住你的永远是硬墙，而不是你自己</div>
-      <div class="kv"><span>模型</span><span id="cModel">—</span></div>
-      <div class="kv"><span>上下文</span><span id="cCtx">—</span></div>
-      <div class="kv"><span>每路容量</span><span id="cPer">—</span></div>
-      <div class="kv"><span>工具数</span><span id="cTools">—</span></div>
-      <div class="kv"><span>最多步数</span><span id="cSteps">—</span></div>
-      <div class="kv"><span>权限</span><span id="cAdmin">—</span></div>
+      <h3>配置 <span class="cnt" id="cfgModelTag"></span></h3>
+      <div class="cfg-grid">
+        <div class="cfg-cell wide"><i>模型</i><b id="cModel">—</b></div>
+        <div class="cfg-cell"><i>上下文</i><b id="cCtx">—</b></div>
+        <div class="cfg-cell"><i>每路容量</i><b id="cPer">—</b></div>
+        <div class="cfg-cell"><i>工具数</i><b id="cTools">—</b></div>
+        <div class="cfg-cell"><i>最多步数</i><b id="cSteps">—</b></div>
+        <div class="cfg-cell wide"><i>权限</i><b id="cAdmin">—</b></div>
+      </div>
     </div>
 
     <div class="side-block">
-      <h3>上下文占用</h3>
+      <h3>上下文占用 <span class="cnt" id="ctxTag"></span></h3>
       <div class="quote">每一条消息，都值得等待</div>
+      <div class="ctx-total">
+        <div class="ctx-total-head">
+          <span>已用</span>
+          <b id="ctxUsed">—</b>
+        </div>
+        <div class="ctx-bar">
+          <div class="ctx-seg seg-prompt" id="segPrompt" style="width:0%"></div>
+          <div class="ctx-seg seg-tools" id="segTools" style="width:0%"></div>
+        </div>
+        <div class="ctx-legend">
+          <span><i class="lg-prompt"></i>提示词</span>
+          <span><i class="lg-tools"></i>工具定义</span>
+          <span><i style="background:var(--panel3)"></i>剩余</span>
+        </div>
+      </div>
       <div class="gauge">
         <div class="gauge-label"><span>提示词</span><span id="gPrompt">—</span></div>
         <div class="gauge-bar"><div class="gauge-fill" id="gbPrompt" style="width:0%"></div></div>
@@ -816,7 +1043,8 @@ textarea::placeholder{color:var(--faint)}
     </div>
 
     <div class="side-block">
-      <h3>工具 <span class="cnt">点一下复制</span></h3>
+      <h3>工具 <span class="cnt" id="toolTag">点一下复制</span></h3>
+      <input type="text" class="tool-search" id="toolSearch" placeholder="搜索工具…" oninput="renderTools()">
       <div class="quote">拿起工具，就是 agent</div>
       <div id="toolBox"></div>
     </div>
@@ -825,7 +1053,7 @@ textarea::placeholder{color:var(--faint)}
       <button id="btnNewChat">新对话</button>
       <button id="btnPause" class="danger">暂停对话</button>
       <button id="btnClearChat">清除对话</button>
-      <button id="btnAdmin">设为管理员权限</button>
+      <button id="btnAdmin">管理员权限</button>
     </div>
   </aside>
 
@@ -1162,16 +1390,31 @@ function renderTools(){
   var descMap = {};
   for (var i=0;i<ALL_TOOLS.length;i++){ descMap[ALL_TOOLS[i].name] = ALL_TOOLS[i].desc || ''; }
 
-  // 已经被分组的工具
+  // 搜索框：按名字或描述过滤
+  var searchEl = $('toolSearch');
+  var q = searchEl ? (searchEl.value || '').trim().toLowerCase() : '';
+  function hit(nm){
+    if (!q) return true;
+    if (nm.toLowerCase().indexOf(q) >= 0) return true;
+    return (descMap[nm] || '').toLowerCase().indexOf(q) >= 0;
+  }
+
   var used = {};
   var html = '';
+  var shown = 0;
+
   for (var g=0; g<TOOL_GROUPS.length; g++){
     var grp = TOOL_GROUPS[g];
     var names = [];
     for (var n=0; n<grp.names.length; n++){
-      if (descMap[grp.names[n]] !== undefined) { names.push(grp.names[n]); used[grp.names[n]] = 1; }
+      var tn = grp.names[n];
+      if (descMap[tn] !== undefined) {
+        used[tn] = 1;
+        if (hit(tn)) names.push(tn);
+      }
     }
     if (!names.length) continue;
+    shown += names.length;
     html += '<div class="tool-group">' + esc(grp.g) + ' <i class="tg-cnt">' + names.length + '</i></div><div class="tools-grid">';
     for (var k=0; k<names.length; k++){
       var nm = names[k];
@@ -1184,9 +1427,10 @@ function renderTools(){
   var rest = [];
   for (var i2=0;i2<ALL_TOOLS.length;i2++){
     var nm2 = ALL_TOOLS[i2].name;
-    if (!used[nm2]) rest.push(nm2);
+    if (!used[nm2] && hit(nm2)) rest.push(nm2);
   }
   if (rest.length){
+    shown += rest.length;
     html += '<div class="tool-group">其他 <i class="tg-cnt">' + rest.length + '</i></div><div class="tools-grid">';
     for (var r=0;r<rest.length;r++){
       html += '<div class="tool-chip" data-code="' + esc(rest[r]) + '" title="' + esc(descMap[rest[r]]) + '">' + esc(rest[r]) + '</div>';
@@ -1194,8 +1438,20 @@ function renderTools(){
     html += '</div>';
   }
 
-  html += '<div class="sys-note" style="margin:6px 0 0">共 ' + ALL_TOOLS.length + ' 个工具，点一下复制名字</div>';
+  if (!shown){
+    html = '<div class="sys-note" style="margin:6px 0 0">没匹配到「' + esc(q) + '」</div>';
+  } else {
+    html += '<div class="sys-note" style="margin:6px 0 0">' +
+            (q ? ('匹配 ' + shown + ' / ' + ALL_TOOLS.length) : ('共 ' + ALL_TOOLS.length + ' 个工具')) +
+            '，点一下复制名字</div>';
+  }
+
   box.innerHTML = html;
+
+  // 侧栏标题上的数量
+  var tag = $('toolTag');
+  if (tag) tag.textContent = ALL_TOOLS.length + ' 个';
+
   var chips = box.querySelectorAll('.tool-chip');
   for (var c=0;c<chips.length;c++){
     (function(ch){ ch.onclick = function(){ copyText(ch.getAttribute('data-code')); }; })(chips[c]);
@@ -1571,15 +1827,56 @@ function renderSystem(sys, st){
   if (sys.isAdmin){ ad.textContent = '管理员'; ad.className = 'val-ok'; }
   else { ad.textContent = '普通'; ad.className = 'val-warn'; }
 
+  // 配置块标题右侧：上下文总量
+  var cmt = $('cfgModelTag');
+  if (cmt) cmt.textContent = (sys.context || '—') + ' tok';
+
   var per = sys.contextPerSlot || 1;
-  var pt = sys.promptTokens || 0, tt = (st && typeof st.toolTokens === 'number') ? st.toolTokens : (sys.toolTokens || 0);
+  var pt = sys.promptTokens || 0;
+
+  // 工具 token：sys.toolTokens 是「51 个工具全量」，约 4000，不是实际发送量。
+  // 真实值只有 agent 跑过任务后才会写进 state.toolTokens（按流程过滤，通常 700 上下）。
+  // 没跑任务时用全量画进度条会把占用显示成 90%，误导人，所以分开处理。
+  var hasReal = !!(st && typeof st.toolTokens === 'number' && st.toolTokens > 0);
+  var tt = hasReal ? st.toolTokens : 0;
+  var ttAll = sys.toolTokens || 0;
   var free = Math.max(0, per - pt - tt);
+  var used = pt + tt;
+  var pct = per > 0 ? Math.min(100, used / per * 100) : 0;
+
+  // 三段细分
   $('gPrompt').textContent = fmtNum(pt) + ' tok';
   $('gbPrompt').style.width = Math.min(100, pt/per*100) + '%';
-  $('gTools').textContent = fmtNum(tt) + ' tok';
-  $('gbTools').style.width = Math.min(100, tt/per*100) + '%';
-  $('gFree').textContent = fmtNum(free) + ' tok';
-  $('gbFree').style.width = Math.min(100, free/per*100) + '%';
+
+  $('gTools').textContent = hasReal
+    ? (fmtNum(tt) + ' tok')
+    : ('全量 ' + fmtNum(ttAll) + ' tok');
+  $('gbTools').style.width = hasReal ? (Math.min(100, tt/per*100) + '%') : '0%';
+
+  $('gFree').textContent = hasReal
+    ? (fmtNum(free) + ' tok')
+    : '等任务开始后算';
+  $('gbFree').style.width = hasReal ? (Math.min(100, free/per*100) + '%') : '0%';
+
+  // 总条
+  var cu = $('ctxUsed');
+  if (cu){
+    cu.textContent = hasReal
+      ? (fmtNum(used) + ' / ' + fmtNum(per) + ' tok')
+      : (fmtNum(pt) + ' / ' + fmtNum(per) + ' tok　工具另算');
+  }
+  var sp = $('segPrompt');
+  if (sp) sp.style.width = Math.min(100, pt/per*100) + '%';
+  var stg = $('segTools');
+  if (stg) stg.style.width = hasReal ? (Math.min(100, tt/per*100) + '%') : '0%';
+
+  // 标题右侧百分比
+  var ct = $('ctxTag');
+  if (ct){
+    var showPct = hasReal ? pct : (per > 0 ? pt / per * 100 : 0);
+    ct.textContent = Math.round(showPct) + '%';
+    ct.style.color = showPct >= 85 ? 'var(--err)' : (showPct >= 65 ? 'var(--warn)' : 'var(--faint)');
+  }
 }
 
 function fetchJson(url){
