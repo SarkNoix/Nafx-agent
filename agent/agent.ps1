@@ -1205,21 +1205,28 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
     # 原来的判重是 "工具名|参数"，模型换个参数就绕过去了：
     # list_dir . → list_dir ./ → run_cmd dir → find_files . ，repeatCount 一直是 0，
     # 最后跑到 maxsteps 才停（实测「列出当前目录有哪些文件」跑了 311 秒）。
-    $recentTools = @($state.steps | Select-Object -Last 5 | ForEach-Object { [string]$_.tool })
-    $sameToolCount = @($recentTools | Where-Object { $_ -eq $toolName }).Count
-    if ($sameToolCount -ge 2) {
-        $history += @{ role = 'user'; content = "你已经调了 $($sameToolCount + 1) 次 $toolName（参数可能不一样）。**别再用这个工具了**——结果就在上面的观察里，现在调 finish 把答案说出来。" }
-        Write-Log ("  [绕圈] $toolName 已连续 $($sameToolCount + 1) 次")
+    # 按「工具名 + 目标路径」判重，不是只看工具名。
+    # 起因：local-append 那道题模型连着 write_file x.txt 两次（把 A 覆盖成 B），
+    # 之前按工具名算，要第 3 次才强制收尾，它第 3 步直接 finish 编了个「最终内容 AB」。
+    # 改成同工具 + 同路径才算绕圈，这样「一次建 p/q/r 三个文件」不会被误伤。
+    $recentSame = @($state.steps | Select-Object -Last 6 | Where-Object {
+        ([string]$_.tool -eq $toolName) -and ([string]$_.arg -eq $stepArg)
+    })
+    # steps 里已经包含当前这一步，减掉它才是「之前重复过几次」
+    $sameToolCount = [Math]::Max(0, $recentSame.Count - 1)
+    if ($sameToolCount -ge 1) {
+        $history += @{ role = 'user'; content = "你刚才已经对 $stepArg 用过 $toolName 了，结果就在上面的观察里。**别对同一个目标重复操作**——要改方式就换工具（比如覆盖了想追加，用 append_file），否则直接 finish。" }
+        Write-Log ("  [绕圈] " + $toolName + " 对同一个目标第 " + ($sameToolCount + 1) + " 次")
     }
-    # 连着 4 次同名工具，直接用已有结果收尾，别再烧步数
-    if ($sameToolCount -ge 3) {
+    # 对同一个目标重复 3 次，用已有结果收尾，别再烧步数
+    if ($sameToolCount -ge 2) {
         $finalObs = ($obs -split "`n" | Where-Object { $_.Trim() } | Select-Object -First 8) -join '；'
         $state.status = 'done'
         $state.answer = if ($finalObs) { $finalObs } else { '没能完成这个任务' }
         $state.elapsed = $clock.Elapsed.TotalSeconds
         $state.summary = $state.answer
         Write-State $state
-        Write-Log ("  同一个工具叫了 " + ($sameToolCount + 1) + " 次，强制收尾")
+        Write-Log ("  " + $toolName + " 对同一个目标做了 " + ($sameToolCount + 1) + " 次，强制收尾")
         Write-Closing -State $state -Status 'done' -Summary $state.summary -StepCount $step
         $finished = $true
         break
