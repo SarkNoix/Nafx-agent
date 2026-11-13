@@ -323,9 +323,16 @@ function Invoke-Check {
             return @{ ok = $okv; why = if ($okv) { '' } else { "第 $n 行应为「$want」，实际「$got」" } }
         }
         'tool_used' {
-            $want = [string]$Check[1]
-            $hit = @($steps | Where-Object { $_.tool -eq $want -and $_.ok }).Count -gt 0
-            return @{ ok = $hit; why = "没有用到 $want" }
+            # 支持写多个工具名，逗号分隔，任一命中就算过。
+            # 起因：local-script 要求「写脚本然后运行」，原来只认 run_ps1；
+            # 但 write_script 是一步写完直接跑，效果等价，不该判错。
+            $wantRaw = [string]$Check[1]
+            $wants = @($wantRaw -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+            $hit = $false
+            foreach ($w in $wants) {
+                if (@($steps | Where-Object { $_.tool -eq $w -and $_.ok }).Count -gt 0) { $hit = $true; break }
+            }
+            return @{ ok = $hit; why = ('没有用到 ' + ($wants -join ' 或 ')) }
         }
         'tool_not_used' {
             $bad = [string]$Check[1]

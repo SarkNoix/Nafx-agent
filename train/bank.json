@@ -396,7 +396,7 @@
                                          "w":  10,
                                          "spec":  [
                                                       "tool_used",
-                                                      "run_ps1"
+                                                      "run_ps1,write_script"
                                                   ]
                                      },
                                      {
@@ -1217,7 +1217,7 @@
                                          "w":  15,
                                          "spec":  [
                                                       "tool_used",
-                                                      "run_ps1"
+                                                      "run_ps1,write_script"
                                                   ]
                                      },
                                      {
@@ -1240,7 +1240,7 @@
                                          "w":  -10,
                                          "spec":  [
                                                       "tool_not_used",
-                                                      "run_ps1"
+                                                      "run_ps1,write_script"
                                                   ]
                                      }
                                  ]
@@ -1340,7 +1340,7 @@
                                          "w":  15,
                                          "spec":  [
                                                       "tool_used",
-                                                      "run_ps1"
+                                                      "run_ps1,write_script"
                                                   ]
                                      },
                                      {
@@ -1398,7 +1398,7 @@
                                          "w":  10,
                                          "spec":  [
                                                       "tool_used",
-                                                      "run_ps1"
+                                                      "run_ps1,write_script"
                                                   ]
                                      },
                                      {
@@ -1414,7 +1414,7 @@
                                          "w":  -10,
                                          "spec":  [
                                                       "tool_not_used",
-                                                      "run_ps1"
+                                                      "run_ps1,write_script"
                                                   ]
                                      }
                                  ]
@@ -1824,7 +1824,7 @@
                                          "w":  20,
                                          "spec":  [
                                                       "tool_used",
-                                                      "run_ps1"
+                                                      "run_ps1,write_script"
                                                   ]
                                      },
                                      {
@@ -1840,7 +1840,7 @@
                                          "w":  -10,
                                          "spec":  [
                                                       "tool_not_used",
-                                                      "run_ps1"
+                                                      "run_ps1,write_script"
                                                   ]
                                      }
                                  ]
