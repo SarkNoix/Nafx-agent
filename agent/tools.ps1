@@ -42,7 +42,10 @@ function Set-AiRoot {
 
 function Initialize-AiWorkspace {
     New-Item -ItemType Directory -Force -Path $script:AiRoot | Out-Null
-    New-Item -ItemType Directory -Force -Path (Join-Path $script:AiRoot 'data') | Out-Null
+    # 不预先建 data 目录。
+    # 以前每次启动都建一个 data/，模型看到它存在，执行「创建 x.txt」时会先
+    # make_dir data（返回「已经存在了」），然后顺手把文件写成 data/x.txt，
+    # 根目录下什么都没有。要 data 目录时任务自己会建。
 }
 
 # 解析路径。allowAnyPath 打开后可以访问整个电脑，

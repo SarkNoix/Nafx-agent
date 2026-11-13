@@ -4,7 +4,7 @@
 
 ```powershell
 # 数行数
-$n = @(Get-Content 'data/x.txt' -Encoding UTF8).Count
+$n = @(Get-Content '某个文件.txt' -Encoding UTF8).Count
 "行数: $n"
 
 # 列文件
@@ -130,10 +130,10 @@ try/catch 把错误兜住，给人话提示
 
 ```powershell
 # 数条数（最快）
-run_cmd(command="find /c /v "" data/x.jsonl")
+run_cmd(command="find /c /v "" 某个文件.jsonl")
 
 # 求和
-$total = (Get-Content data/x.jsonl -Encoding UTF8 | ForEach-Object {
+$total = (Get-Content 某个文件.jsonl -Encoding UTF8 | ForEach-Object {
     ($_ | ConvertFrom-Json).amount
 } | Measure-Object -Sum).Sum
 ```

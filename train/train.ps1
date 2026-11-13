@@ -189,11 +189,26 @@ function New-ExamRoom {
     param([string]$TaskId, $Setup)
 
     $room = $script:SandboxPath
-
     # 整个沙箱清空重建。路径已校验在 train 目录下，删了也只影响沙箱。
-    if (Test-Path $room) {
-        try { Remove-Item $room -Recurse -Force } catch { }
+    # 删不掉通常是上一个 agent 还没放开文件句柄（Windows 会锁住），所以重试几次。
+    # 实在清不掉要明确警告：上一题留下的目录会让下一题看到不该存在的东西，
+    # 实测就是「建 data 目录」那题跑完后 data 留在沙箱里，
+    # 下一题「创建 x.txt」被写成 data/x.txt，白扣 50 分。
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        if (-not (Test-Path $room)) { break }
+        try {
+            Remove-Item $room -Recurse -Force -ErrorAction Stop
+        } catch {
+            Start-Sleep -Milliseconds 600
+        }
     }
+    if (Test-Path $room) {
+        $left = @(Get-ChildItem $room -Recurse -Force -ErrorAction SilentlyContinue)
+        if ($left.Count -gt 0) {
+            Write-Line ("  [警告] 沙箱没清干净，还残留 " + $left.Count + " 项：" + (($left | Select-Object -First 5 | ForEach-Object { $_.Name }) -join ', ')) 'Yellow'
+        }
+    }
+
     New-Item -ItemType Directory -Force -Path $room | Out-Null
 
     if ($Setup) {
@@ -221,6 +236,12 @@ function New-ExamRoom {
 function Invoke-AgentOnce {
     param([string]$TaskText, [int]$MaxSteps = 5)
 
+    # 每题开始前清掉跨任务会话历史。
+    # agent 会读 session.jsonl 的前 2 轮（让连续对话有上下文），但训练是独立考题：
+    # 第 2 题聊过「创建 data 目录」，第 4 题「创建 x.txt」就会接着把文件写成 data/x.txt，
+    # 白扣 50 分。考题之间必须互不影响。
+    $sessFile = Join-Path (Join-Path $AgentDir 'logs') 'session.jsonl'
+    if (Test-Path $sessFile) { Remove-Item $sessFile -Force -ErrorAction SilentlyContinue }
     $stateFile = Join-Path $AgentDir 'state.json'
     $env:NAFX_TASK = $TaskText
     $env:NAFX_ROOM = ''   # 留给将来；目前 agent 用 config 里的 workspace
