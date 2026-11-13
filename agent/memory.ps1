@@ -245,13 +245,31 @@ function Get-AutoLessons {
     }
 
     # 跑满步数或超时
+    # 注意：这里绝不把 $Task 全文写进教训。任务描述里常带具体路径（data/orders.jsonl 之类），
+    # 存进去之后下一题会被模型当成「该用这个路径」，把 x.txt 写成 data/x.txt。
+    # 只记「哪个工具在绕圈」「是不是超时」这种跟具体任务无关的信息。
     if ($Status -in @('maxsteps','timeout','stuck')) {
-        $found += [pscustomobject]@{
-            Mistake = ("任务 '$Task' 最后没能收尾（$Status）")
-            Fix     = '任务拆小一点，或者先 skill(command="list") 看有没有现成脚本'
+        $loopTool = @($Steps | Group-Object { $_.tool } | Where-Object { $_.Count -ge 3 } | Sort-Object Count -Descending | Select-Object -First 1)
+        $lastTool = ''
+        if ($Steps.Count -gt 0) { $lastTool = [string]$Steps[-1].tool }
+        if ($loopTool.Count -gt 0) {
+            $found += [pscustomobject]@{
+                Mistake = ("'" + $loopTool[0].Name + "' 在同一个任务里被反复调用了 " + $loopTool[0].Count + " 次")
+                Fix     = '同一个工具调两次还没结果就换思路：换工具，或者直接用观察里的内容收尾'
+            }
+        }
+        if ($Status -eq 'timeout') {
+            $found += [pscustomobject]@{
+                Mistake = '模型响应超时，任务没能正常收尾'
+                Fix     = '上下文太长容易超时，步骤别太啰嗦，做完动作就收'
+            }
+        } elseif ($Status -eq 'maxsteps' -and $loopTool.Count -eq 0) {
+            $found += [pscustomobject]@{
+                Mistake = ("跑满步数还没收尾，最后一步是 " + $lastTool)
+                Fix     = '该做的动作做完就直接 finish，别反复确认'
+            }
         }
     }
-
     return $found
 }
 

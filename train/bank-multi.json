@@ -1,7 +1,7 @@
 {
   "name": "Nafx 多任务题库",
-  "version": 1,
-  "note": "测的是「一口气做几件小事」——单个动作都简单，难在连续做完不丢。题量小、难度低，4B 模型不会炸。用 -BankPath bank-multi.json 或 -Category 多任务",
+  "version": 2,
+  "note": "测的是「一口气做几件小事」——单个动作都简单，难在连续做完不丢。题量小、难度低，4B 模型不会炸。v2：把原来的 multi-append（创建+追加混在一起）拆成两题，好看出是「创建」还是「追加」不行",
   "tasks": [
     {
       "id": "multi-two-files",
@@ -53,12 +53,31 @@
       "forbid": []
     },
     {
-      "id": "multi-append",
+      "id": "multi-write-simple",
       "category": "多任务",
       "weight": 1,
-      "task": "创建 x.txt 写 A，然后往这个文件末尾追加 B",
-      "maxSteps": 8,
+      "task": "创建 x.txt 写 A",
+      "maxSteps": 4,
       "setup": { "files": [] },
+      "checks": [
+        { "w": 10, "spec": ["file_exists", "x.txt"] },
+        { "w": 10, "spec": ["file_contains", "x.txt", "A"] },
+        { "w": 10, "spec": ["steps_le", 3] },
+        { "w": 10, "spec": ["status_is", "done"] }
+      ],
+      "forbid": []
+    },
+    {
+      "id": "multi-append-only",
+      "category": "多任务",
+      "weight": 1,
+      "task": "往 x.txt 末尾追加一行 B，原来的内容要保留",
+      "maxSteps": 4,
+      "setup": {
+        "files": [
+          { "path": "x.txt", "content": "A" }
+        ]
+      },
       "checks": [
         { "w": 10, "spec": ["file_exists", "x.txt"] },
         { "w": 10, "spec": ["file_contains", "x.txt", "A"] },
