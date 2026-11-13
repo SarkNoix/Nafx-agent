@@ -843,12 +843,31 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
             $finished = $true
             break
         }
-        $state.status = 'error'
-        $state.elapsed = $clock.Elapsed.TotalSeconds
-        $state.answer = "出错了：$($_.Exception.Message)"
-        $state.summary = "出错了：模型调用失败"
-        Write-State $state
-        Write-Closing -State $state -Status 'error' -Summary $state.summary -StepCount ($step - 1)
+        # 模型调不通了。但如果之前已经做出来东西了，别把它丢掉判 error。
+        # 实测「创建 notes.txt 写三行」：write_file 早就成功写入了 16 字符，
+        # 只是后面生成 finish 时超时，结果整题被判 error 扣 20 分。
+        $lastObsE = ''
+        for ($si = $state.steps.Count - 1; $si -ge 0; $si--) {
+            $oE = [string]$state.steps[$si].obs
+            if ($oE.Trim()) { $lastObsE = $oE; break }
+        }
+        if ($lastObsE.Trim()) {
+            $finalE = ($lastObsE -split "`n" | Where-Object { $_.Trim() } | Select-Object -First 15) -join "`n"
+            $state.status = 'done'
+            $state.answer = $finalE
+            $state.summary = $finalE
+            $state.elapsed = $clock.Elapsed.TotalSeconds
+            Write-State $state
+            Write-Log '模型调用失败，但已有结果，用最后一次观察收尾'
+            Write-Closing -State $state -Status 'done' -Summary $state.summary -StepCount ($step - 1)
+        } else {
+            $state.status = 'error'
+            $state.elapsed = $clock.Elapsed.TotalSeconds
+            $state.answer = "出错了：$($_.Exception.Message)"
+            $state.summary = "出错了：模型调用失败"
+            Write-State $state
+            Write-Closing -State $state -Status 'error' -Summary $state.summary -StepCount ($step - 1)
+        }
         $finished = $true
         break
     }
