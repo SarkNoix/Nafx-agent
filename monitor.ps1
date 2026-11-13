@@ -278,6 +278,22 @@ function Get-MergedState {
     foreach ($s in $list) { if ([string]$s.status -eq 'running') { $main = $s; break } }
     if (-not $main) { $main = $list[0] }
 
+    # state.json 说 running，但 agent 进程已经没了——系统重启、Ctrl+C、被 taskkill。
+    # 这时候还照 state 显示「思考中」，用户看到的就是一个永远不动的死面板。
+    if ([string]$main.status -eq 'running') {
+        $hasAgent = $false
+        try {
+            foreach ($ap in @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue)) {
+                $acl = [string]$ap.CommandLine
+                if ($acl -match '-File\s+.*agent\.ps1') { $hasAgent = $true; break }
+            }
+        } catch { $hasAgent = $true }   # 查不到就当作在跑，宁可不动也别误报
+        if (-not $hasAgent) {
+            $main.status = 'interrupted'
+            $main.phase = '上次运行被中断（进程已退出），结果可能不完整'
+        }
+    }
+
     $summary = @()
     foreach ($s in $list) {
         $summary += [pscustomobject]@{

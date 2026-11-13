@@ -1535,7 +1535,8 @@ function liveBox(st){
   if (!st || !st.task) return '';
   var active = (st.status === 'running');
   var fin = (st.status === 'done' || st.status === 'error' ||
-             st.status === 'timeout' || st.status === 'stuck');
+             st.status === 'timeout' || st.status === 'stuck' ||
+             st.status === 'interrupted');
   if (!active && !fin) return '';
 
   var steps = st.steps || [], sh = '';
@@ -1741,7 +1742,7 @@ function renderFlow(sess, st){
 
   curSession = sess || [];
   var arr = curSession;
-  var running = (st && st.task && (st.status === 'running' || st.status === 'done' || st.status === 'error' || st.status === 'timeout' || st.status === 'stuck'));
+  var running = (st && st.task && (st.status === 'running' || st.status === 'done' || st.status === 'error' || st.status === 'timeout' || st.status === 'stuck' || st.status === 'interrupted'));
   var sig = arr.length + '|' + (st ? (st.intent||'') + '|' + (st.status||'') : '') + '|' + (running ? (st.task + '|' + st.step + '|' + st.elapsed + '|' + st.phase + '|' + (st.steps||[]).length) : 'idle');
   if (sig === lastSig) return;
   lastSig = sig;
