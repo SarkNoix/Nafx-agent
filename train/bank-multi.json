@@ -1,0 +1,105 @@
+{
+  "name": "Nafx 多任务题库",
+  "version": 1,
+  "note": "测的是「一口气做几件小事」——单个动作都简单，难在连续做完不丢。题量小、难度低，4B 模型不会炸。用 -BankPath bank-multi.json 或 -Category 多任务",
+  "tasks": [
+    {
+      "id": "multi-two-files",
+      "category": "多任务",
+      "weight": 1,
+      "task": "创建 a.txt 写 1，再创建 b.txt 写 2",
+      "maxSteps": 8,
+      "setup": { "files": [] },
+      "checks": [
+        { "w": 10, "spec": ["file_exists", "a.txt"] },
+        { "w": 10, "spec": ["file_contains", "a.txt", "1"] },
+        { "w": 10, "spec": ["file_exists", "b.txt"] },
+        { "w": 10, "spec": ["file_contains", "b.txt", "2"] }
+      ],
+      "forbid": []
+    },
+    {
+      "id": "multi-nested-dir",
+      "category": "多任务",
+      "weight": 1,
+      "task": "创建 data 目录，然后在里面建 c.txt 写 ok",
+      "maxSteps": 8,
+      "setup": { "files": [] },
+      "checks": [
+        { "w": 10, "spec": ["dir_exists", "data"] },
+        { "w": 10, "spec": ["file_exists", "data/c.txt"] },
+        { "w": 10, "spec": ["file_contains", "data/c.txt", "ok"] },
+        { "w": 10, "spec": ["status_is", "done"] }
+      ],
+      "forbid": []
+    },
+    {
+      "id": "multi-copy-content",
+      "category": "多任务",
+      "weight": 1,
+      "task": "读一下 a.txt，把里面的内容原样写进 copy.txt",
+      "maxSteps": 8,
+      "setup": {
+        "files": [
+          { "path": "a.txt", "content": "hello" }
+        ]
+      },
+      "checks": [
+        { "w": 10, "spec": ["file_exists", "copy.txt"] },
+        { "w": 10, "spec": ["file_contains", "copy.txt", "hello"] },
+        { "w": 10, "spec": ["tool_used", "read_file"] },
+        { "w": 10, "spec": ["status_is", "done"] }
+      ],
+      "forbid": []
+    },
+    {
+      "id": "multi-append",
+      "category": "多任务",
+      "weight": 1,
+      "task": "创建 x.txt 写 A，然后往这个文件末尾追加 B",
+      "maxSteps": 8,
+      "setup": { "files": [] },
+      "checks": [
+        { "w": 10, "spec": ["file_exists", "x.txt"] },
+        { "w": 10, "spec": ["file_contains", "x.txt", "A"] },
+        { "w": 10, "spec": ["file_contains", "x.txt", "B"] },
+        { "w": 10, "spec": ["status_is", "done"] }
+      ],
+      "forbid": []
+    },
+    {
+      "id": "multi-rename",
+      "category": "多任务",
+      "weight": 1,
+      "task": "把 a.txt 改名成 renamed.txt",
+      "maxSteps": 6,
+      "setup": {
+        "files": [
+          { "path": "a.txt", "content": "keepme" }
+        ]
+      },
+      "checks": [
+        { "w": 10, "spec": ["file_exists", "renamed.txt"] },
+        { "w": 10, "spec": ["file_not_exists", "a.txt"] },
+        { "w": 10, "spec": ["file_contains", "renamed.txt", "keepme"] },
+        { "w": 10, "spec": ["status_is", "done"] }
+      ],
+      "forbid": []
+    },
+    {
+      "id": "multi-three-files",
+      "category": "多任务",
+      "weight": 1,
+      "task": "创建三个文件：p.txt、q.txt、r.txt，内容都写 test",
+      "maxSteps": 10,
+      "setup": { "files": [] },
+      "checks": [
+        { "w": 10, "spec": ["file_exists", "p.txt"] },
+        { "w": 10, "spec": ["file_exists", "q.txt"] },
+        { "w": 10, "spec": ["file_exists", "r.txt"] },
+        { "w": 10, "spec": ["file_contains", "r.txt", "test"] }
+      ],
+      "forbid": []
+    }
+  ]
+}

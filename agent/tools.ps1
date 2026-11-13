@@ -240,6 +240,10 @@ function Invoke-AiTool {
             'write_file' {
                 $full = Resolve-AiPath $Action.path
                 Assert-CanWrite -Full $full -RelPath ([string]$Action.path)
+                # 记下写之前是否已经存在。覆盖和新建要给不同的提示——
+                # 模型经常该用 append_file 时又调一次 write_file，把前面的内容冲掉，
+                # 结果里还说「写入成功」，它自己看不出问题。
+                $existed = (Test-Path -LiteralPath $full) -and -not (Test-Path -LiteralPath $full -PathType Container)
                 # 覆盖已有文件前先留一份，模型改错了还能找回来
                 if ((Test-Path -LiteralPath $full) -and -not (Test-Path -LiteralPath $full -PathType Container)) {
                     try {
@@ -295,6 +299,9 @@ function Invoke-AiTool {
                     }
                 } catch [System.IO.IOException] {
                     throw "写不进去：$($_.Exception.Message)。文件可能正被其他程序打开。"
+                }
+                if ($existed) {
+                    return "已覆盖 $(Get-RelDisplay $full)（$($content.Length) 字符）。**这是整个文件重写，原来的内容已经没了。** 本意是追加的话应该用 append_file。改完了直接 finish。"
                 }
                 return "已写入 $(Get-RelDisplay $full)（$($content.Length) 字符）。写入成功，不用再读一遍验证，直接 finish。"
             }
