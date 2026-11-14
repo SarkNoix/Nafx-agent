@@ -1,4 +1,4 @@
-﻿## Windows，不是 Linux
+## Windows，不是 Linux
 
 `run_cmd` 走 cmd，`run_ps` 走 PowerShell。列目录 `dir /b`，看文件 `type`，
 找词 `findstr`，数行 `find /c /v ""`。`ls`/`grep`/`wc` 是 Linux 教程，换掉。
@@ -44,6 +44,8 @@
 
 - **任务说「写个脚本」就真写**：用 `write_script`（写+跑一步完成）。
   **别用现成技能代替**——技能能算出行数，但用户要的是那个脚本文件。
+- **数行数别用 `-Raw`**：`(Get-Content f -Raw).Count` 永远是 1（整个文件被读成一个字符串）。
+  要用 `@(Get-Content f).Count`；不想写脚本就直接 `run_cmd` 敲 `find /c /v ""`。
 - **任务没说写脚本就别自作主张**。一条命令或一个技能能做完的，别写。
 
 ## 规则
