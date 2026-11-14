@@ -68,10 +68,23 @@ $ModelLog = Join-Path $LogDir 'model-mem.log'
 $KV_PER_TOKEN = @{
     'f16' = 147456      # 2 字节 * 36 层 * 8 头 * 128 维 * 2(K,V)
 }
+# 下面这几个数是从实测反推的，不是拍脑袋。校准过程：
+#   跑 context=4096 → llama WorkingSet 3997 MB
+#   跑 context=5120 → llama WorkingSet 4084 MB
+# 两者只差 87 MB，而 KV 理论差值是 (5120-4096)*144KB = 144 MB，
+# 说明多出来的部分是共享页、按需换入换出，不是纯线性增长。
+# 用 5120 那组反推：4084 = 2382(gguf) + 720(KV) + 982(运行时)
+# 运行时包含计算 buffer、logits、线程栈等，和 context 弱相关。
+#
+# 之前 LLAMA_EXTRA 写的是 250，低估了 730 MB ——
+# 结果脚本算「装得下」但实际爆内存，就是那个把 llama 挤到 7 MB 的翻车。
 $MODEL_MB    = 2382
-$LLAMA_EXTRA = 250
-$AGENT_PEAK  = 900
-$SYS_RESERVE = 800
+$LLAMA_EXTRA = 980
+# agent 峰值按实测：一般任务 150-300 MB，读大文件/跑脚本会到 400-600。
+# 留 700 够用又不浪费。
+$AGENT_PEAK  = 700
+# 系统余量不能压太低，否则 explorer/svchost 会被迫换页，整机卡顿。
+$SYS_RESERVE = 600
 
 # ------------------------------------------------------------
 #  1. 量可用内存
@@ -107,20 +120,23 @@ $plans = @()
 # 结果 local-script 题 3 秒 error。宁可内存不够报错让用户关程序，
 # 也不能给一个跑不通的小 context。
 foreach ($ctx in @(6144, 5120, 4096)) {
-    foreach ($kv in @('f16')) {
-        $kvMB = [math]::Round(($ctx * $KV_PER_TOKEN[$kv]) / 1MB)
-        $need = $MODEL_MB + $kvMB + $LLAMA_EXTRA + $AGENT_PEAK + $SYS_RESERVE
-        $plans += [pscustomobject]@{
-            Context  = $ctx
-            KVType   = $kv
-            KVMB     = $kvMB
-            NeedMB   = $need
-            # 余量小于 300 MB 视为「装不下」。
-            # 算得刚好够是最危险的：任务一跑 agent 就涨，立刻把 llama 挤出去。
-            # 之前就是这么翻车的 —— 预算刚好，实际 agent 一起来 llama 掉到 7 MB。
-            Fits     = (($budgetMB - $need) -ge 300)
-            HeadroomMB = $budgetMB - $need
-        }
+    # 只用 f16
+    $kvMB = [math]::Round(($ctx * $KV_PER_TOKEN['f16']) / 1MB)
+    # llama 自己要吃掉多少
+    $llamaMB = $MODEL_MB + $kvMB + $LLAMA_EXTRA
+    # 除了 llama，agent 跑任务时还要占（这部分从剩余内存里出）
+    $need = $llamaMB + $AGENT_PEAK + $SYS_RESERVE
+    $plans += [pscustomobject]@{
+        Context    = $ctx
+        KVType     = 'f16'
+        KVMB       = $kvMB
+        LlamaMB    = $llamaMB
+        NeedMB     = $need
+        # 余量要求从 300 降到 150：
+        # 预算口径已经扣过 200 缓冲，而且 Windows 会主动回收待机缓存，
+        # 留 300 太保守，会把能跑的方案判成跑不了（实测 5120 跑得好好的却被判「不够」）。
+        Fits       = (($budgetMB - $need) -ge 150)
+        HeadroomMB = $budgetMB - $need
     }
 }
 

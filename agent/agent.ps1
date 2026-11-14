@@ -90,7 +90,13 @@ try {
         $n = [string]$s.function.name
         if ($n) { $script:ToolSchemaMap[$n] = (ConvertTo-Json -InputObject $s -Depth 10 -Compress) }
     }
-} catch { }
+} catch {
+    # 这里失败是致命的：ToolSchemaMap 空掉之后，按 flow 筛出来的工具全变成 undefined，
+    # 模型拿不到任何工具定义，等于完全瘫痪。以前是 catch {} 静默吞掉，
+    # 表现成「模型突然不会用工具了」，很难查。
+    Write-Log ('  [严重] tools-schema.json 解析失败：' + $_.Exception.Message)
+    Write-Log ('         可用工具数 = ' + $script:ToolSchemaMap.Count + '，模型将无法调用任何工具。')
+}
 
 # mod 改工具：禁用按钮、改描述
 if ($script:ActiveMods -and $script:ActiveMods.Count -gt 0) {
@@ -138,7 +144,12 @@ function Write-State {
     try {
         $json = $St | ConvertTo-Json -Depth 10
         [IO.File]::WriteAllText($StateFile, $json, (New-Object Text.UTF8Encoding($false)))
-    } catch { }
+    } catch {
+        # 写不进状态 = 面板收不到任何更新，表现出来的就是「卡在思考中不动」。
+        # 以前这里静默吞，用户看到的是假死面板。至少记一笔，能查。
+        # 注意不能调 Write-Log（它自己也写文件，可能同样失败），直接往 stderr 打。
+        try { [Console]::Error.WriteLine('  [警告] 写 state.json 失败：' + $_.Exception.Message) } catch { }
+    }
 }
 
 # 只修技术性的转义损坏，不改模型的意思。

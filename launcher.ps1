@@ -71,10 +71,19 @@ if (-not (Test-AiUp)) {
                 if ($autoCtx -ne $ctxSize) {
                     Write-Host ("  上下文按当前内存调整为 " + $autoCtx + "（配置里是 " + $ctxSize + "）") -ForegroundColor DarkYellow
                 }
+                # fits=false 表示连最省的那套都装不下。这时还硬启动，
+                # 会把 llama 挤进交换文件，跑起来比不跑还慢（实测掉到 7 MB 空转）。
+                # 不阻止启动（用户可能就想先开着），但必须说清楚。
+                if ($memObj.fits -eq $false) {
+                    Write-Host '  [警告] 当前内存不够，模型可能被挤到交换文件，会明显变慢。' -ForegroundColor Red
+                    Write-Host '         建议先关掉浏览器 / 编辑器等占内存的程序再启动。' -ForegroundColor Red
+                }
                 $ctxSize = $autoCtx
             }
         }
-    } catch { }
+    } catch {
+        Write-Host ('  [提示] 内存脚本没跑起来，按配置里的 context=' + $ctxSize + ' 启动') -ForegroundColor DarkGray
+    }
 
     # 模型相关参数从配置读，这样换任何模型都能调，不用改脚本
     $prof = $null
