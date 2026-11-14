@@ -54,6 +54,28 @@ if (-not (Test-AiUp)) {
     if ($threads -le 0 -or $threads -gt $cores) { $threads = $cores }
     if ($threads -gt 16) { $threads = 16 }
 
+    # 先用内存分配脚本算一下这台机器现在能开多大的上下文。
+    # 算不出来（脚本不在/报错）就用 config.json 里的值，不因为这一步把启动搞挂。
+    # 为什么要动态算：这台机器 7.85 GB，llama 一开就 4.6 GB，
+    # 如果同时开着浏览器/编辑器，固定写 6144 会把内存顶爆，
+    # 实测出现过 llama 被压到只剩 7 MB、CPU 空转五小时的情况。
+    $ctxSize = [int]$Cfg.context
+    try {
+        $memScript = Join-Path $Root 'scripts\nafx-memory.ps1'
+        if (Test-Path $memScript) {
+            $memOut = & powershell -NoProfile -ExecutionPolicy Bypass -File $memScript -ForLauncher 2>$null
+            $memObj = $null
+            try { $memObj = ($memOut | Select-Object -First 1) | ConvertFrom-Json } catch { }
+            if ($memObj -and $memObj.context) {
+                $autoCtx = [int]$memObj.context
+                if ($autoCtx -ne $ctxSize) {
+                    Write-Host ("  上下文按当前内存调整为 " + $autoCtx + "（配置里是 " + $ctxSize + "）") -ForegroundColor DarkYellow
+                }
+                $ctxSize = $autoCtx
+            }
+        }
+    } catch { }
+
     # 模型相关参数从配置读，这样换任何模型都能调，不用改脚本
     $prof = $null
     try { $prof = $Cfg.modelProfile } catch { }
@@ -62,7 +84,7 @@ if (-not (Test-AiUp)) {
         '-m', $ModelPath,
         '--host', $Listen,
         '--port', [string]$Port,
-        '-c', [string]$Cfg.context,
+        '-c', [string]$ctxSize,
         '-t', [string]$threads,
         '-tb', [string]$threads,
         '-np', "$([int]$Cfg.parallel)",

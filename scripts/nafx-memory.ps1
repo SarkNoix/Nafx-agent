@@ -33,7 +33,9 @@ param(
     [switch]$Start,
     [switch]$Restart,
     [switch]$Apply,
-    [switch]$Json
+    [switch]$Json,
+    # 给 launcher.ps1 用：只输出一行 JSON，不打印别的（它会解析 stdout）
+    [switch]$ForLauncher
 )
 
 $ErrorActionPreference = 'Stop'
@@ -98,7 +100,13 @@ if ($runningLlamaMB -eq 0) { $budgetMB = $freeMB }
 #     优先级：context 越大越好 > KV 精度越高越好
 # ------------------------------------------------------------
 $plans = @()
-foreach ($ctx in @(6144, 5120, 4096, 3072, 2048)) {
+# 注意：context 最低只到 4096，不放更小的。
+# 原因：build 类任务（写脚本/做工具）会发 11 个工具 schema + project.md，
+# 光这些就要 3000+ token。如果压到 2048/3072，模型直接返回 400 Bad Request，
+# 任务第一步就死。实测就是这么翻车的：训练时内存紧，脚本算出 2048，
+# 结果 local-script 题 3 秒 error。宁可内存不够报错让用户关程序，
+# 也不能给一个跑不通的小 context。
+foreach ($ctx in @(6144, 5120, 4096)) {
     foreach ($kv in @('f16')) {
         $kvMB = [math]::Round(($ctx * $KV_PER_TOKEN[$kv]) / 1MB)
         $need = $MODEL_MB + $kvMB + $LLAMA_EXTRA + $AGENT_PEAK + $SYS_RESERVE
@@ -141,6 +149,17 @@ if ($Json) {
         needMB    = $best.NeedMB
         headroomMB= $best.HeadroomMB
         fits      = $best.Fits
+    } | ConvertTo-Json -Compress
+    exit 0
+}
+
+# launcher.ps1 调这个：只回一行 JSON，别的什么都不输出。
+# 单独做一档是因为 launcher 要解析 stdout，混进任何提示文字都会让它坏掉。
+if ($ForLauncher) {
+    [pscustomobject]@{
+        context = $best.Context
+        kvType  = $best.KVType
+        fits    = $best.Fits
     } | ConvertTo-Json -Compress
     exit 0
 }
