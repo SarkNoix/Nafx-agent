@@ -626,7 +626,13 @@ $sessionMsgs = @()
 try { $sessionMsgs = @(Get-SessionHistory -MaxTurns 2) } catch { }
 
 # 判断要不要把 project.md 也带上：任务像"做东西"才加
-$isBuild = $TaskText -match '写|做|实现|开发|生成|工具|脚本|项目|计算器|管理器|系统'
+# project.md 有 1342 token 的「设计方法论」，只对真要做东西的任务有价值。
+# 原来的正则含「写」，结果「创建 a.txt 写入 hello」也算项目，白送 1342 token
+# （prompt eval 42 tok/s，等于每步多花 30 秒）。
+# 现在只认「明确要造一个能反复用的东西」：脚本/工具/程序/项目/系统/实现/开发，
+# 或者带 .ps1/.bat 的产物。
+$isBuild = ($TaskText -match '脚本|工具|程序|项目|系统|实现|开发|搭建|做一个|做个|管理器|计算器') -or
+           ($TaskText -match '\.(ps1|bat|cmd)\b')
 $sysFull = $SystemPrompt
 if ($isBuild -and $ProjectPrompt) {
     $sysFull = $SystemPrompt + "`n`n" + $ProjectPrompt
@@ -758,9 +764,19 @@ if ($script:ActiveMods -and $script:ActiveMods.Count -gt 0) {
     $modScriptLog = Invoke-ModScripts -Mods $script:ActiveMods -Root $Root
     foreach ($ml in $modScriptLog) { Write-Host ("  [mod] " + $ml) -ForegroundColor DarkCyan }
 }
+# 消息顺序直接影响速度：llama 的 prompt cache 按「从头匹配到哪」算，
+# 前缀越长越稳定，缓存命中越多。实测同一段 2779 token 的 prompt，
+# 冷启动 70.9 秒，热缓存 5.2 秒 —— 差 13 倍。
+# 所以固定不变的内容（system）放最前，易变的（工作区快照、当前任务）放最后。
+#   system        ← 提示词 + project.md + flow 模板，同一类任务基本不变
+#   会话历史       ← 同一轮里只有末尾会增长
+#   任务文本       ← 每次变，放最后
+#   工作区快照     ← 每次变，单独一条放它后面（原来拼在任务文本里，
+#                    导致「任务文本」这条每次都不一样，缓存从这就断了）
 $history = @(@{ role = 'system'; content = $sysFull })
 foreach ($sm in $sessionMsgs) { $history += $sm }
-$history += @{ role = 'user'; content = "任务：$TaskText$wsSnapshot" }
+$history += @{ role = 'user'; content = "任务：$TaskText" }
+if ($wsSnapshot.Trim()) { $history += @{ role = 'user'; content = $wsSnapshot.Trim() } }
 
 Add-SessionTurn -Role 'user' -Content $TaskText -Ok $true
 
@@ -834,7 +850,13 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
     try {
         # 固定额度：降过一版（400）确实快，但 finish 那步会被截断导致超时，
         # 反而更糟。稳定优先，统一用配置里的值。
-        $res = Invoke-Model -Messages $history -ToolsJson $toolsJson -ForceTool:($noToolCount -gt 0)
+        # 空转后把输出上限压小。
+        # 起因：空转时模型不调工具，而是开始输出大段解释，一直写满 max_tokens
+        # （配置里是 600）才停。实测一次空转 = 生成 600 tok = 165 秒白烧。
+        # 这时候我们只需要它调一次 finish（约 20 tok），给 64 足够。
+        $mt = 0
+        if ($noToolCount -gt 0) { $mt = 64 }
+        $res = Invoke-Model -Messages $history -ToolsJson $toolsJson -ForceTool:($noToolCount -gt 0) -MaxTokens $mt
     } catch {
         Write-Host ''
         # 请求超时也要分辨是真慢还是服务挂了。挂了就报卡死，别报个含糊的"超时"。
