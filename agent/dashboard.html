@@ -1801,26 +1801,58 @@ var streamSeq = 0;
 var streamText = '';
 var streamKind = '';
 
+/* 流式渲染：只追加文字节点，不重建 DOM。
+   之前每次 pullStream 都 el.innerHTML = '<div>...' + streamText + '...'，
+   模型每吐一个 token 就重建一次整块（还顺带 scrollTop=scrollHeight 强制重排），
+   一个任务几百个 token 就是几百次重排 —— 这才是"每吐一个字就卡"的原因。
+   现在只在第一次建好骨架，之后用 textNode.appendData 往尾部加字，
+   零重排、零 GC 压力。 */
+var stNode = null;
+
 function resetStream(){
   streamSeq = 0;
   streamText = '';
   streamKind = '';
+  stNode = null;
   var el = document.getElementById('streamOut');
   if (el) el.innerHTML = '';
 }
 
-function renderStream(){
+function ensureStreamSkeleton(){
   var el = document.getElementById('streamOut');
-  if (!el) return;
-  if (!streamText) { el.innerHTML = ''; return; }
-  // 工具参数按暗黄色显示，纯文本按正常色
-  var cls = (streamKind === 'tool') ? 'st-tool' : 'st-text';
+  if (!el) return null;
+  if (stNode && el.contains(stNode)) return el;
+  // 骨架只建一次
   el.innerHTML = '<div class="st-label">模型正在输出</div>' +
-                 '<div class="st-body ' + cls + '">' + esc(streamText) + '<span class="st-caret">▍</span></div>';
-  el.scrollTop = el.scrollHeight;
+                 '<div class="st-body"><span class="st-txt"></span><span class="st-caret">▍</span></div>';
+  stNode = el.querySelector('.st-txt');
+  return el;
 }
 
+function renderStream(){
+  if (!streamText) return;
+  var el = ensureStreamSkeleton();
+  if (!el || !stNode) return;
+  // 直接替换文本节点的内容，不走 innerHTML 解析
+  if (stNode.firstChild) stNode.firstChild.nodeValue = streamText;
+  else stNode.appendChild(document.createTextNode(streamText));
+  // 配色只在类型变化时改，避免每帧改 class 触发样式重算
+  var body = el.querySelector('.st-body');
+  if (body) {
+    var want = (streamKind === 'tool') ? 'st-tool' : 'st-text';
+    if (body.className.indexOf(want) < 0) body.className = 'st-body ' + want;
+  }
+}
+
+var lastPull = 0;
 function pullStream(){
+  // 节流：最快 700ms 拉一次。
+  // 原来跟着主 tick 450ms 跑，再加上每次全量重建 DOM ——
+  // 模型每吐一个 token，浏览器就要解析一遍 innerHTML 并重排，
+  // 一个任务几百个 token 就是几百次重排，整机都被拖慢。
+  var now = Date.now();
+  if (now - lastPull < 700) return;
+  lastPull = now;
   fetchJson('/api/stream?since=' + streamSeq)
     .then(function(j){
       if (!j) return;
