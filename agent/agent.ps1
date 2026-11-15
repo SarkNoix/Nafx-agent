@@ -1426,9 +1426,24 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
         # 模型 think 完直接 finish："2026年的诺贝尔文学奖尚未公布，因此得主未知"。
         # 它自认为知道答案，压根没试搜索，等于凭记忆编了个"查不到"。
         #
-        # 判据：任务文本带「今年/最新/现在/谁是」这类时效性问题，
-        # 但整趟没调过 web_search / web_fetch，就打回去让它先搜。
-        $needsWeb = ($TaskText -match '今年|最新|现在|目前|当前|谁是|得主|多少钱|价格|发布了|版本号|新闻')
+        # 判据要卡得很紧，不然会误伤。
+        # 踩过的坑：「列一下当前目录有哪些文件」——「当前目录」的「当前」
+        # 被当成时间词，finish 被拦掉，模型被迫去 web_search「目录有哪些文件 当前」，
+        # 搜回来一堆 Word 怎么生成目录的教程。一个本地列目录的活硬推去联网。
+        #
+        # 现在三个条件同时成立才拦：
+        #   ① 带时间/时效词  ② 带明确的信息需求  ③ 不是本地文件操作
+        $timeWords = '今年|去年|上月|本周|最新|当前时间|现在几|今天|目前|实时|新闻|发布了|版本号'
+        $infoWords = '谁|得主|多少钱|价格|排名|冠军|是什么|叫什么|怎么样|哪些|多少|如何'
+        $localOps  = '目录|文件|本机|这个|本地|列表|当前目录|工作区|文件夹|路径'
+        # 任务里直接写了「上网/网上/搜一下/百度」——那是明确要求联网，无条件拦。
+        # 否则「上网查一下 Windows 11 最新版本号」可能因为别的原因被放过。
+        $explicitWeb = ($TaskText -match '上网|网上|联网|在线搜|搜一下|搜一搜|百度|谷歌|bing|搜索')
+        $needsWeb = $explicitWeb -or (
+                        ($TaskText -match $timeWords) -and
+                        ($TaskText -match $infoWords) -and
+                        (-not ($TaskText -match $localOps))
+                    )
         $didSearch = (@($state.steps | Where-Object {
             [string]$_.tool -in @('web_search', 'web_fetch')
         }).Count -gt 0)
