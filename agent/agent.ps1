@@ -143,7 +143,15 @@ function Write-State {
     param($St)
     try {
         $json = $St | ConvertTo-Json -Depth 10
-        [IO.File]::WriteAllText($StateFile, $json, (New-Object Text.UTF8Encoding($false)))
+        # 原子写：先写临时文件再改名。
+        # 直接 WriteAllText 有个坑 —— 面板正好在这时候读会读到半截 JSON，
+        # ConvertFrom-Json 抛异常被 catch 掉，面板就显示上一次的状态，
+        # 看起来像"卡住了"。任务跑得快的时候（每步都要写一次）很容易撞上。
+        # 改名在同一个卷上是原子操作，读的一方要么看到旧的完整文件，要么看到新的。
+        $tmpState = $StateFile + '.tmp'
+        [IO.File]::WriteAllText($tmpState, $json, (New-Object Text.UTF8Encoding($false)))
+        if (Test-Path $StateFile) { [IO.File]::Delete($StateFile) }
+        [IO.File]::Move($tmpState, $StateFile)
     } catch {
         # 写不进状态 = 面板收不到任何更新，表现出来的就是「卡在思考中不动」。
         # 以前这里静默吞，用户看到的是假死面板。至少记一笔，能查。
@@ -832,6 +840,37 @@ $lastToolKey = ''
 $repeatCount = 0
 
 for ($step = 1; $step -le $MaxSteps; $step++) {
+    # 任务级超时。config 里的 taskTimeoutSeconds 原来只在面板做字段校验，
+    # 没有任何地方真正执行 —— 直接跑 agent.ps1 时任务能无限跑下去。
+    # 每步开头检查一次：超了就用已有结果收尾，不留半截状态。
+    $taskLimit = [int]$Cfg.taskTimeoutSeconds
+    if ($taskLimit -gt 0 -and $clock.Elapsed.TotalSeconds -ge $taskLimit) {
+        $lastObsT = ''
+        for ($ti = $state.steps.Count - 1; $ti -ge 0; $ti--) {
+            $tob = [string]$state.steps[$ti].obs
+            if ($tob.Trim()) { $lastObsT = $tob; break }
+        }
+        $state.elapsed = $clock.Elapsed.TotalSeconds
+        if ($lastObsT.Trim()) {
+            $finalT = ($lastObsT -split "`n" | Where-Object { $_.Trim() } | Select-Object -First 15) -join "`n"
+            $state.status  = 'done'
+            $state.answer  = $finalT
+            $state.summary = $finalT
+            Write-Log ("  到任务时限（$taskLimit 秒），用已有结果收尾")
+            Write-State $state
+            Write-Closing -State $state -Status 'done' -Summary $state.summary -StepCount ($step - 1)
+        } else {
+            $state.status  = 'timeout'
+            $state.answer  = "任务超时：超过 $taskLimit 秒还没做完。"
+            $state.summary = "出错了：任务超过时限（$taskLimit 秒）。"
+            Write-Log ("  到任务时限（$taskLimit 秒），没有任何结果，判超时")
+            Write-State $state
+            Write-Closing -State $state -Status 'timeout' -Summary $state.summary -StepCount ($step - 1)
+        }
+        $finished = $true
+        break
+    }
+
     $state.step = $step
     $state.elapsed = $clock.Elapsed.TotalSeconds
     Write-State $state
