@@ -8,16 +8,12 @@
       "tools": [
         "think",
         "run_cmd",
-        "list_dir",
-        "find_files",
-        "csv_preview",
-        "date_calc",
-        "unit_convert",
-        "skill",
         "read_file",
-        "finish",
         "write_file",
-        "write_script"
+        "append_file",
+        "list_dir",
+        "skill",
+        "finish"
       ],
       "name": "数数量 / 统计",
       "match": [
@@ -96,17 +92,12 @@
         "think",
         "read_file",
         "read_lines",
+        "grep_file",
         "list_dir",
         "find_files",
         "file_info",
-        "grep_file",
-        "now",
-        "date_calc",
-        "skill",
-        "run_cmd",
         "web_search",
         "web_fetch",
-        "write_file",
         "finish"
       ],
       "name": "查东西 / 找某个值",
@@ -184,11 +175,11 @@
       "tools": [
         "think",
         "write_file",
-        "read_file",
         "make_dir",
-        "finish",
+        "read_file",
         "delete_path",
-        "write_script"
+        "list_dir",
+        "finish"
       ],
       "name": "创建文件 / 写内容",
       "match": [
@@ -246,8 +237,9 @@
         "think",
         "read_file",
         "grep_file",
-        "diff_files",
         "replace_in_file",
+        "set_line",
+        "diff_files",
         "write_file",
         "finish"
       ],
@@ -315,14 +307,12 @@
       "id": "convert",
       "tools": [
         "think",
-        "skill",
-        "read_file",
         "json_format",
         "csv_preview",
-        "zip_list",
-        "run_cmd",
-        "finish",
-        "write_file"
+        "read_file",
+        "write_file",
+        "make_dir",
+        "finish"
       ],
       "name": "格式转换",
       "match": [
@@ -380,14 +370,11 @@
         "think",
         "web_search",
         "web_fetch",
-        "grep_file",
-        "skill",
-        "run_cmd",
-        "list_dir",
-        "read_file",
         "download_file",
-        "finish",
-        "write_file"
+        "write_file",
+        "read_file",
+        "make_dir",
+        "finish"
       ],
       "name": "搜索 / 找关键词",
       "match": [
@@ -403,10 +390,16 @@
         "出现过",
         "上网",
         "网上",
-        "搜一下",
         "网上搜",
         "百度",
-        "谷歌"
+        "谷歌",
+        "上网搜索",
+        "网上搜索",
+        "搜索一下",
+        "上网查",
+        "网上查",
+        "联网查",
+        "在线查"
       ],
       "goal": "列出命中的文件和位置，没命中就明确说没找到",
       "suggest_tools": [
@@ -449,12 +442,13 @@
       "id": "build",
       "tools": [
         "think",
+        "write_script",
         "write_file",
         "read_file",
-        "run_ps1",
         "replace_in_file",
-        "finish",
-        "write_script"
+        "run_ps1",
+        "make_dir",
+        "finish"
       ],
       "name": "写脚本 / 做工具",
       "match": [
@@ -515,18 +509,15 @@
       "tools": [
         "think",
         "find_files",
-        "zip_list",
         "move_path",
         "copy_path",
-        "open_app",
-        "skill",
-        "list_dir",
-        "run_cmd",
-        "finish",
-        "write_file",
         "delete_path",
         "make_dir",
-        "write_script"
+        "list_dir",
+        "write_file",
+        "zip_list",
+        "skill",
+        "finish"
       ],
       "name": "整理 / 批量处理",
       "match": [
@@ -651,12 +642,10 @@
         "think",
         "sys_info",
         "env_get",
+        "ps",
         "kill_process",
         "now",
-        "run_cmd",
-        "run_ps",
-        "finish",
-        "write_file"
+        "finish"
       ],
       "goal": "拿到真实的系统数字，别猜、别用一堆命令行拼",
       "cheatsheet": [
@@ -674,6 +663,7 @@
         "read_file",
         "append_file",
         "write_file",
+        "make_dir",
         "finish"
       ],
       "name": "往文件末尾追加内容",

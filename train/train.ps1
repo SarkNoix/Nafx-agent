@@ -236,6 +236,15 @@ function New-ExamRoom {
 function Invoke-AgentOnce {
     param([string]$TaskText, [int]$MaxSteps = 5)
 
+    # think 要单独留步数。
+    # 题库里的 maxSteps 是「加 think 之前」定的：一个「创建 a.txt」的题给 4 步，
+    # 原本 write_file + read_file + finish 正好够。现在第一步必须是 think，
+    # 4 步就变成 think + write + read，finish 没了，被迫「跑满步数收尾」。
+    # 实测全量 45 题里 4 个任务这么被卡掉。
+    # 这里统一 +2：1 步给 think，1 步给模型常见的「多验证一次」。
+    # 不改题库里的数字，是为了让「期望≤N步」的展示仍按真实动作数算。
+    $MaxSteps = $MaxSteps + 2
+
     # 每题开始前清掉跨任务会话历史。
     # agent 会读 session.jsonl 的前 2 轮（让连续对话有上下文），但训练是独立考题：
     # 第 2 题聊过「创建 data 目录」，第 4 题「创建 x.txt」就会接着把文件写成 data/x.txt，

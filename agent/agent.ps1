@@ -292,13 +292,19 @@ function Get-Intent {
 }
 
 function Get-ToolNamesFor {
-    param([string]$Intent)
+    param([string]$Intent, [string]$TaskText = '')
+    # 按意图挑工具。没匹配到 flow 时用这个，别一股脑发 18 个。
+    # 之前默认分支发 18 个（1315 tok），配上 system 1760 + 输出 600 = 3675，
+    # 正好卡在 3696 上限，于是跑到第 2 步就触发「省上下文」砍工具，
+    # 把 write_file 砍掉了，模型只好用 run_cmd echo > 绕，写出路径错的空文件。
     switch ($Intent) {
         'chat'    { return @('say', 'finish') }
-        'query'   { return @('syshelp', 'help', 'win_doc', 'web_search', 'web_fetch', 'say', 'finish') }
-        'build'   { return @('plan', 'write_file', 'read_file', 'replace_in_file', 'run_ps1', 'run_cmd', 'list_dir', 'make_dir', 'say', 'finish') }
-        'analyze' { return @('list_dir', 'read_file', 'run_cmd', 'run_ps1', 'write_file', 'say', 'finish') }
-        default   { return @('plan', 'list_dir', 'read_file', 'write_file', 'append_file', 'replace_in_file', 'make_dir', 'delete_path', 'run_cmd', 'run_ps1', 'run_bat', 'syshelp', 'help', 'say', 'finish') }
+        'query'   { return @('think', 'web_search', 'web_fetch', 'read_file', 'list_dir', 'say', 'finish') }
+        'build'   { return @('think', 'write_file', 'read_file', 'replace_in_file', 'run_cmd', 'make_dir', 'say', 'finish') }
+        'analyze' { return @('think', 'list_dir', 'read_file', 'run_cmd', 'write_file', 'say', 'finish') }
+        default   { return @('think', 'list_dir', 'read_file', 'write_file', 'append_file',
+                             'make_dir', 'delete_path', 'run_cmd', 'find_files', 'grep_file',
+                             'web_search', 'say', 'finish') }
     }
 }
 
@@ -311,6 +317,57 @@ function Get-ToolsJsonFor {
     }
     if ($parts.Count -eq 0) { return $ToolsSchemaRaw }
     return ('[' + ($parts -join ',') + ']')
+}
+
+# ------------------------------------------------------------
+#  上下文预算保护
+#  实测 1 个中文字 ≈ 0.68 token，也就是 1 token ≈ 1.47 字符。
+#  context 4096，给输出留 400，所以输入侧上限 3696 token。
+#  历史里的英文/JSON 比中文便宜（约 3.5 字符/token），分开算更准。
+#
+#  为什么要这个：全量 45 题里 9 个任务是第 3 步就 400 Bad Request，
+#  各 flow 一直是「多给点工具保险」，没人算过总账，6 个 flow 超预算。
+#  flow 已经按用途收敛过，这里再加一层运行时兜底 ——
+#  真到临界点时主动砍最没用的工具，而不是等 llama.cpp 吐 400。
+# ------------------------------------------------------------
+function Get-CtxTokens {
+    param([string]$Text)
+    if (-not $Text) { return 0 }
+    $cjk = ([regex]::Matches($Text, '[\u4e00-\u9fa5]')).Count
+    $other = $Text.Length - $cjk
+    return [int][Math]::Round($cjk / 1.47 * 1.0 + $other / 3.5)
+}
+
+function Get-HistoryTokens {
+    param([array]$History)
+    $n = 0
+    foreach ($m in $History) {
+        $n += Get-CtxTokens ([string]$m.content)
+        if ($m.tool_calls_json) { $n += Get-CtxTokens ([string]$m.tool_calls_json) }
+    }
+    return $n
+}
+
+# 按优先级从工具集里砍，直到装进预算。think/finish 永远保留。
+function Trim-ToolsToBudget {
+    param([string[]]$Names, [int]$Budget)
+    # 优先级：越靠前越该保留
+    $mustKeep = @('think', 'finish', 'say', 'rethink')
+    $list = @($Names)
+    $json = Get-ToolsJsonWithFinish -Names $list
+    if ((Get-CtxTokens $json) -le $Budget) { return $list }
+
+    # 从后面开始砍，但不砍 mustKeep
+    $k = $list.Count - 1
+    while ($k -ge 0 -and (Get-CtxTokens $json) -gt $Budget) {
+        $nm = [string]$list[$k]
+        if ($mustKeep -notcontains $nm) {
+            $list = @($list | Where-Object { $_ -ne $nm })
+            $json = Get-ToolsJsonWithFinish -Names $list
+        }
+        $k--
+    }
+    return $list
 }
 
 # finish 不在 tools.ps1 里，它是收尾信号，由 agent 自己处理。
@@ -916,31 +973,14 @@ if ($FlowsLoaded) {
 **别看到任务里有个词就直接做最像的动作。** 先想三件事，把答案写进 think：
 
 1. 用户要的**最终结果**是什么？（一个数字 / 一段文字 / 文件改好了 / 只是想知道情况）
-2. **哪个工具**能拿到？下表里找；表里没有就先用 read_file / list_dir / find_files 看情况
+2. **哪个工具**能拿到？表里没有就先用 read_file / list_dir / find_files 看情况
 3. 拿到后**怎么确认对了**？（工具返回里能不能看到你要的东西）
 
 **信息不够就用 say 问。猜错方向比多问一句贵得多**（一步 30 秒，走错三步就一分半）。
 
-## 常见活儿的现成技能
-
-没给专用流程，你自己判断。这些技能都是写好的，**能用就别自己写命令**：
-
-| 想干什么 | 怎么调 |
-|---|---|
-| 按文件类型数个数 | `skill(command="count_ext -Path data")` |
-| 文本统计（行/字/词） | `skill(command="text_stats -Path data/x.txt")` |
-| 某字段求和 | `skill(command="sum_field -Path data/x.jsonl -Field amount")` |
-| 查 JSON 字段 | `skill(command="json_query -Path data/x.jsonl -Pattern amount")` |
-| 找重复文件 | `skill(command="find_duplicates -Path data")` |
-| 找大文件 | `skill(command="find_large -Path . -MinMB 10")` |
-| 搜文字 | `skill(command="search_text -Pattern 关键词 -Path .")` |
-| 看目录结构 | `skill(command="tree -Path data")` |
-| 压缩 | `skill(command="zip_dir -Path data")` |
-| 解压 | `skill(command="unzip -Path data/x.zip")` |
-| 表格统计 | `skill(command="csv_stats -Path staff.csv")` |
-| 批量改名 | `skill(command="batch_rename -Path data -AddPrefix bak_")` |
-
-不确定有哪些，先 `skill(command="list")` 看全部 24 个。
+有现成技能就先查：`skill(command="list")` 看全部。
+按文件类型数个数、文本统计、求和、查 JSON、去重、搜文字、压解压、表格统计都有。
+技能能干的事别自己拼命令 —— 但**要产出文件的任务，还是得自己 write_file**。
 '@
             $sysFull = $sysFull + $fallback
             Write-Log ("  没匹配到流程模板，注入通用技能速查表")
@@ -949,11 +989,14 @@ if ($FlowsLoaded) {
 
 # 按任务类型只发相关工具，能省一大截输入 token（每步快十几秒）
 $toolsJson = $ToolsSchemaRaw
+# 当前实际发给模型的工具名列表。上下文吃紧时 Trim-ToolsToBudget 会改这个。
+$script:ActiveFlowTools = @('think', 'finish')
 try {
     if ($script:ActiveFlow -and $script:ActiveFlow.tools) {
         $flowTools = @($script:ActiveFlow.tools)
         if ($flowTools.Count -gt 0) {
             $script:ActiveFlowToolCount = $flowTools.Count
+            $script:ActiveFlowTools = $flowTools
             $filtered = Get-ToolsJsonWithFinish -Names $flowTools
             if ($filtered -and $filtered.Length -gt 100) {
                 $toolsJson = $filtered
@@ -961,14 +1004,22 @@ try {
             }
         }
     } else {
-        # 没匹配到流程：给一套常用工具，别把 32 个全发出去。
-        # 之前这里发全部，一次「找所有 txt」光 prefill 就花了 105 秒。
-        $defaultTools = @('read_file', 'read_lines', 'grep_file', 'write_file', 'list_dir', 'find_files', 'file_info', 'run_cmd', 'run_ps', 'web_search', 'web_fetch', 'sys_info', 'open_app', 'unit_convert', 'skill', 'now', 'date_calc', 'finish')
-        $script:ActiveFlowToolCount = $defaultTools.Count
-        $dflt = Get-ToolsJsonWithFinish -Names $defaultTools
+        # 没匹配到流程：按意图挑一套，别一股脑发 18 个。
+        #
+        # 踩过两个坑：
+        # ① 砍到 7 个（去掉 make_dir）→「在 deep/a/b/c 建文件」时模型没建目录的工具，
+        #    改用 say 问用户，干等 60 秒超时。
+        # ② 恢复到 18 个（1315 tok）→ 配上 system 1760 + 输出 600 = 3675，
+        #    正好卡在 3696 上限，第 2 步就触发「省上下文」砍工具，
+        #    把 write_file 砍掉，模型只好 run_cmd echo > 绕，写出路径错的空文件。
+        # 现在按意图发 10-13 个，既不缺必需品，也不会一上来就顶满。
+        $defaultTools = Get-ToolNamesFor -Intent $intent -TaskText $TaskText
+        $script:ActiveFlowToolCount = @($defaultTools).Count
+        $script:ActiveFlowTools = @($defaultTools)
+        $dflt = Get-ToolsJsonWithFinish -Names @($defaultTools)
         if ($dflt -and $dflt.Length -gt 100) {
             $toolsJson = $dflt
-            Write-Log ("  没匹配到流程，发 " + $defaultTools.Count + " 个常用工具（共 " + (@($script:ToolSchemaMap.Keys).Count) + " 个）")
+            Write-Log ("  没匹配到流程（意图 $intent），发 " + @($defaultTools).Count + " 个工具（共 " + (@($script:ToolSchemaMap.Keys).Count) + " 个）")
         }
     }
 } catch { }
@@ -1077,6 +1128,8 @@ $finished    = $false
 $noToolCount = 0
 # 第一步「必须先 think」的打回次数。限 2 次，防止模型死活不肯 think 时把上下文撑爆。
 $script:thinkNudge = 0
+# finish 时「任务要文件但一个都没写」的打回次数。同样限 2 次。
+$script:fileNudge = 0
 $planList    = @()
 $lastToolKey = ''
 $repeatCount = 0
@@ -1121,6 +1174,58 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
 
     $state.phase = '思考中'
     Write-State $state
+
+    # ---- 上下文预算兜底 ----
+    # 发之前估一下总量：历史 + 工具 schema + 这次输出 ≤ context - 输出余量。
+    #
+    # 这里的思路改过一版，记下来免得再走回头路：
+    # 第一版是「超了就砍工具」。结果「读 orders.jsonl 挑 paid 写文件」那题，
+    # think 每步都吐 200-300 tok，历史一路涨到 2800，工具被砍成
+    # 13→12→11→9→5→4→3 个 —— 最后连 write_file 都没了，
+    # 模型只能反复 think，654 秒什么都没做成。
+    #
+    # 正确的取舍：工具是「能干活的抓手」，历史是「说过的废话」。
+    # 要砍就砍历史，不能砍到连工具都没得用。
+    # 工具侧最多砍到 minKeep 个，剩下的全靠裁历史来腾。
+    # 输出余量要按 maxTokens 真留，不能写死 400。
+    # config 里 maxTokens 是 600，按 400 留的话实际只有 3496 可用，
+    # 比算出来的少 200 —— 那就是 400 Bad Request。
+    $ctxLimit = [int]$Cfg.context - [Math]::Max(400, [int]$Cfg.maxTokens) - 60
+    $mt0 = $(if ($noToolCount -gt 0) { 64 } else { [int]$Cfg.maxTokens })
+    $histTok = Get-HistoryTokens -History $history
+    $toolsTokNow = Get-CtxTokens $toolsJson
+
+    # ① 历史太长先裁历史。保留 system + 首个任务消息 + 最近 6 条。
+    if ($histTok + $toolsTokNow + $mt0 -gt $ctxLimit -and $history.Count -gt 8) {
+        $head = @($history[0])
+        # 把开头的连续 user 消息（任务 + 快照）保住
+        $hi = 1
+        while ($hi -lt $history.Count -and [string]$history[$hi].role -eq 'user' -and $hi -le 3) {
+            $head += $history[$hi]; $hi++
+        }
+        # 尾部取 6 条，但不切断 assistant(tool_calls) 和 tool 的配对
+        $tailStart = [Math]::Max($hi, $history.Count - 6)
+        while ($tailStart -gt $hi -and [string]$history[$tailStart].role -eq 'tool') { $tailStart-- }
+        $tail = @()
+        for ($ti = $tailStart; $ti -lt $history.Count; $ti++) { $tail += $history[$ti] }
+        $history = @($head) + @($tail)
+        $histTok = Get-HistoryTokens -History $history
+        Write-Log ("  [裁历史] 上下文吃紧，历史裁到 " + $history.Count + " 条（$histTok tok）")
+    }
+
+    # ② 裁完历史还不够，才动工具，但保底 minKeep 个（think/finish/say + 基础读写）
+    $roomForTools = $ctxLimit - $histTok - $mt0
+    if ($toolsTokNow -gt $roomForTools -and @($script:ActiveFlowTools).Count -gt 6) {
+        $before = @($script:ActiveFlowTools).Count
+        $trimmed = Trim-ToolsToBudget -Names $script:ActiveFlowTools -Budget $roomForTools
+        if (@($trimmed).Count -lt $before) {
+            $script:ActiveFlowTools = $trimmed
+            $toolsJson = Get-ToolsJsonWithFinish -Names $trimmed
+            Write-Log ("  [省上下文] 历史 $histTok + 工具 $toolsTokNow 要超 $ctxLimit，" +
+                       "工具 $before → " + @($trimmed).Count + " 个")
+        }
+    }
+
     try {
         # 固定额度：降过一版（400）确实快，但 finish 那步会被截断导致超时，
         # 反而更糟。稳定优先，统一用配置里的值。
@@ -1279,6 +1384,31 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
     if ($toolName -eq 'finish') {
         $answer = [string]$act.answer
         if (-not $answer) { $answer = [string]$res.content }
+
+        # ---- 收尾前查文件是否真写了 ----
+        # 实测最气人的失分模式：模型 finish 说「summary.txt 内容为：a.txt: 0 / b.txt: 0」，
+        # 读起来像做完了，可 summary.txt 根本不存在 —— 那些内容是它现编的。
+        # 全量 45 题里 6 个任务栽在这上面（pipe-filter-paid / logic-batch-txt /
+        # recover-partial-missing / pipe-jsonl-to-csv 等），全是 status=done 但文件没有。
+        #
+        # 判据：任务文本里点了 .txt/.csv/.jsonl/.md 这类文件名，
+        # 但整趟里没有任何写文件的动作（write_file / append_file / set_line /
+        # replace_in_file / write_script），就说明它在编 —— 打回去让它真写。
+        $wantFiles = @([regex]::Matches($TaskText, '[\w\-\.]+\.(txt|csv|jsonl|json|md|ps1|bat|log)') |
+                       ForEach-Object { $_.Value } | Select-Object -Unique)
+        $wroteSomething = (@($state.steps | Where-Object {
+            [string]$_.tool -in @('write_file', 'append_file', 'set_line', 'replace_in_file', 'write_script')
+        }).Count -gt 0)
+        if ($wantFiles.Count -gt 0 -and -not $wroteSomething -and $script:fileNudge -lt 2) {
+            $script:fileNudge = [int]$script:fileNudge + 1
+            Write-Log ("  [没写文件] 任务点了 " + ($wantFiles -join ',') + "，但没有任何写文件的动作，打回重来")
+            $history += @{ role = 'user'; content = (
+                "任务要的是文件：" + ($wantFiles -join '、') + "。你到现在一个文件都没写，" +
+                "光在 answer 里说「内容为...」不算做完——那文件根本不存在。" +
+                "现在用 write_file 真的把它写出来，写完再 finish。") }
+            continue
+        }
+
         $state.status = 'done'
         $state.answer = $answer
         $state.elapsed = $clock.Elapsed.TotalSeconds
@@ -1530,6 +1660,13 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
         $finished = $true
         break
     }
+
+    # ---- list_dir 之后别挨个 read_file：只写在 prompt.md，不在这里硬拦 ----
+    # 试过硬拦（检测到 list_dir 后紧跟 read_file 就打回）。
+    # 结果模型不读文件了，改用 now {} 和重复 list_dir 来绕 ——
+    # 「列目录」耗时从 94 秒涨到 175 秒，越拦越慢。
+    # 教训：对 4B 模型，堵一条路它只会换一条，规则放提示词里更有效。
+    # 真绕圈由下面的「同一动作重复」和「连续 5 步只读」兜底。
 
     # ---- 只读工具连着 5 步，也当绕圈 ----
     # 光看目录/读文件不产生新信息，再读下去也是白烧
