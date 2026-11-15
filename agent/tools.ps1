@@ -1058,13 +1058,33 @@ function Invoke-AiTool {
                            "要用脚本处理这个文件的话，先用 write_file 写一个 .ps1，再 run_ps1 跑那个脚本。")
                 }
                 $extra = [string]$Action.command
+                # 脚本有 param() 但没传 command，跑出来会是空的 ——
+                # 模型会误以为「退出码 0 = 成功」，然后拿空结果编答案。
+                # 实测就是这么翻车的：calc.ps1 有 param($a,$b,$op)，
+                # 模型 run_ps1 没传参数，输出一片空白，它却在 finish 里写
+                # 「12 + 3 = 15，结果正确」—— 那个 15 是它自己算的，不是脚本算的。
+                if ([string]::IsNullOrWhiteSpace($extra)) {
+                    $head = ''
+                    try { $head = [IO.File]::ReadAllText($full, [Text.Encoding]::UTF8) } catch { }
+                    if ($head -match 'param\s*\(') {
+                        throw ("这个脚本有 param() 要收参数，但你没传 command。" +
+                               "带参数运行要写 command，比如 command=""-a 12 -b 3 -op +""。" +
+                               "不传参数跑出来是空的 —— 看到空输出不代表成功。")
+                    }
+                }
                 # 子进程固定用 UTF-8 输出（含错误流），否则中文会按 GBK 解成乱码
                 $inner = '[Console]::OutputEncoding=[Text.Encoding]::UTF8; ' +
                          '$OutputEncoding=[Text.Encoding]::UTF8; ' +
                          '& ''' + $full + ''''
                 if (-not [string]::IsNullOrWhiteSpace($extra)) { $inner += " $extra" }
                 $cmdLine = '-NoProfile -ExecutionPolicy Bypass -Command "' + $inner + '"'
-                return Invoke-ChildScript -FilePath 'powershell.exe' -CommandLine $cmdLine -Label "run_ps1 $($Action.path)"
+                $r = Invoke-ChildScript -FilePath 'powershell.exe' -CommandLine $cmdLine -Label "run_ps1 $($Action.path)"
+                # 跑出来是空的也要提醒，别让模型把「没输出」当「做对了」
+                $rs = [string]$r
+                if ($rs.TrimEnd().EndsWith('--- 标准输出 ---')) {
+                    $rs += "`n（脚本没输出任何东西。如果它本该打印结果，检查是不是没传参数、或者代码里没写输出。空输出不等于成功。）"
+                }
+                return $rs
             }
 
             'run_js' {

@@ -109,9 +109,11 @@ function Get-ProjectPromptFor {
     $pick = @()
     $t = $Task
 
-    # 写脚本类：只要脚本相关的段
+    # 写脚本类：只要「写脚本」那段的代码示例
+    # 「"写个工具"就是写脚本」那段 297 token 讲的是「别手动一个个干」，
+    # build flow 的目标说明已经覆盖同样意思，重复给等于白烧上下文。
     if ($t -match '脚本|\.ps1|\.bat|工具|命令|统计|数一下|多少行|行数') {
-        $pick += @('写脚本', '"写个工具"就是写脚本，不是手动干活')
+        $pick += @('写脚本')
     }
     # 「写小项目」讲的是 param/try-catch/完整项目骨架（280 tok），
     # 「写个脚本数行数」用不上。真说「做个XX工具/程序/系统」才加载。
@@ -770,12 +772,32 @@ function Close-WithResult {
     $State.elapsed = $clock.Elapsed.TotalSeconds
     if ($lastObs.Trim()) {
         $final = ($lastObs -split "`n" | Where-Object { $_.Trim() } | Select-Object -First 15) -join "`n"
-        $State.status  = 'done'
-        $State.answer  = $final
-        $State.summary = $final
-        Write-Log ("  " + $Reason + "，用已有结果收尾")
-        Write-State $State
-        Write-Closing -State $State -Status 'done' -Summary $State.summary -StepCount $StepCount
+
+        # 观察里带着明显的失败字样，就不该当成功交差。
+        # 起因：「写一个计算器」那题，脚本输出是
+        #     错误：不支持的操作
+        #     测试：12 + 3 = 15
+        # write_script 的返回值是「已写 calc.ps1 并运行（退出码 0）」，看着成功，
+        # 于是把这两行原样当答案交了，用户看到的就是一个自相矛盾的错结果。
+        # 现在识别到失败字样就判 failed，让面板/日志明确显示「没做成」。
+        $badMarkers = '错误[:：]|不支持|失败|未找到|找不到|Cannot find|not recognized|Exception|Traceback|参数错误|语法错误'
+        $looksFailed = ($final -match $badMarkers)
+
+        if ($looksFailed) {
+            $State.status  = 'failed'
+            $State.answer  = "没做成，最后跑出来是这些：`n" + $final
+            $State.summary = '出错了：脚本跑出来是错误'
+            Write-Log ("  " + $Reason + "，但输出里有错误字样，判 failed 而不是 done")
+            Write-State $State
+            Write-Closing -State $State -Status 'failed' -Summary $State.summary -StepCount $StepCount
+        } else {
+            $State.status  = 'done'
+            $State.answer  = $final
+            $State.summary = $final
+            Write-Log ("  " + $Reason + "，用已有结果收尾")
+            Write-State $State
+            Write-Closing -State $State -Status 'done' -Summary $State.summary -StepCount $StepCount
+        }
     } else {
         $State.status  = $FailStatus
         $State.answer  = $FailAnswer

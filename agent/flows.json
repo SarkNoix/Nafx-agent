@@ -446,7 +446,6 @@
         "write_file",
         "read_file",
         "run_ps1",
-        "list_dir",
         "skill",
         "replace_in_file",
         "finish",
@@ -472,46 +471,39 @@
       "steps": [
         {
           "n": 1,
-          "do": "plan 列步骤。每步要写清用什么命令/函数",
-          "need": "清单里每步都有具体方法"
+          "do": "plan 列步骤，每步写清用什么命令"
         },
         {
           "n": 2,
-          "do": "skill(command=\"list\") 看有没有现成的。有就直接用，别自己写",
-          "need": "确认过技能库里没有"
+          "do": "skill(command=\"list\") 看有没有现成的"
         },
         {
           "n": 3,
-          "do": "write_file 写 .ps1 脚本（带 param、错误处理、输出）",
-          "need": "文件写成功"
+          "do": "write_file 写 .ps1（带 param、错误处理）"
         },
         {
           "n": 4,
-          "do": "run_ps1 跑一遍，看输出对不对",
-          "need": "真的跑过，看到输出"
+          "do": "run_ps1 用真实参数跑，看输出对不对"
         },
         {
           "n": 5,
-          "do": "跑错了就改，改完再跑。最多改 3 次",
-          "need": "最终跑通"
+          "do": "不对就 read_file 看代码 → replace_in_file 改 → 再跑"
         },
         {
           "n": 6,
-          "do": "finish 说明脚本叫什么、怎么用、跑出什么结果",
-          "need": "答案里有文件名和运行结果"
+          "do": "finish 说明文件名、怎么用、跑出什么"
         }
       ],
       "cheatsheet": [
-        "写脚本：write_file(path=\"tool.ps1\", content=\"param(...)...\")",
-        "跑脚本：run_ps1(path=\"tool.ps1\")",
-        "带参数跑：run_ps1(path=\"tool.ps1\", command=\"-Path data\")"
+        "write_file(path=\"tool.ps1\", content=\"param(...)...\")",
+        "run_ps1(path=\"tool.ps1\", command=\"-a 12 -b 3 -op +\")"
       ],
       "forbid": [
-        "说写脚本却一个个手动处理文件",
         "写完不跑就说完成",
-        "同一个脚本原样重跑（改了才跑）"
+        "测试里手算结果，没调用脚本自己",
+        "同一脚本原样重跑（改了才跑）"
       ],
-      "example": "任务：写个工具统计扩展名\n→ plan\n→ skill(list) 看到有 count_ext，直接用\n→ finish"
+      "example": "任务：写计算器\n→ write_file(calc.ps1): param($a,$b,$op); switch($op){ \"+\"{$a+$b} \"/\"{$a/$b} default{\"不支持的运算符\"} }\n→ run_ps1(calc.ps1, \"-a 12 -b 3 -op +\") ← 用真参数\n→ 输出 15 才算对"
     },
     {
       "id": "organize",

@@ -77,6 +77,26 @@ function Get-Flow {
     # 分数太低就当没匹配（避免乱套模板）
     if ($bestScore -lt 3) { return $null }
 
+    # ---- 产物修正：要造带逻辑的东西，必须走 build ----
+    # 起因：「写一个计算器 calc.ps1，支持加减乘除」被判成 create（创建文件）。
+    # create 有个「写一个」关键词拿 6 分，而 build 的关键词是
+    # 「写个脚本 / 写个工具 / 做个」—— 这题一个都不沾。
+    # 结果只给 6 个工具：没有 plan（先想清楚）、没有 replace_in_file（改错），
+    # 模型写错一次就没工具修，只能原样重写一遍，还是错的。
+    #
+    # 判据改成看「产物形态」，不是看关键词：
+    #   任务里点了 .ps1 / .bat 文件名 → 一定是在写程序
+    #   或者出现「支持/功能/计算器/管理器」这类描述 → 是在要一个能用的东西
+    $isProgram = ($Task -match '\.(ps1|bat|cmd)\b') -or
+                 ($Task -match '支持|功能|能够|实现|计算器|管理器|系统|程序|工具|脚本|游戏|转换器|解析器')
+
+    if ($isProgram -and $best -and $best.id -eq 'create') {
+        $buildFlow = @($script:Flows | Where-Object { $_.id -eq 'build' })
+        if ($buildFlow.Count -gt 0) {
+            return [pscustomobject]@{ Flow = $buildFlow[0]; Score = $bestScore; Reason = '产物是程序，改用 build 模板' }
+        }
+    }
+
     return [pscustomobject]@{ Flow = $best; Score = $bestScore }
 }
 
