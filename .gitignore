@@ -6,6 +6,7 @@ agent/logs/
 agent/state.json
 agent/queue.json
 agent/session.jsonl
+agent/stream.jsonl
 agent/panel.pid
 agent/ask.json
 agent/answer.json

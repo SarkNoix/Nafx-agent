@@ -670,6 +670,44 @@ while ($listener.IsListening) {
                     Send-Text -Response $resp -Text ('{"ok":true,"cancelled":' + $n + '}')
                 }
 
+                # 流式增量：前端按 seq 轮询，只取比上次新的片段
+                # ?since=N 表示「我已经看到第 N 条了，给我后面的」
+                '/api/stream' {
+                    $since = 0
+                    $rawQ = [string]$ctx.Request.Url.Query
+                    $mSince = [regex]::Match($rawQ, 'since=(\d+)')
+                    if ($mSince.Success) { $since = [int]$mSince.Groups[1].Value }
+
+                    $sf = Join-Path $Root 'agent\stream.jsonl'
+                    $items = @()
+                    $maxSeq = $since
+                    if (Test-Path $sf) {
+                        try {
+                            # agent 正在写的时候也能读，所以要 FileShare.ReadWrite
+                            $fsr = [IO.File]::Open($sf, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+                            try {
+                                $srd = New-Object IO.StreamReader($fsr, [Text.Encoding]::UTF8)
+                                $txt = $srd.ReadToEnd()
+                                $srd.Close()
+                            } finally { $fsr.Close() }
+                            foreach ($ln in ($txt -split "`n")) {
+                                if (-not $ln.Trim()) { continue }
+                                try {
+                                    $o = $ln | ConvertFrom-Json
+                                    $sq = [int]$o.seq
+                                    if ($sq -gt $maxSeq) { $maxSeq = $sq }
+                                    if ($sq -gt $since) {
+                                        $items += [pscustomobject]@{ seq = $sq; kind = [string]$o.kind; text = [string]$o.text }
+                                    }
+                                } catch { }
+                            }
+                        } catch { }
+                    }
+                    $payload = [pscustomobject]@{ seq = $maxSeq; items = @($items) } |
+                               ConvertTo-Json -Depth 5 -Compress
+                    Send-Text -Response $resp -Text $payload
+                }
+
                 '/api/config' {
                     if ($method -eq 'POST') {
                         $body = Read-Body $ctx.Request

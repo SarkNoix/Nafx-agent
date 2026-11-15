@@ -141,6 +141,35 @@ function Get-ProjectPromptFor {
 $ProjectPrompt = ''
 $ToolsSchemaRaw = (Get-Content (Join-Path $AgentDir 'tools-schema.json') -Raw -Encoding UTF8).Trim()
 
+# ------------------------------------------------------------
+#  流式输出：面板靠读这个文件实现逐字效果
+#  写在 agent\log 目录下，一行一个 JSON 事件，前端轮询取增量。
+#  用追加写 + 每片 flush：面板能实时看到，不需要等任务结束。
+# ------------------------------------------------------------
+$script:StreamFile = Join-Path $AgentDir 'stream.jsonl'
+$script:StreamSeq  = 0
+function Reset-Stream {
+    try {
+        [IO.File]::WriteAllText($script:StreamFile, '', (New-Object Text.UTF8Encoding($false)))
+        $script:StreamSeq = 0
+    } catch { }
+}
+function StreamPiece {
+    param([string]$Text, [string]$Kind = 'text')
+    if (-not $Text) { return }
+    $script:StreamSeq++
+    try {
+        $ev = [pscustomobject]@{ seq = $script:StreamSeq; kind = $Kind; text = $Text }
+        $line = (ConvertTo-Json -InputObject $ev -Compress) + "`n"
+        $fs = [IO.File]::Open($script:StreamFile, [IO.FileMode]::Append, [IO.FileAccess]::Write, [IO.FileShare]::ReadWrite)
+        try {
+            $b = [Text.Encoding]::UTF8.GetBytes($line)
+            $fs.Write($b, 0, $b.Length)
+            $fs.Flush()
+        } finally { $fs.Close() }
+    } catch { }
+}
+
 # 把 schema 按工具名拆开，路由时只发相关的几个
 $script:ToolSchemaMap = @{}
 try {
@@ -473,39 +502,121 @@ function Invoke-Model {
                 ',"top_p":' + ([string]$Cfg.topP) +
                 ',"max_tokens":' + $(if ($MaxTokens -gt 0) { $MaxTokens } else { [int]$Cfg.maxTokens }) +
                 ',"tools":' + $ToolsJson +
-                ',"tool_choice":' + $choice + '}'
+                ',"tool_choice":' + $choice +
+                ',"stream":true}'
     $bytes = [Text.Encoding]::UTF8.GetBytes($jsonBody)
 
-    # 偶发的慢不该让整个任务失败，给一次重试机会
+    # ---- 流式请求 ----
+    # Invoke-WebRequest 是一次性把响应全收完才返回的，看不到中间过程。
+    # 要用 HttpWebRequest + StreamReader 逐行读 SSE：
+    #   data: {"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"\"path"}}]}}]}
+    # 工具调用时分片是半截 JSON（"path" / "\":" / " \" / "a.txt"），
+    # 拼起来才完整 —— 这正好就是「模型一个字一个字写参数」的样子。
+    # 纯文本回答（finish / 闲聊）分片是 content，直接显示。
     $sw = [Diagnostics.Stopwatch]::StartNew()
     $resp = $null
+    $reader = $null
+    $acc = ''
+    $dtCalls = @{}   # index -> @{ id; name; args }
+    $finishReason = ''
+    $errMsg = ''
     for ($attempt = 1; $attempt -le 2; $attempt++) {
         try {
-            $resp = Invoke-WebRequest "$Api/chat/completions" -Method Post `
-                -ContentType 'application/json; charset=utf-8' -Body $bytes `
-                -UseBasicParsing -TimeoutSec ([int]$Cfg.stepTimeoutSeconds)
+            $req = [System.Net.HttpWebRequest]::Create("$Api/chat/completions")
+            $req.Method = 'POST'
+            $req.ContentType = 'application/json; charset=utf-8'
+            $req.Timeout = [int]$Cfg.stepTimeoutSeconds * 1000
+            $req.ReadWriteTimeout = [int]$Cfg.stepTimeoutSeconds * 1000
+            $req.ContentLength = $bytes.Length
+            $reqStream = $req.GetRequestStream()
+            $reqStream.Write($bytes, 0, $bytes.Length)
+            $reqStream.Close()
+
+            $resp = $req.GetResponse()
+            $reader = New-Object IO.StreamReader($resp.GetResponseStream(), [Text.Encoding]::UTF8)
+
+            # 屏幕还没输出过任何字符时，用这个标记判断要不要换行
+            $printed = $false
+            while (-not $reader.EndOfStream) {
+                $line = $reader.ReadLine()
+                if (-not $line) { continue }
+                if (-not $line.StartsWith('data: ')) { continue }
+                $payload = $line.Substring(6).Trim()
+                if ($payload -eq '[DONE]') { break }
+
+                $chunk = $null
+                try { $chunk = $payload | ConvertFrom-Json } catch { continue }
+                if (-not $chunk.choices) { continue }
+                $d = $chunk.choices[0].delta
+                if ($chunk.choices[0].finish_reason) { $finishReason = [string]$chunk.choices[0].finish_reason }
+
+                # 纯文本分片
+                if ($d.content) {
+                    $piece = [string]$d.content
+                    if (-not $printed) { Write-Host '    ' -NoNewline -ForegroundColor DarkGray; $printed = $true }
+                    Write-Host $piece -NoNewline -ForegroundColor Gray
+                    $acc += $piece
+                    StreamPiece -Text $piece -Kind 'text'
+                }
+                # 工具调用分片：按 index 累加
+                if ($d.tool_calls) {
+                    foreach ($tc in @($d.tool_calls)) {
+                        $ix = [int]$tc.index
+                        if (-not $dtCalls.ContainsKey($ix)) {
+                            $dtCalls[$ix] = [pscustomobject]@{ id = ''; name = ''; args = ''; shown = $false }
+                        }
+                        $cur = $dtCalls[$ix]
+                        if ($tc.id) { $cur.id = [string]$tc.id }
+                        if ($tc.function -and $tc.function.name) { $cur.name = [string]$tc.function.name }
+                        if ($tc.function -and $null -ne $tc.function.arguments) {
+                            $frag = [string]$tc.function.arguments
+                            $cur.args += $frag
+                            # 参数分片实时显示（这就是「一个字一个字」的效果）
+                            if (-not $cur.shown) {
+                                Write-Host ("`r    " + [char]0x2192 + " " + $cur.name + " ") -NoNewline -ForegroundColor DarkCyan
+                                $cur.shown = $true
+                                StreamPiece -Text ("→ " + $cur.name + " ") -Kind 'tool'
+                            }
+                            Write-Host $frag -NoNewline -ForegroundColor DarkYellow
+                            StreamPiece -Text $frag -Kind 'tool'
+                        }
+                    }
+                }
+            }
+            if ($printed -or $dtCalls.Count -gt 0) { Write-Host '' }
             break
         } catch {
+            $errMsg = $_.Exception.Message
+            if ($reader) { try { $reader.Close() } catch { } }
+            if ($resp) { try { $resp.Close() } catch { } }
             if ($attempt -ge 2) { throw }
-            Write-Log ("  模型响应超时，重试一次：" + $_.Exception.Message)
+            Write-Log ("  模型响应超时，重试一次：" + $errMsg)
             Start-Sleep -Seconds 2
+            $acc = ''
+            $dtCalls = @{}
         }
     }
+    if ($reader) { try { $reader.Close() } catch { } }
+    if ($resp) { try { $resp.Close() } catch { } }
     $sw.Stop()
 
-    $obj = $resp.Content | ConvertFrom-Json
-    $msg = $obj.choices[0].message
-
+    # ---- 把分片拼成调用 ----
     $calls = @()
-    if ($msg.tool_calls) {
-        foreach ($tc in @($msg.tool_calls)) {
-            $calls += [pscustomobject]@{
-                id        = [string]$tc.id
-                name      = [string]$tc.function.name
-                arguments = [string]$tc.function.arguments
-            }
+    foreach ($ix in ($dtCalls.Keys | Sort-Object)) {
+        $c = $dtCalls[$ix]
+        if (-not $c.name) { continue }
+        $argText = $c.args
+        if (-not $argText.Trim()) { $argText = '{}' }
+        $calls += [pscustomobject]@{
+            id        = $(if ($c.id) { $c.id } else { 'call_' + [Guid]::NewGuid().ToString('N').Substring(0, 8) })
+            name      = $c.name
+            arguments = $argText
         }
     }
+    $msg = [pscustomobject]@{ content = $acc; tool_calls = $null }
+    # token 数：流式下没有 usage，用字符数粗估（中文约 0.68 tok/字）
+    $tokEst = [int][Math]::Round($acc.Length / 1.47)
+    foreach ($c in $calls) { $tokEst += [int][Math]::Round(($c.name.Length + $c.arguments.Length) / 1.47) }
 
     # ---- 兼容 xLAM 这类「工具调用写在正文里」的模型 ----
     # 它的模板要求输出纯文本 JSON 数组：
@@ -548,8 +659,8 @@ function Invoke-Model {
     return [pscustomobject]@{
         content   = [string]$msg.content
         calls     = $calls
-        raw_calls = $(if ($msg.tool_calls) { ConvertTo-Json -InputObject @($msg.tool_calls) -Depth 8 -Compress } elseif ($calls.Count -gt 0) { ConvertTo-Json -InputObject @($calls) -Depth 8 -Compress } else { '' })
-        tokens    = $obj.usage.completion_tokens
+        raw_calls = $(if ($calls.Count -gt 0) { ConvertTo-Json -InputObject @($calls) -Depth 8 -Compress } else { '' })
+        tokens    = $tokEst
         seconds   = $sw.Elapsed.TotalSeconds
     }
 }
@@ -894,6 +1005,9 @@ $history = @(@{ role = 'system'; content = $sysFull })
 foreach ($sm in $sessionMsgs) { $history += $sm }
 $history += @{ role = 'user'; content = "任务：$TaskText" }
 if ($wsSnapshot.Trim()) { $history += @{ role = 'user'; content = $wsSnapshot.Trim() } }
+
+# 清掉上一次的流式记录，否则面板会把上一条任务的字显示成本次的
+Reset-Stream
 
 Add-SessionTurn -Role 'user' -Content $TaskText -Ok $true
 

@@ -1099,6 +1099,31 @@ header button,.side-actions button{
 
 /* 浅色主题下边框太淡，加深一档才看得出分区 */
 [data-theme="light"]{--line:#dfe3ea;--line2:#cbd1db}
+
+/* ---------- 流式逐字输出 ---------- */
+.stream-out{margin:0 14px 12px;padding:0;}
+.stream-out:empty{display:none;padding:0;margin:0;}
+.st-label{font-size:var(--fs-xs);color:var(--faint);letter-spacing:.4px;margin-bottom:6px;}
+.st-body{
+  font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
+  font-size:var(--fs-base);line-height:1.65;
+  background:var(--code-bg);border:1px solid var(--code-bd);
+  border-radius:var(--radius);padding:10px 12px;
+  max-height:220px;overflow-y:auto;
+  white-space:pre-wrap;word-break:break-word;
+}
+.st-body.st-tool{color:#d9a441;}
+.st-body.st-text{color:var(--code-fg);}
+.st-caret{
+  display:inline-block;color:var(--accent);
+  animation:blink 1s step-end infinite;
+  margin-left:1px;
+}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+[data-theme="glass"] .st-body{background:rgba(20,6,32,.42);border-color:rgba(255,255,255,.22);}
+[data-theme="glass"] .st-body.st-tool{color:#ffe0a3;}
+[data-theme="glass"] .st-body.st-text{color:rgba(255,255,255,.92);}
+@media(prefers-reduced-motion:reduce){.st-caret{animation:none}}
 </style>
 </head>
 <body>
@@ -1703,7 +1728,53 @@ function liveBox(st){
     '<span class="step-sec">' + esc(st.phase||'') + ' · ' + (st.step||0) + '/' + (st.maxSteps||0) +
     ' · ' + fmtTime(st.elapsed) + '</span></div>' +
     body +
+    '<div class="stream-out" id="streamOut"></div>' +
     '</div>';
+}
+
+/* ---------- 流式逐字输出 ----------
+   agent 每生成一个 token 就往 agent/stream.jsonl 追加一行，
+   面板按 seq 轮询增量，拼成「模型正在写的东西」。
+   工具调用阶段看到的是半截 JSON（"path" → ":" → " \"a.txt"），
+   拼起来就是完整参数 —— 这正是模型一个字一个字写出来的样子。 */
+var streamSeq = 0;
+var streamText = '';
+var streamKind = '';
+
+function resetStream(){
+  streamSeq = 0;
+  streamText = '';
+  streamKind = '';
+  var el = document.getElementById('streamOut');
+  if (el) el.innerHTML = '';
+}
+
+function renderStream(){
+  var el = document.getElementById('streamOut');
+  if (!el) return;
+  if (!streamText) { el.innerHTML = ''; return; }
+  // 工具参数按暗黄色显示，纯文本按正常色
+  var cls = (streamKind === 'tool') ? 'st-tool' : 'st-text';
+  el.innerHTML = '<div class="st-label">模型正在输出</div>' +
+                 '<div class="st-body ' + cls + '">' + esc(streamText) + '<span class="st-caret">▍</span></div>';
+  el.scrollTop = el.scrollHeight;
+}
+
+function pullStream(){
+  fetchJson('/api/stream?since=' + streamSeq)
+    .then(function(j){
+      if (!j) return;
+      if (j.items && j.items.length){
+        for (var i=0;i<j.items.length;i++){
+          var it = j.items[i];
+          streamText += it.text || '';
+          streamKind = it.kind || 'text';
+        }
+        renderStream();
+      }
+      if (typeof j.seq === 'number') streamSeq = j.seq;
+    })
+    .catch(function(){});
 }
 
 function toggleLive(el){
@@ -2029,8 +2100,18 @@ function tick(){
       loadFiles();
       checkAsk();
       var busy = (st && st.status === 'running');
+      // 任务在跑才拉流式增量；新任务开始时把上一次的流清掉
+      if (busy) {
+        if (window.__lastTask !== (st && st.task)) {
+          window.__lastTask = (st && st.task);
+          resetStream();
+        }
+        pullStream();
+      } else if (window.__lastTask) {
+        window.__lastTask = null;
+      }
       if (pollTimer) clearTimeout(pollTimer);
-      pollTimer = setTimeout(tick, busy ? 900 : 1600);
+      pollTimer = setTimeout(tick, busy ? 450 : 1600);
       send.disabled = false;
     });
 }
