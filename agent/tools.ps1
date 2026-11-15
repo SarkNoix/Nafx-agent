@@ -998,6 +998,32 @@ function Invoke-AiTool {
             'read_file' {
                 $full = Resolve-AiPath $Action.path
                 if (-not (Test-Path $full)) { throw "文件不存在：$($Action.path)" }
+                # 先看大小再读。
+                # 原来直接 ReadAllText —— 一个 1GB 的日志文件进来，
+                # PowerShell 会先把整个文件读进内存（而且默认按 GBK 解，还要再放大一倍），
+                # 这台机器总共才 7.85 GB，一次就能把 llama 挤到 swap 里卡死。
+                # 反正下面只给模型看 550 字符，大文件读一个开头就够了。
+                $fsz = 0
+                try { $fsz = (Get-Item -LiteralPath $full).Length } catch { }
+                if ($fsz -gt 524288) {
+                    $fmb = [math]::Round($fsz / 1KB)
+                    # 只读前 8 行就够示意了。
+                    # 注意别用 ReadBlock 的返回值 —— 那是「读了多少个字符」的数字，
+                    # 不是内容（第一版就把它当内容返回了，模型看到的开头是 "800"）。
+                    $headLines = New-Object System.Collections.ArrayList
+                    $sr = New-Object IO.StreamReader($full, [Text.Encoding]::UTF8, $true)
+                    try {
+                        for ($li = 0; $li -lt 8 -and -not $sr.EndOfStream; $li++) {
+                            [void]$headLines.Add($sr.ReadLine())
+                        }
+                    } catch { } finally { $sr.Close() }
+                    $headStr = ($headLines -join "`n")
+                    if ($headStr.Length -gt 550) { $headStr = $headStr.Substring(0,550) }
+                    $linesNote = "$fmb KB"
+                    return ("（这是个 $linesNote 的大文件，只给你看开头 8 行）`n--- 开头 ---`n" + $headStr +
+                            "`n`n大文件别硬读：找关键词用 grep_file，看行数用 run_cmd find /c /v `"`"，" +
+                            "要处理就用 write_script 写脚本，别整个读进来。")
+                }
                 $text = [IO.File]::ReadAllText($full)
                 # 顺带给出统计，模型不用自己数
                 $nonEmpty = @($text -split "`r?`n" | Where-Object { $_.Trim() -ne '' }).Count

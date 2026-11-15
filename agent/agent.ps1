@@ -50,6 +50,17 @@ $LogDir    = Join-Path $AgentDir 'logs'
 $StateFile = if ($env:NAFX_STATE) { $env:NAFX_STATE } else { Join-Path $AgentDir 'state.json' }
 if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Force -Path $LogDir | Out-Null }
 
+# 日志要定期清理。每次任务生成一个 run_*.txt，跑几十轮训练就是几百个，
+# 实测已经堆到 560 个（0.7 MB）。虽然不大，但会一直涨，
+# 而且面板/排查时翻目录也慢。保留最近 200 个，其余的删掉。
+try {
+    $oldLogs = @(Get-ChildItem (Join-Path $LogDir 'run_*.txt') -File -ErrorAction SilentlyContinue |
+                 Sort-Object LastWriteTime -Descending | Select-Object -Skip 200)
+    if ($oldLogs.Count -gt 0) {
+        $oldLogs | Remove-Item -Force -ErrorAction SilentlyContinue
+    }
+} catch { }
+
 $TaskText = $Task.Trim()
 $logFile  = Join-Path $LogDir ("run_{0}.txt" -f (Get-Date -Format 'yyyyMMdd_HHmmss'))
 $clock    = [Diagnostics.Stopwatch]::StartNew()
@@ -522,21 +533,6 @@ function Set-PlanStepDone {
     if (-not $Plan) { return $Plan }
     foreach ($p in $Plan) { if (-not $p.done) { $p.done = $true; break } }
     return $Plan
-}
-
-function Format-DoneList {
-    param($Steps)
-    if (-not $Steps -or $Steps.Count -eq 0) { return '（还没做任何事）' }
-    $lines = @()
-    foreach ($s in $Steps) {
-        if ($s.tool -eq 'finish' -or $s.tool -eq 'check') { continue }
-        $ok = if ($s.ok -eq $false) { '×' } else { '·' }
-        $note = [string]$s.note
-        if ($note.Length -gt 90) { $note = $note.Substring(0, 90) + '…' }
-        $lines += ("{0} {1}. {2} {3}" -f $ok, $s.n, $s.tool, $note)
-    }
-    if ($lines.Count -eq 0) { return '（还没做任何事）' }
-    return (($lines | Select-Object -Last 12) -join "`n")
 }
 
 # ============================================================
