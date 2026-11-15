@@ -1154,6 +1154,82 @@ header button,.side-actions button{
 [data-theme="glass"] .think-more{color:rgba(255,255,255,.9)}
 [data-theme="glass"] .think-more:hover{background:rgba(255,255,255,.18)}
 
+
+/* ========== 模型输出美化 ========== */
+
+/* 步骤卡片：左侧一条状态色，让人一眼扫完 */
+.step{position:relative;}
+.step.ok::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent);opacity:.55;}
+.step.bad::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--err);}
+
+/* 工具名做成胶囊，配图标 */
+.step-act .row{gap:10px;}
+.step-tool{
+  display:inline-flex;align-items:center;gap:5px;
+  font-family:ui-monospace,Consolas,monospace;
+  font-size:12px;font-weight:600;
+  padding:2px 9px 2px 7px;border-radius:20px;
+  background:var(--accent-soft,rgba(120,120,255,.12));
+  color:var(--accent);
+  border:1px solid transparent;
+  flex-shrink:0;
+}
+.step-tool.bad{background:var(--err-bg);color:var(--err);}
+.step-tool .ti{font-size:11px;opacity:.9;}
+.step-arg{
+  font-family:ui-monospace,Consolas,monospace;
+  font-size:11.5px;color:var(--dim);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  flex:1;min-width:0;
+  background:var(--code-bg);padding:2px 8px;border-radius:6px;
+}
+.step-n{
+  width:20px;height:20px;border-radius:50%;
+  display:inline-flex;align-items:center;justify-content:center;
+  font-size:10.5px;font-weight:700;
+  background:var(--panel2);color:var(--dim);
+  border:1px solid var(--line);flex-shrink:0;
+}
+
+/* 想法块：淡紫底 + 左侧亮边，和「做了什么」明确分开 */
+.think-block{
+  margin:0 0 10px;padding:10px 13px;
+  background:linear-gradient(135deg,var(--code-bg) 0%,var(--panel2) 100%);
+  border:1px solid var(--code-bd);
+  border-left:3px solid #9b7bf0;
+  border-radius:0 var(--radius) var(--radius) 0;
+}
+.think-head{gap:7px;margin-bottom:6px;}
+.think-label{font-size:11px;letter-spacing:.5px;color:#9b7bf0;font-weight:600;}
+.think-body,.think-full{font-size:12.5px;line-height:1.75;color:var(--dim);}
+
+/* 返回区：代码块更清楚地分层 */
+.step-obs-wrap{padding:11px 15px 13px;}
+.step-obs-wrap .label{
+  font-size:10px;letter-spacing:.8px;text-transform:uppercase;
+  color:var(--faint);display:flex;align-items:center;gap:6px;margin-bottom:7px;
+}
+.step-obs-wrap .label::after{content:"";flex:1;height:1px;background:var(--line);opacity:.6;}
+.step-obs{
+  background:var(--code-bg);border:1px solid var(--code-bd);
+  border-radius:8px;padding:10px 12px;
+  font-size:11.5px;line-height:1.65;
+}
+.step-obs-wrap.bad .step-obs{border-color:var(--err-bd);background:var(--err-bg);color:var(--err);}
+
+/* 流式区：更像「正在打字」 */
+.st-label{display:flex;align-items:center;gap:7px;font-size:11px;letter-spacing:.5px;}
+.st-label::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--accent);
+  animation:stPulse 1.2s ease-in-out infinite;}
+@keyframes stPulse{0%,100%{opacity:.35;transform:scale(.85)}50%{opacity:1;transform:scale(1.15)}}
+.st-body{border-radius:10px;padding:11px 13px;box-shadow:inset 0 1px 2px rgba(0,0,0,.04);}
+.st-caret{font-size:.85em;vertical-align:.05em;}
+
+/* 消息气泡：更柔和的圆角和阴影 */
+.msg .bubble{border-radius:var(--radius-lg);line-height:1.7;}
+
+@media(prefers-reduced-motion:reduce){.st-label::before{animation:none}}
+
 </style>
 </head>
 <body>
@@ -1690,6 +1766,28 @@ function planHtml(planText){
   return '<div class="sect-label">任务清单</div><ul class="plan-list">' + out + '</ul>';
 }
 
+/* 工具图标。一眼能分出「在读文件」还是「在写文件」比文字快得多。
+   用 emoji 而不是图标字体 —— 不用加载外部资源，离线也能显示。 */
+var TOOL_ICONS = {
+  think:        '💭',
+  read_file:    '📖', read_lines: '📄', grep_file: '🔎', find_files: '🔍',
+  write_file:   '✏️', append_file: '➕', write_script: '📝', set_line: '✂️',
+  replace_in_file: '🔄', delete_path: '🗑️',
+  list_dir:     '📁', make_dir: '📂', move_path: '➡️', copy_path: '📋',
+  run_cmd:      '⚡', run_ps1: '▶️', run_ps: '▶️', run_bat: '▶️', run_js: '▶️',
+  web_search:   '🌐', web_fetch: '🔗', download_file: '⬇️',
+  sys_info:     '🖥️', env_get: '⚙️', ps: '📊', kill_process: '⛔', now: '🕐',
+  syshelp:      '📘', help: '📘', win_doc: '📘', project_doc: '📘',
+  finish:       '✅', say: '💬', rethink: '🔁', plan: '📋',
+  skill:        '🧩', write_skill: '🧩', json_format: '🔧', csv_preview: '📊',
+  hash_file:    '🔐', file_info: 'ℹ️', diff_files: '📑', zip_list: '🗜️',
+  unzip:        '📦', open_app: '🚀', clipboard: '📎', install: '📥',
+  date_calc:    '📅', unit_convert: '📐'
+};
+function toolIcon(n){
+  return TOOL_ICONS[String(n)] || '•';
+}
+
 function stepHtml(s){
   var bad = (s.ok === false);
   var tool = String(s.tool || '?');
@@ -1716,8 +1814,8 @@ function stepHtml(s){
   // ② 做了什么
   var act = '<div class="step-act"><div class="row">' +
     '<span class="step-n">' + (s.n||'') + '</span>' +
-    '<span class="tag-mini">做了什么</span>' +
-    '<span class="step-tool' + (bad?' bad':'') + '">' + esc(tool) + '</span>' +
+    '<span class="step-tool' + (bad?' bad':'') + '">' +
+    '<span class="ti">' + toolIcon(tool) + '</span>' + esc(tool) + '</span>' +
     '<span class="step-arg">' + esc(arg) + '</span>' +
     '<span class="step-sec" style="margin-left:auto">' + Number(s.sec||0).toFixed(1) + 's</span>' +
     '</div></div>';
@@ -1738,7 +1836,7 @@ function stepHtml(s){
   }
   var obs = body ? ('<div class="step-obs-wrap' + (bad?' bad':'') + '">' + body + '</div>') : '';
 
-  return '<div class="step">' + think + act + obs + '</div>';
+  return '<div class="step ' + (bad ? 'bad' : 'ok') + '">' + think + act + obs + '</div>';
 }
 
 function toggleThink(el){
@@ -2402,7 +2500,8 @@ function histDetail(h){
   for (var i=0;i<steps.length;i++){
     var s = steps[i], ok = (s.ok !== false);
     out += '<div class="hstep"><span class="step-n">' + (s.n||'') + '</span> ' +
-      '<span class="step-tool' + (ok?'':' bad') + '">' + esc(s.tool) + '</span> ' +
+      '<span class="step-tool' + (ok?'':' bad') + '">' +
+      '<span class="ti">' + toolIcon(s.tool) + '</span>' + esc(s.tool) + '</span> ' +
       '<span class="step-arg">' + esc(s.arg) + '</span>';
     if (s.think) out += '<div class="step-think">' + esc(s.think) + '</div>';
     if (s.note){
