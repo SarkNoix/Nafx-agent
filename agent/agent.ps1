@@ -150,9 +150,18 @@ function Get-ProjectPromptFor {
 
     $sel = @()
     foreach ($sec in $ProjectSections) {
+        $tt = [string]$sec.Title
+        $hit = $false
         foreach ($p in $pick) {
-            if ($sec.Title -like ('*' + $p + '*')) { $sel += $sec.Body; break }
+            # 判断「标题以关键词开头」用 IndexOf(...) -eq 0。这里踩过两个坑：
+            # ① 原来用 -like '*x*'，「写脚本」会连「"写个工具"就是写脚本」一起匹配（多背 215 tok）
+            # ② 改成 [string]$sec.Title.StartsWith($p) 反而六个段落全命中 ——
+            #    PowerShell 把 StartsWith 当成对参数数组逐个判断、任一命中就 True，
+            #    实测直接变成 2788 字符，system 撑爆。
+            # IndexOf 做显式比较没有这个歧义。
+            if ($tt.IndexOf([string]$p) -eq 0) { $hit = $true; break }
         }
+        if ($hit) { $sel += $sec.Body }
     }
     return (($sel -join "`n").Trim())
 }
@@ -1185,11 +1194,25 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
     # 正确的取舍：工具是「能干活的抓手」，历史是「说过的废话」。
     # 要砍就砍历史，不能砍到连工具都没得用。
     # 工具侧最多砍到 minKeep 个，剩下的全靠裁历史来腾。
-    # 输出余量要按 maxTokens 真留，不能写死 400。
-    # config 里 maxTokens 是 600，按 400 留的话实际只有 3496 可用，
-    # 比算出来的少 200 —— 那就是 400 Bad Request。
-    $ctxLimit = [int]$Cfg.context - [Math]::Max(400, [int]$Cfg.maxTokens) - 60
-    $mt0 = $(if ($noToolCount -gt 0) { 64 } else { [int]$Cfg.maxTokens })
+    # 输出额度统一留 600（config 里的 maxTokens）。
+    #
+    # 试过给 build 类 1200 —— 输入预算从 3436 掉到 2836，
+    # 8 个工具被砍到只剩 2 个，连 write_script 和 write_file 都没了，任务直接废。
+    # 这是死结：要写脚本就得有输出空间，留了空间工具就保不住。
+    # 600 是平衡点：够写一个中等脚本，工具也留得下。
+    # 更长的脚本本来该拆成多次 write_script + replace_in_file，而不是一次吐 1200 tok。
+    # 空转时压到 64：那时只需要它调一次 finish。
+    $mt0 = 0
+    if ($noToolCount -gt 0) {
+        $mt0 = 64
+    } else {
+        $mt0 = [Math]::Max(500, [int]$Cfg.maxTokens)
+    }
+
+    # 输入上限 = context - 这次真正要留的输出 - 一点余量。
+    # 注意这里必须和上面 $mt0 用同一个值算，各算各的必然对不上 ——
+    # 之前 ctxLimit 按 600 留、实际发 1200，输入占满时输出就没地方，直接 400。
+    $ctxLimit = [int]$Cfg.context - $mt0 - 60
     $histTok = Get-HistoryTokens -History $history
     $toolsTokNow = Get-CtxTokens $toolsJson
 
@@ -1225,15 +1248,9 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
     }
 
     try {
-        # 固定额度：降过一版（400）确实快，但 finish 那步会被截断导致超时，
-        # 反而更糟。稳定优先，统一用配置里的值。
-        # 空转后把输出上限压小。
-        # 起因：空转时模型不调工具，而是开始输出大段解释，一直写满 max_tokens
-        # （配置里是 600）才停。实测一次空转 = 生成 600 tok = 165 秒白烧。
-        # 这时候我们只需要它调一次 finish（约 20 tok），给 64 足够。
-        $mt = 0
-        if ($noToolCount -gt 0) { $mt = 64 }
-        $res = Invoke-Model -Messages $history -ToolsJson $toolsJson -ForceTool:($noToolCount -gt 0) -MaxTokens $mt
+        # 输出额度 $mt0 在上面已经按任务类型算好了（和 ctxLimit 用的是同一个值），
+        # 这里直接用，别再算一遍 —— 两处各算各的迟早会对不上。
+        $res = Invoke-Model -Messages $history -ToolsJson $toolsJson -ForceTool:($noToolCount -gt 0) -MaxTokens $mt0
     } catch {
         Write-Host ''
         # 请求超时也要分辨是真慢还是服务挂了。挂了就报卡死，别报个含糊的"超时"。
@@ -1358,7 +1375,15 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
     }
 
     $argsObj = $null
-    try { $argsObj = $call.arguments | ConvertFrom-Json } catch { }
+    try {
+        $argsObj = $call.arguments | ConvertFrom-Json
+    } catch {
+        Write-Log ('  [参数解析失败] ' + $_.Exception.Message)
+    }
+    if (-not $argsObj) {
+        $argRaw = [string]$call.arguments
+        Write-Log ('  [参数为空] 长度=' + $argRaw.Length + ' 内容=[' + $argRaw.Substring(0,[Math]::Min(150,$argRaw.Length)) + ']')
+    }
 
     $act = [pscustomobject]@{
         think   = [string]$res.content

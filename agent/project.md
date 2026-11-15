@@ -1,24 +1,15 @@
 ## 写脚本
 
-只写 `.ps1` 和 `.bat`。一行一句，别挤成一行。别写 pause / Read-Host（会卡住等输入）。
+只写 `.ps1`。一行一句。别写 pause / Read-Host（会卡住）。
 
 ```powershell
-# 数行数
-$n = @(Get-Content '某个文件.txt' -Encoding UTF8).Count
-"行数: $n"
-
-# 列文件
-Get-ChildItem -File | ForEach-Object { $_.Name }
+$n = @(Get-Content 'x.txt' -Encoding UTF8).Count    # 数行数
 ```
 
-### 写完必须用真参数跑一遍
-
-1. **测试要真调你的逻辑**：`"=$(12+3)"` 这种假测试，主逻辑全错也显示 15。
-2. **输出有「错误/失败」，或是空的，都算没做对**，别当成功交差。
-3. **运算符就是 `+ - * /`**，别写 `div`/`mul`。
-4. **数字参数写类型**：`param([int]$a)`。不写会变字符串：`"12"+"3"="123"`。
-   带参数跑要传 `command="-a 12 -b 3 -op +"`。
-5. 改错：`read_file` 看代码 → `replace_in_file` 改那一行，**别原样重写**。
+**写完必须用真参数跑一遍**：测试要真调你的逻辑（`"=$(12+3)"` 是假测试）；
+输出有「错误」或是空的都算没做对；运算符就用 `+ - * /`；
+数字参数写类型 `param([int]$a)`；带参数跑传 `command="-a 12 -b 3"`；
+改错用 `read_file` 看 → `replace_in_file` 改，别原样重写。
 
 ## "写个工具"就是写脚本，不是手动干活
 

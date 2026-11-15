@@ -943,13 +943,13 @@
     "type": "function",
     "function": {
       "name": "think",
-      "description": "先想清楚再动手。新任务的第一个动作必须是这个。把\"要做什么、先做哪步、怎么判断做对了\"写进 content。",
+      "description": "先想清楚再动手。**新任务的第一个动作必须是这个。**把推理写进 content，**控制在 100 字以内**：要什么结果、分几步、怎么验收。别写长篇分析 —— 你的输出上限有限，写太满会把后面真正要用的参数挤掉。",
       "parameters": {
         "type": "object",
         "properties": {
           "content": {
             "type": "string",
-            "description": "文件内容 / 要写的东西"
+            "description": "你的推理，100 字以内，写在这里"
           }
         },
         "required": [

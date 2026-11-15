@@ -43,7 +43,7 @@
     "_内存说明":  "KV缓存量化：把注意力缓存从 fp16 压到 8bit/4bit，同样内存能装 2-4 倍的上下文。kvCacheTypeK/V 可选 f16(不压)/q8_0/q4_0，内存紧就用 q4_0。flashAttn 量化时建议开。改完重启生效。",
     "context":  4096,
     "threads":  8,
-    "maxTokens":  400,
+    "maxTokens":  600,
     "maxSteps":  25,
     "stepTimeoutSeconds":  240,
     "loadMode":  "mmap+mlock"

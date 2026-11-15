@@ -1779,9 +1779,24 @@ function Invoke-AiTool {
                 # 所以只能靠这个工具把「想」和「做」分开：
                 #   think    → 只写推理，不碰任何文件
                 #   其它工具 → 新任务的第一个动作必须是 think（agent.ps1 里约束）
-                $what = [string]$Action.content
-                if ([string]::IsNullOrWhiteSpace($what)) { $what = [string]$Action.command }
-                if ([string]::IsNullOrWhiteSpace($what)) {
+                # 想法可能被塞进任意字段。
+                # 实测一个全新任务里模型连写两次 think 都被判「没写想法」，
+                # 内容是完整的推理，只是没放 content —— 4B 不会严格照 schema 填。
+                # 所以不再只认 content，改成取所有字段里最长的那段文字。
+                # 宁可把稍长一点的字段当想法，也不能把「有想法」误判成「没写」。
+                $what = ''
+                try {
+                    foreach ($p in $Action.PSObject.Properties) {
+                        # 跳过元数据字段。「tool='think'」和「n=1 / ok=True」这类不是想法，
+                        # 不跳的话连「全空」都会被当成有想法（工具名本身就算内容了）。
+                        if ($p.Name -in @('tool', 'n', 'ok', 'raw', 'sec', 'arg', 'note', 'obs')) { continue }
+                        $v = [string]$p.Value
+                        if ($v.Length -gt $what.Length) { $what = $v }
+                    }
+                } catch { }
+                # 太短或只是个词的，不算想法 —— 至少得有点实质内容
+                $wTrim = $what.Trim()
+                if ($wTrim.Length -lt 6 -or $wTrim -match '^(think|true|false|none|null|\d+)$') {
                     return '（你没写想法。把「要做什么、先做哪步、怎么判断做对了」写进 content）'
                 }
                 return '（想法已记下。现在开始动手，别再重复这段推理。）'
