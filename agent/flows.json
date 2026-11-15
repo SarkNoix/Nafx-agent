@@ -6,6 +6,7 @@
     {
       "id": "count",
       "tools": [
+        "think",
         "run_cmd",
         "list_dir",
         "find_files",
@@ -92,6 +93,7 @@
     {
       "id": "lookup",
       "tools": [
+        "think",
         "read_file",
         "read_lines",
         "list_dir",
@@ -180,6 +182,7 @@
     {
       "id": "create",
       "tools": [
+        "think",
         "write_file",
         "read_file",
         "make_dir",
@@ -240,6 +243,7 @@
     {
       "id": "modify",
       "tools": [
+        "think",
         "read_file",
         "grep_file",
         "diff_files",
@@ -310,6 +314,7 @@
     {
       "id": "convert",
       "tools": [
+        "think",
         "skill",
         "read_file",
         "json_format",
@@ -372,6 +377,7 @@
     {
       "id": "search",
       "tools": [
+        "think",
         "web_search",
         "web_fetch",
         "grep_file",
@@ -442,11 +448,10 @@
     {
       "id": "build",
       "tools": [
-        "plan",
+        "think",
         "write_file",
         "read_file",
         "run_ps1",
-        "skill",
         "replace_in_file",
         "finish",
         "write_script"
@@ -471,11 +476,11 @@
       "steps": [
         {
           "n": 1,
-          "do": "plan 列步骤，每步写清用什么命令"
+          "do": "think 把推理写进 content（要什么结果、分几步、每步用什么工具、怎么验收）"
         },
         {
           "n": 2,
-          "do": "skill(command=\"list\") 看有没有现成的"
+          "do": "想一下有没有现成做法；没有就直接写"
         },
         {
           "n": 3,
@@ -508,6 +513,7 @@
     {
       "id": "organize",
       "tools": [
+        "think",
         "find_files",
         "zip_list",
         "move_path",
@@ -642,6 +648,7 @@
         "几个核"
       ],
       "tools": [
+        "think",
         "sys_info",
         "env_get",
         "kill_process",
@@ -663,6 +670,7 @@
     {
       "id": "append",
       "tools": [
+        "think",
         "read_file",
         "append_file",
         "write_file",

@@ -124,8 +124,14 @@ function Get-ProjectPromptFor {
     if ($t -match 'jsonl|json|csv|日志|数据|表格') {
         $pick += @('处理 jsonl 这类文件')
     }
-    # 真要做完整项目才给设计方法论（最贵的那段）
-    if ($t -match '做个|做一个|实现一个|开发一个|管理系统|完整|小项目|程序') {
+    # 真要做完整项目才给设计方法论（最贵的那段，585+312 tok）
+    # 这个关键词原来含「小项目」「完整」，结果「在 mini 目录下建个小项目，
+    # 包含 main.ps1、config.txt、README.md」也命中 —— 但那题只是建三个文件，
+    # 白送 897 tok 直接把上下文撑爆（实测 400 Bad Request，3 秒 error）。
+    # 判据：任务已经把要建的东西列清楚了就不给方法论，
+    # 只有「做个X系统/工具」这种得自己想架构的才给。
+    $hasFileList = ($t -match '包含|包括|三个文件|两个文件|这几个文件')
+    if (-not $hasFileList -and $t -match '做个|做一个|实现一个|开发一个|管理系统') {
         $pick += @('做项目：先想清楚，再动手', '多步任务先列清单，而且要列出"用什么方法"')
     }
 
@@ -1212,6 +1218,27 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
     $call = @($res.calls)[0]
     $callId = [string]$call.id
     $toolName = [string]$call.name
+
+    # ---- 新任务的第一步必须是 think ----
+    # Qwen3-4B-Instruct 没有内置 thinking（reasoning 关着，也没有 reasoning_content），
+    # 模型容易一上来就瞎动手：实测写计算器时没想清楚就写脚本，
+    # 运算符写成 div、测试还是假的（$(12+3) 而不是调用脚本）。
+    # 这里强制它动手前先把推理写进 think 工具。
+    # 只卡第一步 —— 每步都卡的话每步多花十几秒，不值。
+    #
+    # 注意判断口径：只要 steps 里有任何记录（包括 think 本身）就放行。
+    # 第一版写成「排除 think 后还有没有动作」，结果调完 think 还是 0，
+    # 导致它永远进不了实际动作，连着调 3 次 think 空转 332 秒。
+    $thoughtAlready = (@($state.steps | Where-Object { $_.tool -eq 'think' }).Count -gt 0)
+    $anyStep = ($state.steps.Count -gt 0)
+    if (-not $anyStep -and $toolName -notin @('think', 'say', 'finish')) {
+        Write-Log ("  [要求先想] 第一步是 $toolName，打回让它先 think")
+        $history += @{ role = 'user'; content = (
+            "第一步没写想法。先调 think 工具，把推理写进 content：" +
+            "这个任务最终要什么结果、打算分几步、每步用什么工具、怎么判断做对了。" +
+            "想清楚了再调 $toolName 动手。") }
+        continue
+    }
 
     $argsObj = $null
     try { $argsObj = $call.arguments | ConvertFrom-Json } catch { }

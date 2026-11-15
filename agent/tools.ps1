@@ -1711,6 +1711,21 @@ function Invoke-AiTool {
                 return '（计划已记下，开始做第一步）'
             }
 
+            'think' {
+                # 显式的「先想清楚」。
+                # Qwen3-4B-Instruct 是 Instruct 版，没有内置 thinking
+                # （reasoning 关着，响应里也没有 reasoning_content 字段），
+                # 所以只能靠这个工具把「想」和「做」分开：
+                #   think    → 只写推理，不碰任何文件
+                #   其它工具 → 新任务的第一个动作必须是 think（agent.ps1 里约束）
+                $what = [string]$Action.content
+                if ([string]::IsNullOrWhiteSpace($what)) { $what = [string]$Action.command }
+                if ([string]::IsNullOrWhiteSpace($what)) {
+                    return '（你没写想法。把「要做什么、先做哪步、怎么判断做对了」写进 content）'
+                }
+                return '（想法已记下。现在开始动手，别再重复这段推理。）'
+            }
+
             'rethink' {
                 # 重新审视任务用。真正的逻辑在 agent.ps1 里（要清空步骤、重置判断），
                 # 这里只返回一句提示，防止它被当成普通动作执行。
