@@ -78,7 +78,7 @@
   --err-bg:rgba(255,176,176,.18); --err-bd:rgba(255,176,176,.50);
   --run-bg:rgba(179,236,255,.18); --run-bd:rgba(179,236,255,.50);
   --warn-bg:rgba(255,223,143,.18); --warn-bd:rgba(255,223,143,.50);
-  --blur:blur(26px) saturate(170%); --panel-alpha:.42;
+  --blur:blur(12px); --panel-alpha:.42;
   --radius:16px; --radius-lg:22px;
 }
 /* 玻璃主题：所有文字加一层暗影，再亮的背景也压得住 */
@@ -114,23 +114,27 @@ body{
   transition:background .35s,color .25s;
 }
 
-/* 液态玻璃背景：粉紫渐变 + 漂浮光斑 */
+/* 液态玻璃背景：粉紫渐变 + 光斑
+   —— 性能改造（原来卡到影响操作，实测下面这几处是主因）
+   原来：三个 60-70px 的大模糊层各自 22s/26s/30s 无限循环动画，
+   上面再压着 27 个 backdrop-filter:blur(26px) 面板。
+   光斑每帧一移动，27 个面板就要重算一次模糊 —— GPU 全程满载，
+   面板跑任务时（450ms 一轮刷新）直接卡顿。
+   现在：光斑不再动（静下来之后 GPU 只在内容变化时才重绘），
+   模糊半径 70px→48px，面板模糊 26px→12px 且去掉 saturate
+   （saturate 会额外开一条滤镜链）。视觉效果几乎看不出差别。 */
 #glassBg{position:fixed;inset:0;z-index:0;display:none;overflow:hidden;pointer-events:none;
-  background:linear-gradient(135deg,#ffd3e8 0%,#f7b8f0 22%,#c9a6f7 48%,#9d8cf5 72%,#b7a4ff 100%);}
+  background:linear-gradient(135deg,#ffd3e8 0%,#f7b8f0 22%,#c9a6f7 48%,#9d8cf5 72%,#b7a4ff 100%);
+  contain:strict;}
 [data-theme="glass"] #glassBg{display:block}
-#glassBg::before,#glassBg::after{content:'';position:absolute;border-radius:50%;filter:blur(70px);opacity:.75}
+#glassBg::before,#glassBg::after{content:'';position:absolute;border-radius:50%;filter:blur(48px);opacity:.75}
 #glassBg::before{width:62vw;height:62vw;left:-14vw;top:-18vw;
-  background:radial-gradient(circle,#ff9fd6 0%,#ff77c8 40%,transparent 72%);
-  animation:float1 22s ease-in-out infinite}
+  background:radial-gradient(circle,#ff9fd6 0%,#ff77c8 40%,transparent 72%);}
 #glassBg::after{width:56vw;height:56vw;right:-12vw;bottom:-16vw;
-  background:radial-gradient(circle,#b18cff 0%,#8f6bff 42%,transparent 74%);
-  animation:float2 26s ease-in-out infinite}
-.glass-blob{position:absolute;border-radius:50%;filter:blur(60px);opacity:.55}
+  background:radial-gradient(circle,#b18cff 0%,#8f6bff 42%,transparent 74%);}
+.glass-blob{position:absolute;border-radius:50%;filter:blur(40px);opacity:.55}
 .glass-blob.b1{width:34vw;height:34vw;left:38%;top:48%;
-  background:radial-gradient(circle,#ffe0b0 0%,transparent 70%);animation:float3 30s ease-in-out infinite}
-@keyframes float1{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(6vw,5vh) scale(1.12)}}
-@keyframes float2{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-5vw,-4vh) scale(1.08)}}
-@keyframes float3{0%,100%{transform:translate(0,0)}50%{transform:translate(-8vw,6vh)}}
+  background:radial-gradient(circle,#ffe0b0 0%,transparent 70%);}
 
 /* 玻璃面板通用 */
 [data-theme="glass"] .glassy{
@@ -1124,6 +1128,32 @@ header button,.side-actions button{
 [data-theme="glass"] .st-body.st-tool{color:#ffe0a3;}
 [data-theme="glass"] .st-body.st-text{color:rgba(255,255,255,.92);}
 @media(prefers-reduced-motion:reduce){.st-caret{animation:none}}
+
+/* ---------- 想法块（think 单独显示）---------- */
+.think-block{
+  margin:0 0 8px;padding:9px 12px;
+  background:var(--code-bg);
+  border:1px solid var(--code-bd);border-left:3px solid var(--accent);
+  border-radius:var(--radius);
+}
+.think-head{display:flex;align-items:center;gap:6px;margin-bottom:5px;}
+.think-ico{font-size:12px;line-height:1;opacity:.85}
+.think-label{font-size:var(--fs-xs);color:var(--fg);font-weight:600;letter-spacing:.3px}
+.think-more{margin-left:auto;font-size:var(--fs-xs);color:var(--accent);cursor:pointer;
+  padding:1px 6px;border-radius:4px;user-select:none}
+.think-more:hover{background:var(--hover)}
+.think-body,.think-full{
+  font-size:var(--fs-sm);line-height:1.68;color:var(--dim);
+  white-space:pre-wrap;word-break:break-word;
+}
+.think-full{max-height:320px;overflow-y:auto}
+[data-theme="glass"] .think-block{background:rgba(20,6,32,.42);border-color:rgba(255,255,255,.22);
+  border-left-color:rgba(255,255,255,.75)}
+[data-theme="glass"] .think-label{color:rgba(255,255,255,.95)}
+[data-theme="glass"] .think-body,[data-theme="glass"] .think-full{color:rgba(255,255,255,.86)}
+[data-theme="glass"] .think-more{color:rgba(255,255,255,.9)}
+[data-theme="glass"] .think-more:hover{background:rgba(255,255,255,.18)}
+
 </style>
 </head>
 <body>
@@ -1665,32 +1695,62 @@ function stepHtml(s){
   var tool = String(s.tool || '?');
   var arg = String(s.arg || '');
 
-  // 上半：做了什么
+  // ① 想什么（独立一块，和「做了什么」分开）
+  // 原来 think 挤在「做了什么」那个灰条里，和工具名、参数混成一行，
+  // 又长又难看清楚。现在单独成块，有标题、有配色、长文本折叠。
+  var think = '';
+  if (s.think){
+    var th = String(s.think);
+    var long = th.length > 200;
+    var shown = long ? th.substring(0, 200) + '…' : th;
+    think = '<div class="think-block">' +
+      '<div class="think-head"><span class="think-ico">💭</span>' +
+      '<span class="think-label">想法</span>' +
+      (long ? '<span class="think-more" onclick="toggleThink(this)">展开</span>' : '') +
+      '</div>' +
+      '<div class="think-body">' + esc(shown) + '</div>' +
+      (long ? '<div class="think-full" style="display:none">' + esc(th) + '</div>' : '') +
+      '</div>';
+  }
+
+  // ② 做了什么
   var act = '<div class="step-act"><div class="row">' +
     '<span class="step-n">' + (s.n||'') + '</span>' +
     '<span class="tag-mini">做了什么</span>' +
     '<span class="step-tool' + (bad?' bad':'') + '">' + esc(tool) + '</span>' +
     '<span class="step-arg">' + esc(arg) + '</span>' +
     '<span class="step-sec" style="margin-left:auto">' + Number(s.sec||0).toFixed(1) + 's</span>' +
-    '</div>';
-  if (s.think){
-    act += '<div class="step-think"><span class="label">想：</span>' + esc(s.think) + '</div>';
-  }
-  act += '</div>';
+    '</div></div>';
 
-  // 下半：返回了什么
+  // ③ 返回了什么
   var body = '';
   if (s.obs){
     var o = String(s.obs);
     if (o.length > 1400) o = o.substring(0,1400) + '…';
     body = '<span class="label' + (bad?' err':'') + '">' + (bad?'出错了':'返回') + '</span>' +
            '<pre class="step-obs' + (bad?' bad':'') + '">' + esc(o) + '</pre>';
+  } else if (tool === 'think'){
+    // think 步骤本来就没有工具输出 —— 内容已经在上面「想法」块里了。
+    // 再写「这一步没有输出」会让人以为出问题了。
+    body = '';
   } else {
     body = '<span class="label">返回</span><span class="step-empty">（这一步没有输出）</span>';
   }
-  var obs = '<div class="step-obs-wrap' + (bad?' bad':'') + '">' + body + '</div>';
+  var obs = body ? ('<div class="step-obs-wrap' + (bad?' bad':'') + '">' + body + '</div>') : '';
 
-  return '<div class="step">' + act + obs + '</div>';
+  return '<div class="step">' + think + act + obs + '</div>';
+}
+
+function toggleThink(el){
+  var blk = el.closest('.think-block');
+  if (!blk) return;
+  var full = blk.querySelector('.think-full');
+  var body = blk.querySelector('.think-body');
+  if (!full || !body) return;
+  var open = full.style.display === 'none';
+  full.style.display = open ? '' : 'none';
+  body.style.display = open ? 'none' : '';
+  el.textContent = open ? '收起' : '展开';
 }
 
 function liveBox(st){
@@ -1951,8 +2011,22 @@ function renderFlow(sess, st){
   curSession = sess || [];
   var arr = curSession;
   var running = (st && st.task && (st.status === 'running' || st.status === 'done' || st.status === 'error' || st.status === 'timeout' || st.status === 'stuck' || st.status === 'interrupted'));
-  var sig = arr.length + '|' + (st ? (st.intent||'') + '|' + (st.status||'') : '') + '|' + (running ? (st.task + '|' + st.step + '|' + st.elapsed + '|' + st.phase + '|' + (st.steps||[]).length) : 'idle');
-  if (sig === lastSig) return;
+
+  // 签名决定要不要重建整个消息区。
+  // 这里刻意不含 st.elapsed —— 它每 450ms 都变，会逼着每一轮都全量重建
+  // thread.innerHTML（几百个节点），那才是「面板卡」的主因。
+  // 只把「结构真的变了」算进去：会话条数、状态、步数、任务名。
+  var stepsLen = (st && st.steps) ? st.steps.length : 0;
+  var sig = arr.length + '|' + (st ? (st.intent||'') + '|' + (st.status||'') : '') + '|' +
+            (running ? (st.task + '|' + st.step + '|' + stepsLen + '|' + st.phase) : 'idle');
+  if (sig === lastSig) {
+    // 结构没变，只刷新顶部的用时（轻量，改一个 textContent）
+    if (running && st) {
+      var q = document.getElementById('hQueue');
+      if (q) q.innerHTML = '用时 <b>' + fmtTime(st.elapsed) + '</b>';
+    }
+    return;
+  }
   lastSig = sig;
 
   if (arr.length === 0 && !running){
@@ -2090,15 +2164,40 @@ function fetchJson(url){
     .catch(function(){ return null; });
 }
 
+/* ---------- 主轮询 ----------
+   性能改造。原来每一轮（450ms）都发 7 个请求：
+     /api/state /api/system /api/session /api/tools /api/files /api/ask /api/stream
+   实测后端每个都很快（合计 67ms），但浏览器端要解析 3.8KB 的工具列表、
+   1.9KB 的文件列表，还要 diff 重组 DOM —— 450ms 一轮就是每秒 2 次，
+   跑任务时 CPU 一直在忙，看起来就是「卡」。
+   现在分频：
+     快（450ms）：只拉 state + stream，任务在跑时这两个才真的会变
+     慢（每 8 轮 ≈ 3.6s）：system / session / ask / 工具 / 文件
+   任务在跑时还把 renderFlow 的签名检查保住，只有内容真变了才重组 DOM。 */
+var tickN = 0;
+
 function tick(){
-  Promise.all([fetchJson('/api/state'), fetchJson('/api/system'), fetchJson('/api/session')])
+  tickN++;
+  var slow = (tickN % 8 === 1);   // 每 8 轮做一次慢活
+
+  var jobs = [fetchJson('/api/state')];
+  if (slow) {
+    jobs.push(fetchJson('/api/system'));
+    jobs.push(fetchJson('/api/session'));
+  }
+
+  Promise.all(jobs)
     .then(function(res){
-      var st = res[0], sys = res[1], sess = res[2];
-      if (sys) { renderSystem(sys, st); window.__lastSys = sys; }
-      renderFlow(sess, st);
-      loadTools();
-      loadFiles();
-      checkAsk();
+      var st = res[0];
+      var sys = slow ? res[1] : window.__lastSys;
+      var sess = slow ? res[2] : window.__lastSess;
+
+      if (slow && sys) { renderSystem(sys, st); window.__lastSys = sys; }
+      if (slow && sess) { window.__lastSess = sess; }
+      renderFlow(sess || window.__lastSess, st);
+
+      if (slow) { loadTools(); loadFiles(); checkAsk(); }
+
       var busy = (st && st.status === 'running');
       // 任务在跑才拉流式增量；新任务开始时把上一次的流清掉
       if (busy) {

@@ -1378,6 +1378,13 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
     $act = Repair-ActionStrings $act
 
     $think = [string]$act.think
+    # think 工具的想法在 content 参数里，不在 act.think。
+    # 不补这一条，面板上「想法」那一栏对 think 步骤永远是空的 ——
+    # 而 think 恰恰是模型唯一认真写推理的地方。
+    if ($toolName -eq 'think' -and -not $think.Trim()) {
+        $think = [string]$act.content
+        if (-not $think.Trim()) { $think = [string]$act.command }
+    }
     $path  = [string]$act.path
 
     # ---------- finish ----------
