@@ -75,12 +75,70 @@ Set-AiRoot -Path $Workspace -TimeoutSeconds ([int]$Cfg.stepTimeoutSeconds) -MaxO
 Initialize-AiWorkspace
 
 $SystemPrompt   = Get-Content (Join-Path $AgentDir 'prompt.md') -Raw -Encoding UTF8
-# 渐进式：做项目才加载 project.md，平常不占上下文
-$ProjectPrompt  = ''
+
+# project.md 分段加载。
+# 原来整个 1826 token 全塞进去，而 context 只有 4096 ——
+# build 类任务（写脚本）要发 11 个工具 schema（1749 tok）+ project.md（1826）+ prompt.md（1410）
+# 一算就是 4985，直接 400 Bad Request。实测 local-script 那题每次都是 3 秒 error。
+# 现在按任务内容挑段：写脚本只给「写脚本 / 写小项目 / 处理 jsonl」这几段，
+# 「做项目：先想清楚」584 token 只有真要做完整项目时才加载。
+$ProjectSections = @()
+$ProjectPrompt   = ''
 try {
     $projPath = Join-Path $AgentDir 'project.md'
-    if (Test-Path $projPath) { $ProjectPrompt = Get-Content $projPath -Raw -Encoding UTF8 }
+    if (Test-Path $projPath) {
+        $projLines = [IO.File]::ReadAllLines($projPath, [Text.Encoding]::UTF8)
+        # 按 ## 标题切段，保留标题和正文
+        $cur = $null
+        foreach ($pl in $projLines) {
+            if ($pl -match '^##\s+(.+)') {
+                if ($cur) { $ProjectSections += $cur }
+                $cur = [pscustomobject]@{ Title = $matches[1]; Body = $pl + "`n" }
+            } elseif ($cur) {
+                $cur.Body += $pl + "`n"
+            }
+        }
+        if ($cur) { $ProjectSections += $cur }
+    }
 } catch { }
+
+# 按任务挑段。没命中就全给（宁可多花 token 也别缺信息）。
+function Get-ProjectPromptFor {
+    param([string]$Task)
+    if ($ProjectSections.Count -eq 0) { return '' }
+    $pick = @()
+    $t = $Task
+
+    # 写脚本类：只要脚本相关的段
+    if ($t -match '脚本|\.ps1|\.bat|工具|命令|统计|数一下|多少行|行数') {
+        $pick += @('写脚本', '"写个工具"就是写脚本，不是手动干活')
+    }
+    # 「写小项目」讲的是 param/try-catch/完整项目骨架（280 tok），
+    # 「写个脚本数行数」用不上。真说「做个XX工具/程序/系统」才加载。
+    if ($t -match '做个|做一个|实现一个|开发一个|管理系统|完整|小程序' -or $t -match '工具|程序' -and $t -notmatch '写一个脚本|\.ps1') {
+        $pick += @('写小项目')
+    }
+    # 处理数据文件
+    if ($t -match 'jsonl|json|csv|日志|数据|表格') {
+        $pick += @('处理 jsonl 这类文件')
+    }
+    # 真要做完整项目才给设计方法论（最贵的那段）
+    if ($t -match '做个|做一个|实现一个|开发一个|管理系统|完整|小项目|程序') {
+        $pick += @('做项目：先想清楚，再动手', '多步任务先列清单，而且要列出"用什么方法"')
+    }
+
+    if ($pick.Count -eq 0) { return '' }   # 都不沾边就不给，别占上下文
+
+    $sel = @()
+    foreach ($sec in $ProjectSections) {
+        foreach ($p in $pick) {
+            if ($sec.Title -like ('*' + $p + '*')) { $sel += $sec.Body; break }
+        }
+    }
+    return (($sel -join "`n").Trim())
+}
+
+$ProjectPrompt = ''
 $ToolsSchemaRaw = (Get-Content (Join-Path $AgentDir 'tools-schema.json') -Raw -Encoding UTF8).Trim()
 
 # 把 schema 按工具名拆开，路由时只发相关的几个
@@ -573,6 +631,50 @@ function Get-Summary {
     return '出错了。'
 }
 
+# ------------------------------------------------------------
+#  统一收尾：能捞就捞，实在没有才认输
+#
+#  背景：这段逻辑原来在 4 个地方各写一遍（任务超时、模型调用失败、
+#  连续空转、跑满步数），每处 10 行几乎逐字相同，只差变量名和日志文案。
+#  散在主循环各处的问题是改一处忘三处 —— 前几轮就因此反复出同类 bug：
+#  工具明明已经返回结果，却因为「收尾那步失败」把整题判成 error。
+#
+#  现在统一成：有观察就用观察收尾（done），没有才按 FailStatus 认输。
+# ------------------------------------------------------------
+function Close-WithResult {
+    param(
+        [object]$State,
+        [string]$Reason,          # 为什么要收尾（写进日志）
+        [string]$FailStatus,      # 没有结果时判成什么：timeout / error / maxsteps / failed
+        [string]$FailAnswer,      # 没有结果时给用户的说明
+        [int]$StepCount
+    )
+    # 从 steps 末尾往前找最后一条非空观察
+    $lastObs = ''
+    for ($ci = $State.steps.Count - 1; $ci -ge 0; $ci--) {
+        $cob = [string]$State.steps[$ci].obs
+        if ($cob.Trim()) { $lastObs = $cob; break }
+    }
+
+    $State.elapsed = $clock.Elapsed.TotalSeconds
+    if ($lastObs.Trim()) {
+        $final = ($lastObs -split "`n" | Where-Object { $_.Trim() } | Select-Object -First 15) -join "`n"
+        $State.status  = 'done'
+        $State.answer  = $final
+        $State.summary = $final
+        Write-Log ("  " + $Reason + "，用已有结果收尾")
+        Write-State $State
+        Write-Closing -State $State -Status 'done' -Summary $State.summary -StepCount $StepCount
+    } else {
+        $State.status  = $FailStatus
+        $State.answer  = $FailAnswer
+        $State.summary = '出错了：' + $FailAnswer
+        Write-Log ("  " + $Reason + "，没有任何结果，判 " + $FailStatus)
+        Write-State $State
+        Write-Closing -State $State -Status $FailStatus -Summary $State.summary -StepCount $StepCount
+    }
+}
+
 function Write-Closing {
     param($State, [string]$Status, [string]$Summary, [int]$StepCount)
     $color = if ($Status -eq 'done') { 'Green' } else { 'Red' }
@@ -644,18 +746,14 @@ try {
 $sessionMsgs = @()
 try { $sessionMsgs = @(Get-SessionHistory -MaxTurns 2) } catch { }
 
-# 判断要不要把 project.md 也带上：任务像"做东西"才加
-# project.md 有 1342 token 的「设计方法论」，只对真要做东西的任务有价值。
-# 原来的正则含「写」，结果「创建 a.txt 写入 hello」也算项目，白送 1342 token
-# （prompt eval 42 tok/s，等于每步多花 30 秒）。
-# 现在只认「明确要造一个能反复用的东西」：脚本/工具/程序/项目/系统/实现/开发，
-# 或者带 .ps1/.bat 的产物。
-$isBuild = ($TaskText -match '脚本|工具|程序|项目|系统|实现|开发|搭建|做一个|做个|管理器|计算器') -or
-           ($TaskText -match '\.(ps1|bat|cmd)\b')
+# 按任务挑 project.md 的相关段落（不再是全量 1826 token）
 $sysFull = $SystemPrompt
-if ($isBuild -and $ProjectPrompt) {
-    $sysFull = $SystemPrompt + "`n`n" + $ProjectPrompt
-    Write-Log ("  已加载 project.md（判为做东西的任务）")
+$projPick = Get-ProjectPromptFor -Task $TaskText
+if ($projPick) {
+    $sysFull = $SystemPrompt + "`n`n" + $projPick
+    Write-Log ("  已加载 project.md 相关段（" + $projPick.Length + " 字符，全量是 2684）")
+} else {
+    Write-Log ("  project.md 没加载（任务不涉及写脚本/项目）")
 }
 
 # 套流程模板：这个任务的硬约束
@@ -845,28 +943,10 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
     # 每步开头检查一次：超了就用已有结果收尾，不留半截状态。
     $taskLimit = [int]$Cfg.taskTimeoutSeconds
     if ($taskLimit -gt 0 -and $clock.Elapsed.TotalSeconds -ge $taskLimit) {
-        $lastObsT = ''
-        for ($ti = $state.steps.Count - 1; $ti -ge 0; $ti--) {
-            $tob = [string]$state.steps[$ti].obs
-            if ($tob.Trim()) { $lastObsT = $tob; break }
-        }
-        $state.elapsed = $clock.Elapsed.TotalSeconds
-        if ($lastObsT.Trim()) {
-            $finalT = ($lastObsT -split "`n" | Where-Object { $_.Trim() } | Select-Object -First 15) -join "`n"
-            $state.status  = 'done'
-            $state.answer  = $finalT
-            $state.summary = $finalT
-            Write-Log ("  到任务时限（$taskLimit 秒），用已有结果收尾")
-            Write-State $state
-            Write-Closing -State $state -Status 'done' -Summary $state.summary -StepCount ($step - 1)
-        } else {
-            $state.status  = 'timeout'
-            $state.answer  = "任务超时：超过 $taskLimit 秒还没做完。"
-            $state.summary = "出错了：任务超过时限（$taskLimit 秒）。"
-            Write-Log ("  到任务时限（$taskLimit 秒），没有任何结果，判超时")
-            Write-State $state
-            Write-Closing -State $state -Status 'timeout' -Summary $state.summary -StepCount ($step - 1)
-        }
+        Close-WithResult -State $state -Reason "到任务时限（$taskLimit 秒）" `
+            -FailStatus 'timeout' `
+            -FailAnswer "任务超时：超过 $taskLimit 秒还没做完。" `
+            -StepCount ($step - 1)
         $finished = $true
         break
     }
@@ -916,30 +996,12 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
             break
         }
         # 模型调不通了。但如果之前已经做出来东西了，别把它丢掉判 error。
-        # 实测「创建 notes.txt 写三行」：write_file 早就成功写入了 16 字符，
+        # 实测「创建 notes.txt 写三行」：write_file 早就成功写入 16 字符，
         # 只是后面生成 finish 时超时，结果整题被判 error 扣 20 分。
-        $lastObsE = ''
-        for ($si = $state.steps.Count - 1; $si -ge 0; $si--) {
-            $oE = [string]$state.steps[$si].obs
-            if ($oE.Trim()) { $lastObsE = $oE; break }
-        }
-        if ($lastObsE.Trim()) {
-            $finalE = ($lastObsE -split "`n" | Where-Object { $_.Trim() } | Select-Object -First 15) -join "`n"
-            $state.status = 'done'
-            $state.answer = $finalE
-            $state.summary = $finalE
-            $state.elapsed = $clock.Elapsed.TotalSeconds
-            Write-State $state
-            Write-Log '模型调用失败，但已有结果，用最后一次观察收尾'
-            Write-Closing -State $state -Status 'done' -Summary $state.summary -StepCount ($step - 1)
-        } else {
-            $state.status = 'error'
-            $state.elapsed = $clock.Elapsed.TotalSeconds
-            $state.answer = "出错了：$($_.Exception.Message)"
-            $state.summary = "出错了：模型调用失败"
-            Write-State $state
-            Write-Closing -State $state -Status 'error' -Summary $state.summary -StepCount ($step - 1)
-        }
+        Close-WithResult -State $state -Reason '模型调用失败' `
+            -FailStatus 'error' `
+            -FailAnswer "出错了：$($_.Exception.Message)" `
+            -StepCount ($step - 1)
         $finished = $true
         break
     }
@@ -972,23 +1034,16 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
 
         $noToolCount++
         # 有结果就收，没结果才认输。
-        # 「列出当前目录有哪些文件」就是卡在这：list_dir 早就返回内容了，
-        # 模型却一直空转，最后被判定 failed，答案白白丢掉。
+        # 「列出当前目录有哪些文件」就卡在这：list_dir 早返回内容了，
+        # 模型却一直空转，最后判 failed，答案白白丢掉。
         if ($noToolCount -ge 2 -and $state.steps.Count -gt 0) {
-            $lastObsI = ''
+            $hasObs = $false
             for ($si = $state.steps.Count - 1; $si -ge 0; $si--) {
-                $oI = [string]$state.steps[$si].obs
-                if ($oI.Trim()) { $lastObsI = $oI; break }
+                if (([string]$state.steps[$si].obs).Trim()) { $hasObs = $true; break }
             }
-            if ($lastObsI.Trim()) {
-                $finalI = ($lastObsI -split "`n" | Where-Object { $_.Trim() } | Select-Object -First 15) -join "`n"
-                $state.status = 'done'
-                $state.answer = $finalI
-                $state.summary = $finalI
-                $state.elapsed = $clock.Elapsed.TotalSeconds
-                Write-State $state
-                Write-Log ("连续 $noToolCount 次不调工具，但已有结果，直接收尾")
-                Write-Closing -State $state -Status 'done' -Summary $state.summary -StepCount $step
+            if ($hasObs) {
+                Close-WithResult -State $state -Reason "连续 $noToolCount 次不调工具" `
+                    -FailStatus 'failed' -FailAnswer '出错了：模型只说话不动手。' -StepCount $step
                 $finished = $true
                 break
             }
@@ -1362,38 +1417,46 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
     }
     $history += @{ role = 'tool'; tool_call_id = $callId; content = ($obs + $hint) }
 
-    # 截断时保住 system 和第一条任务，后面成对保留
-    if ($history.Count -gt 16) {
-        $history = @($history[0], $history[1]) + $history[($history.Count - 12)..($history.Count - 1)]
+    # ---- 历史裁剪 ----
+    # 旧逻辑有两个毛病：
+    #   1) 写死 @($history[0], $history[1]) —— 以为 [1] 一定是任务消息，
+    #      但带上会话历史后 [1] 是上一轮的话，任务反而被剪掉了
+    #   2) 直接取末尾 12 条，会把 assistant(tool_calls) 和它的 tool 响应拆散，
+    #      llama.cpp 收到不成对的消息会直接 400
+    # 现在：保住 system + 最初的用户消息（任务），末尾按「整组」裁 ——
+    # 一个 assistant 带几个 tool 响应算一组，要么整组留要么整组丢。
+    if ($history.Count -gt 18) {
+        # 从头找连续的用户消息（system 之后的第一组），这是任务描述，必须留
+        $headKeep = @($history[0])
+        $hi = 1
+        while ($hi -lt $history.Count -and $history[$hi].role -eq 'user') {
+            $headKeep += $history[$hi]
+            $hi++
+        }
+        # 从尾部往前凑，凑到 12 条左右就停，但不切断 tool 配对
+        $tailKeep = @()
+        for ($ti2 = $history.Count - 1; $ti2 -ge $hi; $ti2--) {
+            $tailKeep = @($history[$ti2]) + $tailKeep
+            if ($tailKeep.Count -ge 12) {
+                # 如果当前这个还是 tool 响应，说明它上面的 assistant 没带上，继续往前收
+                if ($history[$ti2].role -eq 'tool' -and $ti2 -gt $hi) { continue }
+                break
+            }
+        }
+        # 若截断点落在 assistant 上（它后面本该跟 tool 响应），把整组丢掉更安全
+        while ($tailKeep.Count -gt 0 -and $tailKeep[0].role -eq 'tool') {
+            $tailKeep = @($tailKeep | Select-Object -Skip 1)
+        }
+        $history = $headKeep + $tailKeep
     }
 }
 
 if (-not $finished) {
-    # 步数用完了，但很可能已经有结果了——别丢掉，用最后一次观察收尾。
-    # 之前这里直接写「步数用完了，任务还没做完」，导致「列出当前目录有哪些文件」
-    # 明明 list_dir 早就返回了内容，最后却是 0 分。
-    $lastObsM = ''
-    for ($si = $state.steps.Count - 1; $si -ge 0; $si--) {
-        $oM = [string]$state.steps[$si].obs
-        if ($oM.Trim()) { $lastObsM = $oM; break }
-    }
-    if ($lastObsM.Trim()) {
-        $finalM = ($lastObsM -split "`n" | Where-Object { $_.Trim() } | Select-Object -First 15) -join "`n"
-        $state.status = 'done'
-        $state.answer = $finalM
-        $state.summary = $finalM
-        $state.elapsed = $clock.Elapsed.TotalSeconds
-        Write-State $state
-        Write-Log ("跑满 $MaxSteps 步，但已有结果，用最后一次观察收尾")
-        Write-Closing -State $state -Status 'done' -Summary $state.summary -StepCount $MaxSteps
-    } else {
-        $state.status = 'maxsteps'
-        $state.elapsed = $clock.Elapsed.TotalSeconds
-        $state.answer = "步数用完了（$MaxSteps 步），任务还没做完。"
-        $state.summary = "出错了：跑满 $MaxSteps 步还没收尾。"
-        Write-State $state
-        Write-Closing -State $state -Status 'maxsteps' -Summary $state.summary -StepCount $MaxSteps
-    }
+    # 步数用完了。有结果就用结果收尾，别因为「没正常 finish」把做出来的东西丢掉。
+    Close-WithResult -State $state -Reason "跑满 $MaxSteps 步" `
+        -FailStatus 'maxsteps' `
+        -FailAnswer "步数用完了（$MaxSteps 步），任务还没做完。" `
+        -StepCount $MaxSteps
 }
 
 # ---------- 记进会话 ----------

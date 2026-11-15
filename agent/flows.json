@@ -446,8 +446,6 @@
         "write_file",
         "read_file",
         "run_ps1",
-        "run_python",
-        "write_skill",
         "list_dir",
         "skill",
         "replace_in_file",
