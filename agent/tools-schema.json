@@ -3,15 +3,17 @@
     "type": "function",
     "function": {
       "name": "write_file",
-      "description": "写文件。新建或整个覆盖。改某一行用 set_line，末尾追加用 append_file",
+      "description": "写文件。新建或整个覆盖。改某一行用 set_line，末尾追加用 append_file，别用 write_file 覆盖整个文件。",
       "parameters": {
         "type": "object",
         "properties": {
           "path": {
-            "type": "string"
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
           },
           "content": {
-            "type": "string"
+            "type": "string",
+            "description": "文件内容 / 要写的东西"
           }
         },
         "required": [
@@ -25,12 +27,13 @@
     "type": "function",
     "function": {
       "name": "read_file",
-      "description": "读文件内容。只看某几行用 read_lines，找关键词用 grep_file，都别用它硬读大文件",
+      "description": "读整个文件的内容。只看某几行用 read_lines，找关键词用 grep_file，都别用它硬读大文件。",
       "parameters": {
         "type": "object",
         "properties": {
           "path": {
-            "type": "string"
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
           }
         },
         "required": [
@@ -43,12 +46,13 @@
     "type": "function",
     "function": {
       "name": "list_dir",
-      "description": "列目录。按名字找文件用 find_files，只数个数用 run_cmd，别用它翻大目录",
+      "description": "列出目录里有哪些文件和子目录。**列表就是答案，列完别再挨个 read_file 去确认存在。**",
       "parameters": {
         "type": "object",
         "properties": {
           "path": {
-            "type": "string"
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
           }
         },
         "required": [
@@ -66,7 +70,8 @@
         "type": "object",
         "properties": {
           "path": {
-            "type": "string"
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
           },
           "command": {
             "type": "string",
@@ -83,12 +88,13 @@
     "type": "function",
     "function": {
       "name": "read_lines",
-      "description": "按行号范围读。大文件分段看用这个，别 read_file 整读（会截断）",
+      "description": "读文件的指定行范围。比 read_file 省 token，只需要几行时用它。",
       "parameters": {
         "type": "object",
         "properties": {
           "path": {
-            "type": "string"
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
           },
           "command": {
             "type": "string",
@@ -167,7 +173,8 @@
         "type": "object",
         "properties": {
           "path": {
-            "type": "string"
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
           }
         },
         "required": [
@@ -209,7 +216,8 @@
         "type": "object",
         "properties": {
           "path": {
-            "type": "string"
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
           },
           "command": {
             "type": "string",
@@ -235,7 +243,8 @@
         "type": "object",
         "properties": {
           "path": {
-            "type": "string"
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
           },
           "command": {
             "type": "string",
@@ -370,7 +379,7 @@
     "type": "function",
     "function": {
       "name": "write_script",
-      "description": "写 .ps1 脚本并立刻运行，一次调用就拿到输出。任务要「写脚本然后跑」时用这个，别拆成 write_file + run_ps1 两步",
+      "description": "写 .ps1 脚本并立刻运行，一次调用拿到输出。**参数要在 command 里传**，脚本有 param() 时漏了 command 会跑出空结果。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -458,18 +467,21 @@
     "type": "function",
     "function": {
       "name": "replace_in_file",
-      "description": "替换文件里的第一处原文。要换全部用 skill(replace_text)",
+      "description": "把文件里的一段文字替换成另一段。改文件里某句话用它；改整行用 set_line。",
       "parameters": {
         "type": "object",
         "properties": {
           "path": {
-            "type": "string"
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
           },
           "find": {
-            "type": "string"
+            "type": "string",
+            "description": "要找的原文"
           },
           "replace": {
-            "type": "string"
+            "type": "string",
+            "description": "替换成什么"
           }
         },
         "required": [
@@ -484,12 +496,13 @@
     "type": "function",
     "function": {
       "name": "set_line",
-      "description": "改第 N 行。整篇重写用 write_file，别用这个逐行改",
+      "description": "改文件的第 N 行。用户说「把第 N 行改成 X」时用它。",
       "parameters": {
         "type": "object",
         "properties": {
           "path": {
-            "type": "string"
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
           },
           "command": {
             "type": "string",
@@ -512,15 +525,17 @@
     "type": "function",
     "function": {
       "name": "append_file",
-      "description": "末尾追加",
+      "description": "往文件末尾追加内容，不动原有内容。用户说「追加 / 加一行 / 补一段」时用它。",
       "parameters": {
         "type": "object",
         "properties": {
           "path": {
-            "type": "string"
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
           },
           "content": {
-            "type": "string"
+            "type": "string",
+            "description": "文件内容 / 要写的东西"
           }
         },
         "required": [
@@ -534,12 +549,13 @@
     "type": "function",
     "function": {
       "name": "make_dir",
-      "description": "建目录",
+      "description": "建目录（含多级，如 a/b/c 一次建好）。写文件到新目录时 write_file 会自动建父目录，不用先跑这个。",
       "parameters": {
         "type": "object",
         "properties": {
           "path": {
-            "type": "string"
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
           }
         },
         "required": [
@@ -552,7 +568,7 @@
     "type": "function",
     "function": {
       "name": "find_files",
-      "description": "按通配符找文件，递归，带大小。按名字找用这个，别用 list_dir 一个个翻",
+      "description": "按文件名或通配符找文件（如 *.txt）。找\"哪些文件叫这个名\"用它。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -581,7 +597,8 @@
         "type": "object",
         "properties": {
           "path": {
-            "type": "string"
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
           }
         },
         "required": [
@@ -642,12 +659,13 @@
     "type": "function",
     "function": {
       "name": "grep_file",
-      "description": "在文件里搜关键词，返回行号和上下文。找内容用这个，别 read_file 整读",
+      "description": "在文件里搜关键词，只返回匹配的行。找\"某段文字在哪\"用它，别整个读进来。",
       "parameters": {
         "type": "object",
         "properties": {
           "path": {
-            "type": "string"
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
           },
           "command": {
             "type": "string",
@@ -674,7 +692,8 @@
         "type": "object",
         "properties": {
           "path": {
-            "type": "string"
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
           }
         },
         "required": [
@@ -687,12 +706,13 @@
     "type": "function",
     "function": {
       "name": "run_cmd",
-      "description": "跑一条 cmd 命令。一条命令能做完就别写脚本；要算数或对象改用 run_ps",
+      "description": "跑一条 Windows cmd 命令。一条命令能做完就别写脚本；要算数或处理对象改用 run_ps。",
       "parameters": {
         "type": "object",
         "properties": {
           "command": {
-            "type": "string"
+            "type": "string",
+            "description": "命令或参数文本"
           }
         },
         "required": [
@@ -710,7 +730,8 @@
         "type": "object",
         "properties": {
           "command": {
-            "type": "string"
+            "type": "string",
+            "description": "命令或参数文本"
           }
         },
         "required": [
@@ -723,15 +744,17 @@
     "type": "function",
     "function": {
       "name": "run_ps1",
-      "description": "跑.ps1脚本",
+      "description": "跑一个 .ps1 脚本文件。要写脚本就用 write_script（写+跑一步完成），别拆成两步。",
       "parameters": {
         "type": "object",
         "properties": {
           "path": {
-            "type": "string"
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
           },
           "command": {
-            "type": "string"
+            "type": "string",
+            "description": "命令或参数文本"
           }
         },
         "required": [
@@ -749,10 +772,12 @@
         "type": "object",
         "properties": {
           "path": {
-            "type": "string"
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
           },
           "command": {
-            "type": "string"
+            "type": "string",
+            "description": "命令或参数文本"
           }
         },
         "required": [
@@ -770,10 +795,12 @@
         "type": "object",
         "properties": {
           "path": {
-            "type": "string"
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
           },
           "command": {
-            "type": "string"
+            "type": "string",
+            "description": "命令或参数文本"
           }
         },
         "required": [
@@ -791,7 +818,8 @@
         "type": "object",
         "properties": {
           "command": {
-            "type": "string"
+            "type": "string",
+            "description": "命令或参数文本"
           }
         },
         "required": []
@@ -802,12 +830,13 @@
     "type": "function",
     "function": {
       "name": "help",
-      "description": "查手册和工具详情",
+      "description": "查内置手册和工具详情。问「XX 怎么用」时先试这个。",
       "parameters": {
         "type": "object",
         "properties": {
           "command": {
-            "type": "string"
+            "type": "string",
+            "description": "主题或工具名"
           }
         },
         "required": [
@@ -820,12 +849,13 @@
     "type": "function",
     "function": {
       "name": "syshelp",
-      "description": "查命令参数",
+      "description": "查 Windows 命令的参数和用法。问「XX 命令怎么用 / XX 有哪些参数」时用这个，别去翻本地文件。",
       "parameters": {
         "type": "object",
         "properties": {
           "command": {
-            "type": "string"
+            "type": "string",
+            "description": "命令名，如 robocopy / xcopy"
           }
         },
         "required": [
@@ -843,7 +873,8 @@
         "type": "object",
         "properties": {
           "command": {
-            "type": "string"
+            "type": "string",
+            "description": "命令或参数文本"
           }
         },
         "required": [
@@ -856,12 +887,13 @@
     "type": "function",
     "function": {
       "name": "web_search",
-      "description": "搜索",
+      "description": "上网搜索。**凡是问你不知道的事实（今年/最新/谁得了奖/多少钱/什么版本），必须先搜，不许凭记忆猜。** 搜完拿到结果再说；搜不到就如实说搜不到，别编。",
       "parameters": {
         "type": "object",
         "properties": {
           "command": {
-            "type": "string"
+            "type": "string",
+            "description": "要搜索的关键词，别写整句话"
           }
         },
         "required": [
@@ -874,12 +906,13 @@
     "type": "function",
     "function": {
       "name": "web_fetch",
-      "description": "开网页",
+      "description": "打开一个网址读正文。web_search 给了链接、要看详情时用它。path 填完整 http(s) 链接。",
       "parameters": {
         "type": "object",
         "properties": {
           "path": {
-            "type": "string"
+            "type": "string",
+            "description": "完整网址，如 https://example.com"
           }
         },
         "required": [
@@ -910,12 +943,13 @@
     "type": "function",
     "function": {
       "name": "think",
-      "description": "先想清楚再动手。新任务的第一个动作必须是这个。把要做什么、先做哪步、怎么判断做对了写进来。只写想法，不执行任何操作",
+      "description": "先想清楚再动手。新任务的第一个动作必须是这个。把\"要做什么、先做哪步、怎么判断做对了\"写进 content。",
       "parameters": {
         "type": "object",
         "properties": {
           "content": {
-            "type": "string"
+            "type": "string",
+            "description": "文件内容 / 要写的东西"
           }
         },
         "required": [
@@ -933,7 +967,8 @@
         "type": "object",
         "properties": {
           "steps": {
-            "type": "string"
+            "type": "string",
+            "description": "任务清单，一步一行"
           }
         },
         "required": [
@@ -951,7 +986,8 @@
         "type": "object",
         "properties": {
           "message": {
-            "type": "string"
+            "type": "string",
+            "description": "要对用户说的话"
           }
         },
         "required": [
@@ -969,13 +1005,16 @@
         "type": "object",
         "properties": {
           "path": {
-            "type": "string"
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
           },
           "find": {
-            "type": "string"
+            "type": "string",
+            "description": "要找的原文"
           },
           "replace": {
-            "type": "string"
+            "type": "string",
+            "description": "替换成什么"
           }
         },
         "required": [
@@ -993,7 +1032,8 @@
         "type": "object",
         "properties": {
           "path": {
-            "type": "string"
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
           },
           "command": {
             "type": "string",
@@ -1015,7 +1055,8 @@
         "type": "object",
         "properties": {
           "command": {
-            "type": "string"
+            "type": "string",
+            "description": "命令或参数文本"
           }
         },
         "required": []
@@ -1031,7 +1072,8 @@
         "type": "object",
         "properties": {
           "command": {
-            "type": "string"
+            "type": "string",
+            "description": "命令或参数文本"
           }
         },
         "required": [
@@ -1044,12 +1086,13 @@
     "type": "function",
     "function": {
       "name": "finish",
-      "description": "收尾并给答案。是工具不是文字，要在 tool_calls 里调",
+      "description": "收尾并给答案。**是工具不是文字**，要在 tool_calls 里调，别直接输出 \"finish(...)\" 这行字。",
       "parameters": {
         "type": "object",
         "properties": {
           "answer": {
-            "type": "string"
+            "type": "string",
+            "description": "给用户的最终答案，一句话说清结果"
           }
         },
         "required": [

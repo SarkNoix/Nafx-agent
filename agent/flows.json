@@ -91,16 +91,12 @@
       "tools": [
         "think",
         "read_file",
-        "read_lines",
         "grep_file",
         "list_dir",
-        "find_files",
-        "file_info",
         "web_search",
         "web_fetch",
         "syshelp",
         "help",
-        "win_doc",
         "finish"
       ],
       "name": "查东西 / 找某个值",
@@ -653,7 +649,6 @@
       "tools": [
         "think",
         "sys_info",
-        "env_get",
         "now",
         "syshelp",
         "help",

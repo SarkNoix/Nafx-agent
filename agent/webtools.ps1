@@ -415,19 +415,32 @@ function Format-SearchResult {    param($Result)
     if ($Result.Results.Count -eq 0) {
         return "搜索「$($Result.Query)」没有找到结果。$($Result.Note)"
     }
+    # 结果要压紧。
+    # 实测「2026年 诺贝尔文学奖 得主」搜回 6 条 = 1124 字符 ——
+    # 光这一条 tool 消息就占了历史一多半（2205 tok），直接把上下文顶爆，
+    # 后面只能把工具从 9 个砍到 5 个，任务就废了。
+    # 这里压三处：摘要截 80 字、链接截 70 字（百度百科那种 %E5%B9%B4 编码串太长）。
     $sb = New-Object System.Text.StringBuilder
-    [void]$sb.AppendLine("搜索「$($Result.Query)」共 $($Result.Results.Count) 条结果：")
+    [void]$sb.AppendLine("搜索「$($Result.Query)」共 $($Result.Results.Count) 条：")
     $i = 0
     foreach ($r in $Result.Results) {
         $i++
-        [void]$sb.AppendLine("$i. $($r.Title)")
-        [void]$sb.AppendLine("   链接：$($r.Url)")
-        if ($r.Snippet) { [void]$sb.AppendLine("   摘要：$($r.Snippet)") }
+        $title = [string]$r.Title
+        if ($title.Length -gt 50) { $title = $title.Substring(0,50) + '…' }
+        $url = [string]$r.Url
+        if ($url.Length -gt 70) { $url = $url.Substring(0,70) + '…' }
+        [void]$sb.AppendLine("$i. $title")
+        [void]$sb.AppendLine("   $url")
+        if ($r.Snippet) {
+            $sn = ([string]$r.Snippet) -replace '\s+', ' '
+            if ($sn.Length -gt 80) { $sn = $sn.Substring(0,80) + '…' }
+            [void]$sb.Append("   摘要：$sn`n")
+        }
     }
     [void]$sb.AppendLine('要点：')
-    [void]$sb.AppendLine('- 摘要里已经能回答问题，就直接用摘要作答，不必再抓网页')
-    [void]$sb.AppendLine('- 摘要不够才用 web_fetch 打开其中一条；同一条链接不要重复打开')
-    [void]$sb.AppendLine('- 同一个问题不要重复搜索，换个说法也只会得到相似结果')
+    [void]$sb.AppendLine('- 摘要能回答就直接答，不必再抓网页')
+    [void]$sb.AppendLine('- 摘要不够才用 web_fetch 打开一条；同一条别重复打开')
+    [void]$sb.AppendLine('- 同一问题别重复搜，换说法结果也差不多')
     return $sb.ToString().Trim()
 }
 

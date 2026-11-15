@@ -1130,6 +1130,8 @@ $noToolCount = 0
 $script:thinkNudge = 0
 # finish 时「任务要文件但一个都没写」的打回次数。同样限 2 次。
 $script:fileNudge = 0
+# 时效性问题却没联网搜索的打回次数。同样限 2 次。
+$script:webNudge = 0
 $planList    = @()
 $lastToolKey = ''
 $repeatCount = 0
@@ -1341,8 +1343,13 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
     # 结果连续被拦 8 次，每次把提示词往 history 里塞一遍，
     # 直接把上下文撑到 400 Bad Request（实测「列目录」跑了 196 秒最后 error）。
     # 拦两次还不听话就放行 —— 宁可少一次思考，不能把任务卡死。
+    #
+    # web_search 也不拦。实测「查一下今年诺贝尔文学奖得主是谁」：
+    # 模型第一个动作就想 web_search（这是最对的反应），被拦去 think 之后
+    # 它反而被「未来事件查不到」这个念头带偏，改成 say 问用户了。
+    # 直接查比先纠结强，不拦。
     $anyStep = ($state.steps.Count -gt 0)
-    if (-not $anyStep -and $toolName -notin @('think', 'finish')) {
+    if (-not $anyStep -and $toolName -notin @('think', 'finish', 'web_search')) {
         $script:thinkNudge = [int]$script:thinkNudge + 1
         if ($script:thinkNudge -le 2) {
             Write-Log ("  [要求先想] 第 $($script:thinkNudge) 次打回：" + $toolName + " → 先 think")
@@ -1391,6 +1398,28 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
     if ($toolName -eq 'finish') {
         $answer = [string]$act.answer
         if (-not $answer) { $answer = [string]$res.content }
+
+        # ---- 收尾前查：该联网搜的题有没有真搜 ----
+        # 实测题库 6 道联网题全部失分，共同原因是「没用到 web_search」。
+        # 典型：「查一下今年诺贝尔文学奖得主是谁」——
+        # 模型 think 完直接 finish："2026年的诺贝尔文学奖尚未公布，因此得主未知"。
+        # 它自认为知道答案，压根没试搜索，等于凭记忆编了个"查不到"。
+        #
+        # 判据：任务文本带「今年/最新/现在/谁是」这类时效性问题，
+        # 但整趟没调过 web_search / web_fetch，就打回去让它先搜。
+        $needsWeb = ($TaskText -match '今年|最新|现在|目前|当前|谁是|得主|多少钱|价格|发布了|版本号|新闻')
+        $didSearch = (@($state.steps | Where-Object {
+            [string]$_.tool -in @('web_search', 'web_fetch')
+        }).Count -gt 0)
+        if ($needsWeb -and -not $didSearch -and $script:webNudge -lt 2) {
+            $script:webNudge = [int]$script:webNudge + 1
+            Write-Log ("  [该联网] 任务是时效性问题但没搜过，打回让它先 web_search")
+            $history += @{ role = 'user'; content = (
+                "这个任务问的是「现在/今年/最新」的事实，你的记忆里没有正确答案 —— " +
+                "不许凭印象答，也不许说「尚未公布」就收尾。" +
+                "先用 web_search 真的搜一次；搜到了再 finish，搜不到就如实说搜不到。") }
+            continue
+        }
 
         # ---- 收尾前查文件是否真写了 ----
         # 实测最气人的失分模式：模型 finish 说「summary.txt 内容为：a.txt: 0 / b.txt: 0」，

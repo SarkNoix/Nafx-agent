@@ -1689,6 +1689,26 @@ function Invoke-AiTool {
                 if ([string]::IsNullOrWhiteSpace($q)) { $q = [string]$Action.content }
                 if ([string]::IsNullOrWhiteSpace($q)) { throw 'query 不能为空，把要搜索的关键词填进 command。' }
 
+                # ---- 查询词顺序修正 ----
+                # 实测这事影响巨大：搜「2026年 诺贝尔文学奖 得主」，
+                # 回来的全是 "2026年日历""2026年放假通知""2026世界杯" —— 一条都不沾诺贝尔。
+                # 搜「诺贝尔文学奖 2026 获奖者」就正常，前三条都是诺贝尔奖相关页面。
+                # 原因是引擎按词序给权重，年份数字放最前面会把整个结果带偏。
+                # 所以把开头的年份/数字挪到最后，主题词优先。
+                $q0 = $q.Trim()
+                $mYear = [regex]::Match($q0, '^\s*(今年|去年|明年|今天|现在|目前|最新|当前|(?:19|20)\d{2}\s*年?)\s*')
+                if ($mYear.Success -and $q0.Length -gt $mYear.Length) {
+                    $prefix = $mYear.Groups[1].Value.Trim()
+                    $rest = $q0.Substring($mYear.Length).Trim()
+                    if ($rest.Length -ge 2) {
+                        # 只对数字年份去掉"年"字（"年"会额外匹配一堆日历站）。
+                        # 不能对「今年/去年/明年」动手 —— 那样会变成"今"，词就废了。
+                        if ($prefix -match '^\d{4}') { $prefix = $prefix -replace '年$', '' }
+                        $q = ($rest + ' ' + $prefix).Trim()
+                        if ($q -ne $q0) { Write-Log ("  [搜索] 词序调整：" + $q0 + " → " + $q) }
+                    }
+                }
+
                 $n = 6
                 $mN = [regex]::Match([string]$Action.find, '^\s*(\d+)\s*$')
                 if ($mN.Success) { $n = [int]$mN.Groups[1].Value }
