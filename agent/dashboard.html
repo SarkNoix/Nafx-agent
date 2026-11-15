@@ -1104,9 +1104,15 @@ header button,.side-actions button{
 /* 浅色主题下边框太淡，加深一档才看得出分区 */
 [data-theme="light"]{--line:#dfe3ea;--line2:#cbd1db}
 
-/* ---------- 流式逐字输出 ---------- */
-.stream-out{margin:0 14px 12px;padding:0;}
-.stream-out:empty{display:none;padding:0;margin:0;}
+/* ---------- 流式逐字输出（固定底部浮层）---------- */
+.stream-out{
+  position:fixed;left:50%;transform:translateX(-50%);
+  bottom:calc(100px + env(safe-area-inset-bottom, 0px));
+  width:min(760px, calc(100vw - 48px));
+  z-index:60;pointer-events:none;
+}
+.stream-out:empty{display:none;}
+.stream-out > *{pointer-events:auto;}
 .st-label{font-size:var(--fs-xs);color:var(--faint);letter-spacing:.4px;margin-bottom:6px;}
 .st-body{
   font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
@@ -1235,6 +1241,13 @@ header button,.side-actions button{
 <body>
 
 <div id="glassBg"><div class="glass-blob b1"></div></div>
+
+<!-- 流式输出浮层。
+     原来它嵌在 liveBox 里，而 liveBox 只有 renderFlow 判定「结构变了」才重建。
+     结果模型在吐字时，只要那一步的步数/状态没变，streamOut 元素就不存在或指向旧节点，
+     页面上什么都看不到（后端 seq 一直在涨，前端静默丢弃）。
+     现在拎出来做成固定在底部的浮层，不依赖任何重建逻辑。 -->
+<div id="streamOut" class="stream-out"></div>
 
 <header>
   <div class="brand" id="brandEgg" title="点我"><span class="dot idle" id="dot"></span><span>Nafx</span></div>
@@ -1886,7 +1899,6 @@ function liveBox(st){
     '<span class="step-sec">' + esc(st.phase||'') + ' · ' + (st.step||0) + '/' + (st.maxSteps||0) +
     ' · ' + fmtTime(st.elapsed) + '</span></div>' +
     body +
-    '<div class="stream-out" id="streamOut"></div>' +
     '</div>';
 }
 
@@ -1918,7 +1930,16 @@ function resetStream(){
 
 function ensureStreamSkeleton(){
   var el = document.getElementById('streamOut');
-  if (!el) return null;
+  // 兜底：元素被别处清掉或还没建，就重新造一个挂到 body 上。
+  // 流式浮层不能依赖「某个渲染函数刚好跑过」——原来它嵌在 liveBox 里，
+  // liveBox 只在 renderFlow 判定结构变了才重建，于是模型吐字时页面上什么都没有。
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'streamOut';
+    el.className = 'stream-out';
+    document.body.appendChild(el);
+    stNode = null;
+  }
   if (stNode && el.contains(stNode)) return el;
   // 骨架只建一次
   el.innerHTML = '<div class="st-label">模型正在输出</div>' +
@@ -1944,12 +1965,12 @@ function renderStream(){
 
 var lastPull = 0;
 function pullStream(){
-  // 节流：最快 700ms 拉一次。
+  // 节流：最快 250ms 拉一次 —— 再慢就感觉不出「逐字」，看起来像一次性蹦出来。
   // 原来跟着主 tick 450ms 跑，再加上每次全量重建 DOM ——
   // 模型每吐一个 token，浏览器就要解析一遍 innerHTML 并重排，
   // 一个任务几百个 token 就是几百次重排，整机都被拖慢。
   var now = Date.now();
-  if (now - lastPull < 700) return;
+  if (now - lastPull < 250) return;
   lastPull = now;
   fetchJson('/api/stream?since=' + streamSeq)
     .then(function(j){
