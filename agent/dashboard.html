@@ -2194,7 +2194,19 @@ function tick(){
 
       if (slow && sys) { renderSystem(sys, st); window.__lastSys = sys; }
       if (slow && sess) { window.__lastSess = sess; }
-      renderFlow(sess || window.__lastSess, st);
+      // 清除对话后必须把缓存也清掉。
+      // 之前是 renderFlow(sess || window.__lastSess, st) ——
+      // 快通道（7/8 的轮询）sess 是 null，就退回缓存的旧会话重建界面，
+      // 于是"点了清除对话，旧对话又冒出来"。
+      if (window.__sessionCleared) {
+        window.__sessionCleared = false;
+        window.__lastSess = (slow && sess) ? sess : null;
+        renderFlow(window.__lastSess, st);
+        if (pollTimer) clearTimeout(pollTimer);
+        pollTimer = setTimeout(tick, 400);
+        return;
+      }
+      renderFlow(slow ? sess : window.__lastSess, st);
 
       if (slow) { loadTools(); loadFiles(); checkAsk(); }
 
@@ -2250,7 +2262,20 @@ $('btnClearChat').onclick = function(){
   if (!confirm('清除对话记录？历史保留，但模型会忘掉前文。')) return;
   fetch('/api/session/clear', {method:'POST'})
     .then(function(){ return fetchJson('/api/session'); })
-    .then(function(sess){ lastSig = ''; renderFlow(sess, null); toast('对话已清除'); })
+    .then(function(sess){
+      // 三件事都要做，少一件旧对话就会回来：
+      //   ① 清掉缓存的会话（tick 的快通道会拿它重建界面）
+      //   ② 重置签名（否则 renderFlow 认为"没变化"直接 return）
+      //   ③ 置个标记，让紧接着的那次 tick 也用新数据
+      window.__lastSess = sess || [];
+      window.__sessionCleared = true;
+      lastSig = '';
+      curSession = sess || [];
+      renderFlow(window.__lastSess, null);
+      toast('对话已清除');
+      if (pollTimer) clearTimeout(pollTimer);
+      pollTimer = setTimeout(tick, 300);
+    })
     .catch(function(e){ toast('失败：'+e.message, true); });
 };
 $('btnAdmin').onclick = function(){

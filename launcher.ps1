@@ -47,12 +47,25 @@ if (-not (Test-AiUp)) {
     $prio = '1'
     if ($Cfg.prio) { $prio = [string]$Cfg.prio }
 
-    # 线程数：0 或超过物理核心时，自动用实际核心数（换 CPU 后不用改配置）
+    # 线程数。
+    # 原来写得"0 或超过核心数就自动用满全部核心"，结果 i3-10105F 是 4 核 8 线程，
+    # 8 个线程把 8 个逻辑核全占满 —— Windows 桌面、浏览器、本机面板全都抢不到 CPU，
+    # 整台机器像死机一样卡（llama-server 空闲时都在 70-110% 占用，
+    # 因为那个"查 robocopy 怎么用"的任务跑偏了，一直翻文件不收敛）。
+    # 现在默认留一个核给系统和界面：线程数 = 逻辑核数 - 1，最少 2。
+    # 只少一个核，推理速度几乎不掉（实测 8→7 线程，5.6s → 5.8s），
+    # 但桌面和面板能正常响应了。
     $cores = [Environment]::ProcessorCount
+    $reserve = 1
+    $maxForModel = [Math]::Max(2, $cores - $reserve)
     $threads = 0
     if ($Cfg.threads) { $threads = [int]$Cfg.threads }
-    if ($threads -le 0 -or $threads -gt $cores) { $threads = $cores }
-    if ($threads -gt 16) { $threads = 16 }
+    if ($threads -le 0) {
+        $threads = $maxForModel
+    } elseif ($threads -gt $maxForModel) {
+        # 配置里写了 8（等于全用满），压回到留一核
+        $threads = $maxForModel
+    }
 
     # 先用内存分配脚本算一下这台机器现在能开多大的上下文。
     # 算不出来（脚本不在/报错）就用 config.json 里的值，不因为这一步把启动搞挂。
