@@ -1075,6 +1075,8 @@ Write-State $state
 
 $finished    = $false
 $noToolCount = 0
+# 第一步「必须先 think」的打回次数。限 2 次，防止模型死活不肯 think 时把上下文撑爆。
+$script:thinkNudge = 0
 $planList    = @()
 $lastToolKey = ''
 $repeatCount = 0
@@ -1224,20 +1226,27 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
     # 模型容易一上来就瞎动手：实测写计算器时没想清楚就写脚本，
     # 运算符写成 div、测试还是假的（$(12+3) 而不是调用脚本）。
     # 这里强制它动手前先把推理写进 think 工具。
-    # 只卡第一步 —— 每步都卡的话每步多花十几秒，不值。
     #
-    # 注意判断口径：只要 steps 里有任何记录（包括 think 本身）就放行。
-    # 第一版写成「排除 think 后还有没有动作」，结果调完 think 还是 0，
-    # 导致它永远进不了实际动作，连着调 3 次 think 空转 332 秒。
-    $thoughtAlready = (@($state.steps | Where-Object { $_.tool -eq 'think' }).Count -gt 0)
+    # 判断口径：只放行 think 和 finish。不能放 say ——
+    # 曾经把 say 加进豁免名单（想着「允许它先提问」），结果模型发现
+    # 调 list_dir 被拦两次后改用 say，把整段推理当「问题」发出去，
+    # 然后干等用户回答 60 秒，一个「列目录」的简单任务就这么废了。
+    #
+    # 必须限次数。第一版没有上限，模型就是不肯 think，
+    # 结果连续被拦 8 次，每次把提示词往 history 里塞一遍，
+    # 直接把上下文撑到 400 Bad Request（实测「列目录」跑了 196 秒最后 error）。
+    # 拦两次还不听话就放行 —— 宁可少一次思考，不能把任务卡死。
     $anyStep = ($state.steps.Count -gt 0)
-    if (-not $anyStep -and $toolName -notin @('think', 'say', 'finish')) {
-        Write-Log ("  [要求先想] 第一步是 $toolName，打回让它先 think")
-        $history += @{ role = 'user'; content = (
-            "第一步没写想法。先调 think 工具，把推理写进 content：" +
-            "这个任务最终要什么结果、打算分几步、每步用什么工具、怎么判断做对了。" +
-            "想清楚了再调 $toolName 动手。") }
-        continue
+    if (-not $anyStep -and $toolName -notin @('think', 'finish')) {
+        $script:thinkNudge = [int]$script:thinkNudge + 1
+        if ($script:thinkNudge -le 2) {
+            Write-Log ("  [要求先想] 第 $($script:thinkNudge) 次打回：" + $toolName + " → 先 think")
+            $history += @{ role = 'user'; content = (
+                "第一步还没写想法。先调 think 工具，把推理写进 content（这个任务要什么结果、" +
+                "分几步、每步用什么工具、怎么判断做对了），然后再调 $toolName。") }
+            continue
+        }
+        Write-Log ("  [要求先想] 已经打回 2 次还不肯 think，放行 $toolName")
     }
 
     $argsObj = $null

@@ -1051,6 +1051,21 @@ function Invoke-AiTool {
 
             'run_ps1' {
                 $full = Resolve-AiPath $Action.path
+                # 模型有时把「工具名」当成脚本名传进来。
+                # 实测：建目录的任务里，它先 run_ps1 make_dir.ps1（不存在），
+                # 然后居然 write_file 写了个 make_dir.ps1 脚本去建目录，
+                # 绕了 4 步才做完一件 make_dir 一步就能完成的事。
+                # 这类混淆直接把正确工具告诉它，别让它自己猜。
+                $bn = [IO.Path]::GetFileNameWithoutExtension([string]$Action.path)
+                $looksLikeTool = @('make_dir','write_file','read_file','list_dir','delete_path','find_files',
+                                   'append_file','replace_in_file','set_line','copy_path','move_path',
+                                   'grep_file','read_lines','file_info','run_cmd') -contains $bn
+                if ($looksLikeTool) {
+                    throw ("$($Action.path) 这名字看着是工具名，不是你的脚本。" +
+                           "如果你要建目录，直接用 make_dir 工具（不用写脚本）；" +
+                           "要写文件用 write_file；要列目录用 list_dir。" +
+                           "只有真的是自己写的 .ps1 才用 run_ps1 跑。")
+                }
                 if (-not (Test-Path $full)) { throw "脚本不存在：$($Action.path)。要跑脚本得先用 write_file 创建它。" }
                 # 只能跑 .ps1。模型有时会把数据文件当脚本传进来，把话说清楚它就懂了。
                 if ($full -notmatch '\.ps1$') {
