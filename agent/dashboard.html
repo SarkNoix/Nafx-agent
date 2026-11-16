@@ -2756,6 +2756,9 @@ function renderFlow(sess, st){
       var want = (st.phase||'') + ' · ' + (st.step||0) + '/' + (st.maxSteps||0) + ' · ' + fmtTime(st.elapsed);
       if (lbHead.textContent !== want) lbHead.textContent = want;
     }
+    // 快照也要跟着更新：下次判断「前缀有没有变」用的是它，
+    // 这里不更新的话，快照会一直停在上一次全量重建时的内容。
+    window.__sessSnap = arr.map(function(m){ return String(m.content || ''); });
     return;
   }
 
@@ -2768,11 +2771,25 @@ function renderFlow(sess, st){
     }
     if (canAppend) {
       lastSig = sig;
-      var box = thread.querySelector('#threadInner') || thread;
+      // 新气泡必须插在「任务卡 / 提问气泡」前面，不能直接 appendChild。
+      //
+      // 全量重建时的顺序是：消息… → askBubble → liveBox。
+      // 增量追加如果直接 appendChild 到 thread 末尾，新气泡就跑到任务卡后面了
+      // —— 看起来就是「信息顺序乱了」。刷新一下又正常，
+      // 因为刷新走的是全量重建，顺序对回来。
+      //
+      // 找第一个「不是消息气泡」的子节点当锚点，插在它前面。
+      var anchor = null;
+      for (var bi=0; bi<thread.children.length; bi++){
+        var ch = thread.children[bi];
+        if (!ch.classList || !ch.classList.contains('msg')) { anchor = ch; break; }
+      }
       for (var ak = prevSessLen; ak < arr.length; ak++) {
         var wrapTmp = document.createElement('div');
         wrapTmp.innerHTML = msgBubble(arr[ak], ak);
-        box.appendChild(wrapTmp.firstChild);
+        var node = wrapTmp.firstChild;
+        if (anchor) { thread.insertBefore(node, anchor); }
+        else { thread.appendChild(node); }
       }
       bindMsgOps();
       prevSessLen = arr.length;
