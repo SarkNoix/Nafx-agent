@@ -813,6 +813,88 @@ function Get-Summary {
 }
 
 # ------------------------------------------------------------
+#  删除确认：删任何文件都要用户点头
+#
+#  用户明确要求「删什么都问」。做成硬规矩，不靠提示词让模型自觉 ——
+#  模型可以说「我删了」，但真实删除必须经过这里。
+#  复用面板已有的 ask.json / answer.json 机制（say 工具那套），
+#  但给 3 分钟（删东西比回答问题更需要想一下）。
+#  拿不到回答一律当「拒绝」—— 安全侧默认拒绝，不是默认放行。
+# ------------------------------------------------------------
+function Confirm-Delete {
+    param([string]$Target, [object]$State, [int]$StepNum)
+
+    if ([string]::IsNullOrWhiteSpace($Target)) { return $false }
+
+    $askId   = 'd' + [Guid]::NewGuid().ToString('N').Substring(0, 8)
+    $askFile = Join-Path $AgentDir 'ask.json'
+    $ansFile = Join-Path $AgentDir 'answer.json'
+    $waitSec = 180
+
+    if (Test-Path $ansFile) { Remove-Item $ansFile -Force -ErrorAction SilentlyContinue }
+
+    $askObj = [ordered]@{
+        id       = $askId
+        kind     = 'delete'
+        question = "模型要删除「$Target」，允许吗？"
+        target   = $Target
+        ts       = (Get-Date -Format 'HH:mm:ss')
+        deadline = (Get-Date).AddSeconds($waitSec).ToString('HH:mm:ss')
+        seconds  = $waitSec
+    }
+    try {
+        [IO.File]::WriteAllText($askFile, (($askObj | ConvertTo-Json -Compress)), (New-Object Text.UTF8Encoding($false)))
+    } catch { }
+
+    $State.status  = 'waiting'
+    $State.phase   = '等你确认删除'
+    $State.answer  = $askObj.question
+    $State.elapsed = $clock.Elapsed.TotalSeconds
+    try { Write-State $State } catch { }
+
+    Write-Host ''
+    Write-Host ("  ⚠ 要删除：" + $Target) -ForegroundColor Yellow
+    Write-Host ("    请在面板上点「允许」或「拒绝」（$waitSec 秒内）") -ForegroundColor DarkYellow
+    Write-Log ("  [删除确认] 等用户批准：$Target")
+
+    $answer = $null
+    $deadline = (Get-Date).AddSeconds($waitSec)
+    $lastTick = -1
+    while ((Get-Date) -lt $deadline) {
+        Start-Sleep -Milliseconds 400
+        if (Test-Path $ansFile) {
+            try {
+                $raw = [IO.File]::ReadAllText($ansFile, [Text.Encoding]::UTF8)
+                if ($raw.Trim()) {
+                    $obj = $raw | ConvertFrom-Json
+                    if ([string]$obj.id -eq $askId) { $answer = [string]$obj.answer; break }
+                }
+            } catch { }
+        }
+        $left = [int]($deadline - (Get-Date)).TotalSeconds
+        if ($left -ne $lastTick -and $left % 10 -eq 0) {
+            $lastTick = $left
+            $State.phase = "等你确认删除（$left 秒）"
+            try { Write-State $State } catch { }
+        }
+    }
+
+    Remove-Item $askFile -Force -ErrorAction SilentlyContinue
+    Remove-Item $ansFile -Force -ErrorAction SilentlyContinue
+
+    if ($null -eq $answer) {
+        Write-Log ("  [删除确认] 超时没有得到批准，按拒绝处理")
+        return $false
+    }
+
+    $a = $answer.Trim().ToLower()
+    $ok = ($a -eq 'y' -or $a -eq 'yes' -or $a -eq 'allow' -or $a -eq '允许' -or
+           $a -eq '同意' -or $a -eq 'ok' -or $a -eq '好' -or $a -eq '是')
+    Write-Log ("  [删除确认] 用户回答：" + $answer + " → " + $(if ($ok) { '允许' } else { '拒绝' }))
+    return $ok
+}
+
+# ------------------------------------------------------------
 #  统一收尾：能捞就捞，实在没有才认输
 #
 #  背景：这段逻辑原来在 4 个地方各写一遍（任务超时、模型调用失败、
@@ -1466,8 +1548,18 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
         # 判据：任务文本里点了 .txt/.csv/.jsonl/.md 这类文件名，
         # 但整趟里没有任何写文件的动作（write_file / append_file / set_line /
         # replace_in_file / write_script），就说明它在编 —— 打回去让它真写。
-        $wantFiles = @([regex]::Matches($TaskText, '[\w\-\.]+\.(txt|csv|jsonl|json|md|ps1|bat|log)') |
-                       ForEach-Object { $_.Value } | Select-Object -Unique)
+        # 例外：删除 / 移动 / 改名的任务本来就不写文件。
+        # 实测「删掉 victim.txt」——delete_path 已经删成功了，
+        # 却被这条判成"没写文件"，打回重来三次，最后绕圈收尾。
+        $isNotWriteTask = ($TaskText -match '删|移除|重命名|改名|移动|挪|剪切' -or
+                           @($state.steps | Where-Object {
+                               [string]$_.tool -in @('delete_path', 'move_path', 'copy_path')
+                           }).Count -gt 0)
+        $wantFiles = @()
+        if (-not $isNotWriteTask) {
+            $wantFiles = @([regex]::Matches($TaskText, '[\w\-\.]+\.(txt|csv|jsonl|json|md|ps1|bat|log)') |
+                           ForEach-Object { $_.Value } | Select-Object -Unique)
+        }
         $wroteSomething = (@($state.steps | Where-Object {
             [string]$_.tool -in @('write_file', 'append_file', 'set_line', 'replace_in_file', 'write_script')
         }).Count -gt 0)
@@ -1678,6 +1770,27 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
     # ---------- 其余工具：交给 tools.ps1 ----------
     $obs = ''
     $ok = $true
+
+    # ---- 删除前必须用户点头 ----
+    # 用户要求：删什么都问。这是硬规矩，不靠模型自觉。
+    # 在这里拦比在 tools.ps1 里拦好 —— 这里能拿到面板的确认机制，
+    # 而且被拒绝时还能干净地回一句给模型，让它知道这事没成。
+    if ($toolName -eq 'delete_path') {
+        $delTarget = [string]$act.path
+        $approved = Confirm-Delete -Target $delTarget -State $state -StepNum $step
+        if (-not $approved) {
+            $obs = "用户没有批准删除 $delTarget。这个文件保持原样。" +
+                   "别换个说法再删一次，也别用 run_cmd del / Remove-Item 绕过。"
+            $state.steps += @{ n = $step; think = $think; tool = 'delete_path'; arg = $delTarget
+                               ok = $false; note = '用户拒绝删除'; raw = $res.raw_calls; obs = $obs; sec = $res.seconds }
+            Write-State $state
+            Write-Log ("  [删除被拒] $delTarget")
+            $history += (Format-ToolCallMessage -Act $act -CallId $callId)
+            $history += @{ role = 'tool'; tool_call_id = $callId; content = $obs }
+            continue
+        }
+    }
+
     $state.phase = "执行 $toolName"
     Write-State $state
     try {

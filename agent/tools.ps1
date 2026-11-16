@@ -6,6 +6,8 @@
 $script:AiRoot = 'D:\AI\workspace'
 $script:MaxOutput = 3000      # 返回给模型的最长观察字符数
 $script:RunTimeout = 30       # 运行 bat/ps1 的超时秒数
+$script:AiAllowAnyPath = $false   # 允许任意绝对路径（默认关，只许 workspace）
+$script:AiAllowDesktop = $false   # 额外允许桌面（自主模式打开）
 # 本文件所在目录（find 手册用）
 $script:ToolDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 
@@ -32,12 +34,14 @@ function Set-AiRoot {
         [string]$Path,
         [int]$TimeoutSeconds = 30,
         [int]$MaxOutput = 0,
-        [switch]$AllowAnyPath
+        [switch]$AllowAnyPath,
+        [switch]$AllowDesktop
     )
     if (-not [string]::IsNullOrWhiteSpace($Path)) { $script:AiRoot = $Path }
     if ($TimeoutSeconds -gt 0) { $script:RunTimeout = $TimeoutSeconds }
     if ($MaxOutput -gt 0) { $script:MaxOutput = $MaxOutput }
     $script:AiAllowAnyPath = [bool]$AllowAnyPath
+    $script:AiAllowDesktop = [bool]$AllowDesktop
 }
 
 function Initialize-AiWorkspace {
@@ -57,6 +61,20 @@ function Resolve-AiPath {
     $raw = $RelPath.Trim()
     # 允许写绝对的 Windows 路径（D:\code\x.txt）和 ~ 开头的家目录
     if ($raw -match '^~[\\/]') { $raw = $raw -replace '^~', $env:USERPROFILE }
+
+    # ---- 桌面别名 ----
+    # 模型说「在桌面建个文件」时会给 Desktop\x.txt、桌面\x.txt 这种写法。
+    # 统一换成真实桌面路径（可能是 OneDrive\Desktop）。
+    # 只在开了 AiAllowDesktop 时才认，否则仍按普通相对路径处理（会落到 workspace 下）。
+    if ($script:AiAllowDesktop) {
+        $desk = Get-DesktopPath
+        if ($desk -and $raw -match '^(?:Desktop|桌面)[\\/](.+)$') {
+            $raw = Join-Path $desk $matches[1]
+        } elseif ($desk -and $raw -match '^(?:Desktop|桌面)$') {
+            $raw = $desk
+        }
+    }
+
     $isAbsolute = [IO.Path]::IsPathRooted($raw)
 
     try {
@@ -73,8 +91,18 @@ function Resolve-AiPath {
 
     if (-not $script:AiAllowAnyPath) {
         $rootFull = [IO.Path]::GetFullPath($script:AiRoot).TrimEnd('\')
-        if (-not ($full -eq $rootFull -or $full.StartsWith($rootFull + '\', [StringComparison]::OrdinalIgnoreCase))) {
-            throw "路径越界：$RelPath。只允许操作 workspace 内的文件。"
+        $inRoot = ($full -eq $rootFull) -or $full.StartsWith($rootFull + '\', [StringComparison]::OrdinalIgnoreCase)
+        # 桌面白名单：开了 AiAllowDesktop 才放行，且只放行桌面这一层目录
+        $inDesk = $false
+        if (-not $inRoot -and $script:AiAllowDesktop) {
+            $desk = Get-DesktopPath
+            if ($desk) {
+                $d2 = ([IO.Path]::GetFullPath($desk)).TrimEnd('\')
+                $inDesk = ($full -eq $d2) -or $full.StartsWith($d2 + '\', [StringComparison]::OrdinalIgnoreCase)
+            }
+        }
+        if (-not $inRoot -and -not $inDesk) {
+            throw "路径越界：$RelPath。只允许操作 workspace 内的文件（桌面也可以，写 Desktop\文件名）。"
         }
         return $full
     }
@@ -115,6 +143,13 @@ function Test-IsProtectedPath {
     try { $parent = [IO.Path]::GetDirectoryName($f) } catch { }
     if ($parent -and ($parent.TrimEnd('\') -match '^[A-Za-z]:$')) { return $true }
 
+    # ---- 桌面是白名单内，先放行，免得被下面的用户目录规则误拦 ----
+    $desk = Get-DesktopPath
+    if ($desk) {
+        $d2 = $desk.TrimEnd('\')
+        if ($f -eq $d2 -or $f.StartsWith($d2 + '\', [StringComparison]::OrdinalIgnoreCase)) { return $false }
+    }
+
     $sys = if ($env:SystemRoot) { $env:SystemRoot } else { 'C:\Windows' }
     $protected = @(
         $sys,
@@ -123,7 +158,12 @@ function Test-IsProtectedPath {
         (Join-Path $sys 'WinSxS'),
         $env:ProgramFiles,
         ${env:ProgramFiles(x86)},
-        $env:ProgramData
+        $env:ProgramData,
+        # 用户配置目录：AppData 里全是各软件的配置和凭据，不能让它进去乱写
+        $env:APPDATA,
+        $env:LOCALAPPDATA,
+        (Join-Path $env:USERPROFILE '.ssh'),
+        (Join-Path $env:USERPROFILE '.gitconfig')
     ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
 
     foreach ($pfx in $protected) {
@@ -133,6 +173,70 @@ function Test-IsProtectedPath {
         if ($f.StartsWith($p2 + '\', [StringComparison]::OrdinalIgnoreCase)) { return $true }
     }
     return $false
+}
+
+# 桌面路径。OneDrive 接管桌面时 %USERPROFILE%\Desktop 是不存在的，
+# 所以两个位置都认，存在哪个用哪个。
+function Get-DesktopPath {
+    $cands = @()
+    if ($env:USERPROFILE) { $cands += (Join-Path $env:USERPROFILE 'Desktop') }
+    if ($env:OneDrive) { $cands += (Join-Path $env:OneDrive 'Desktop') }
+    foreach ($c in $cands) {
+        if (Test-Path -LiteralPath $c) { return $c }
+    }
+    # 都不存在就返回第一个（后面 resolve 时会报「路径不存在」，比返回空好排查）
+    if ($cands.Count -gt 0) { return $cands[0] }
+    return ''
+}
+
+# ------------------------------------------------------------
+#  脚本内容安全检查
+#
+#  为什么要这个：路径白名单管得住 write_file，管不住"写个脚本然后跑"。
+#  脚本里写 Remove-Item C:\Windows\... -Recurse 或者 Stop-Computer，
+#  一样能造成伤害 —— 而 run_ps1 / write_script 执行的是模型当场生成的内容。
+#
+#  策略是「按危险动作拦」，不是「按语法分析」—— 4B 写不出刻意混淆的代码，
+#  但会随手写出危险调用。拦这几类就够：
+#    删除 / 关机重启 / 改注册表 / 改计划任务 / 改服务 / 下载执行
+#  返回 $null 表示通过，否则返回拒绝原因。
+# ------------------------------------------------------------
+function Test-ScriptSafety {
+    param([string]$Code)
+
+    if ([string]::IsNullOrWhiteSpace($Code)) { return $null }
+
+    $rules = @(
+        @{ p = '(?i)\bRemove-Item\b';
+           r = '脚本里有删除操作（Remove-Item）。要删文件请用 delete_path 工具（会先问你）。' },
+        @{ p = '(?i)(^|[&|;\r\n])\s*(del|erase|rmdir)\s+[^\r\n]*[A-Za-z0-9_\\/:]';
+           r = '脚本里有删除命令（del/erase/rmdir）。要删文件请用 delete_path 工具（会先问你）。' },
+        @{ p = '(?i)\b(Stop-Computer|Restart-Computer|shutdown)\b';
+           r = '脚本要关机或重启，不允许。' },
+        @{ p = '(?i)\b(format-volume|Clear-Disk|Initialize-Disk|diskpart)\b';
+           r = '脚本要格式化或操作磁盘，不允许。' },
+        @{ p = '(?i)\b(Set-ItemProperty|New-ItemProperty|Remove-ItemProperty)\b[^\r\n]*HK(LM|CU):';
+           r = '脚本要改注册表，不允许。' },
+        @{ p = '(?i)\b(Set-Service|Stop-Service|Start-Service)\b|sc\.exe\s+(config|delete)';
+           r = '脚本要改系统服务，不允许。' },
+        @{ p = '(?i)\b(New-ScheduledTask|schtasks)\b';
+           r = '脚本要建计划任务，不允许。' },
+        @{ p = '(?i)\bSet-ExecutionPolicy\b';
+           r = '脚本要改执行策略，不允许。' },
+        @{ p = '(?i)\b(Invoke-WebRequest|Invoke-RestMethod|DownloadFile|curl|wget)\b[^\r\n]*\|\s*(iex|Invoke-Expression)';
+           r = '脚本要先下载再执行，不允许。' },
+        @{ p = '(?i)\b(iex|Invoke-Expression)\b';
+           r = '脚本用了 Invoke-Expression 动态执行字符串，不允许。' },
+        @{ p = '(?i)(C:\\Windows|%SystemRoot%|%windir%|C:\\Program Files|%ProgramFiles%)';
+           r = '脚本引用了系统目录或程序目录，不允许。' },
+        @{ p = '(?i)Start-Process\s+[^\r\n]*-Verb\s+RunAs';
+           r = '脚本要提权运行，不允许。' }
+    )
+
+    foreach ($rule in $rules) {
+        if ($Code -match $rule.p) { return $rule.r }
+    }
+    return $null
 }
 
 # 写/删之前统一问一句：这个位置是不是动不得
@@ -854,6 +958,11 @@ function Invoke-AiTool {
                 if ($full -notmatch '\.ps1$') { throw 'path 要以 .ps1 结尾' }
                 $content = [string]$Action.content
                 if ([string]::IsNullOrWhiteSpace($content)) { throw 'content 里填脚本内容' }
+
+                # 脚本内容安全检查：删除/关机/改注册表/下载执行 一律拒
+                $risk = Test-ScriptSafety -Code $content
+                if ($risk) { throw ('脚本被安全策略拒绝：' + $risk) }
+
                 $dir = Split-Path $full -Parent
                 if ($dir -and -not (Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
                 Write-AiFileText $full $content
@@ -1098,6 +1207,18 @@ function Invoke-AiTool {
                     throw ("run_ps1 只能运行 .ps1 脚本，$($Action.path) 不是脚本。" +
                            "要用脚本处理这个文件的话，先用 write_file 写一个 .ps1，再 run_ps1 跑那个脚本。")
                 }
+                # 跑之前先看脚本内容 —— write_script 那条路检查过了，
+                # 但 write_file 写出来的 .ps1 也要跑，这条路不能漏。
+                try {
+                    $scriptText = [IO.File]::ReadAllText($full, [Text.Encoding]::UTF8)
+                    $risk = Test-ScriptSafety -Code $scriptText
+                    if ($risk) { throw ('这个脚本被安全策略拒绝，没有执行：' + $risk) }
+                } catch [System.Management.Automation.RuntimeException] {
+                    throw
+                } catch {
+                    # 读不出来就放行（文件编码问题不该挡正常任务），
+                    # 真正的删除拦截还有 delete_path 的确认兜着。
+                }
                 $extra = [string]$Action.command
                 # 脚本有 param() 但没传 command，跑出来会是空的 ——
                 # 模型会误以为「退出码 0 = 成功」，然后拿空结果编答案。
@@ -1313,6 +1434,24 @@ function Invoke-AiTool {
                 # 会停下来等键盘输入的命令：跑起来就永远不返回
                 if ($cmd -match '(?i)(^|[&|]\s*)(pause|choice|set\s+/p)\b') {
                     throw '这条命令会停下来等键盘输入，永远不会返回。去掉 pause / choice / set /p。'
+                }
+
+                # ---- 删除类命令一律拒 ----
+                # 用户要求「删什么都问」。删除只能走 delete_path 工具（那条路会弹窗确认），
+                # 不许用命令行绕：del / erase / rd / rmdir / Remove-Item 都拦。
+                # 不拦的话模型发现 delete_path 被拒后，改敲 `del` 就绕过去了。
+                if ($cmd -match '(?i)(^|[&|;]\s*)(del|erase|rd|rmdir|remove-item|ri|unlink)\s' -or
+                    $cmd -match '(?i)(^|[&|;]\s*)(del|erase|rd|rmdir)\s*$' -or
+                    $cmd -match '(?i)(remove-item|rmdir|unlink)') {
+                    throw ('删除文件的命令不许用。要删除请用 delete_path 工具 —— 那条路会先问用户。' +
+                           '这条命令里出现了删除操作，已被拒绝。')
+                }
+
+                # ---- 指向系统目录的命令也拦 ----
+                # 路径白名单只管 write_file 那类工具，命令行能直接往系统目录写。
+                if ($cmd -match '(?i)(?:%systemroot%|%windir%|c:\\windows|c:/windows|%programfiles%|' +
+                                'c:\\program files|%programdata%|%appdata%|%localappdata%)') {
+                    throw '这条命令指向 Windows 系统目录或程序目录，不许动。可以改到桌面或工作区。'
                 }
 
                 # cmd 的输出编码分两种：

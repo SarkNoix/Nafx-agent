@@ -1243,6 +1243,76 @@ header button,.side-actions button{
 
 @media(prefers-reduced-motion:reduce){.st-label::before{animation:none}}
 
+
+/* ---------- 删除确认条 ---------- */
+.del-box{
+  display:none;margin:0 auto;max-width:900px;
+  background:var(--panel);
+  border:1px solid var(--err-bd,#e2544c);
+  border-left:4px solid var(--err,#e2544c);
+  border-radius:10px;padding:12px 15px;margin-bottom:10px;
+  box-shadow:0 2px 14px rgba(226,84,76,.18);
+}
+.del-box.on{display:block;animation:delIn .18s ease-out}
+@keyframes delIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.del-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.del-ico{font-size:15px;color:var(--err,#e2544c);line-height:1}
+.del-title{font-size:13px;font-weight:600;color:var(--err,#e2544c)}
+.del-cd{margin-left:auto;font-size:11px;color:var(--faint);
+  font-family:ui-monospace,Consolas,monospace}
+.del-cd.hot{color:var(--err,#e2544c);font-weight:700}
+.del-path{
+  font-family:ui-monospace,Consolas,monospace;font-size:12px;
+  background:var(--code-bg);border:1px solid var(--code-bd);
+  border-radius:7px;padding:8px 10px;margin-bottom:10px;
+  color:var(--code-fg);word-break:break-all;line-height:1.5;
+}
+.del-actions{display:flex;gap:9px}
+.del-actions button{
+  padding:7px 16px;border-radius:8px;font-size:12.5px;font-weight:600;
+  cursor:pointer;border:1px solid transparent;transition:.15s;
+}
+.del-allow{background:var(--err,#e2544c);color:#fff}
+.del-allow:hover{filter:brightness(1.08)}
+.del-deny{background:var(--panel2);color:var(--fg);border-color:var(--line)}
+.del-deny:hover{background:var(--hover,rgba(128,128,128,.12))}
+[data-theme="glass"] .del-box{background:rgba(40,6,10,.55);border-color:rgba(255,120,110,.65)}
+[data-theme="glass"] .del-allow{background:rgba(255,120,110,.92)}
+[data-theme="glass"] .del-deny{background:rgba(255,255,255,.16);color:#fff;border-color:rgba(255,255,255,.28)}
+
+
+/* ---------- 自主模式卡片 ---------- */
+.auto-row{display:flex;gap:7px;align-items:center;margin-bottom:8px}
+.auto-lbl{font-size:12px;color:var(--faint);flex-shrink:0}
+.auto-row select{
+  flex:1;padding:5px 7px;border-radius:7px;font-size:12px;
+  background:var(--panel2);color:var(--fg);border:1px solid var(--line);
+}
+.auto-go{
+  padding:6px 12px;border-radius:7px;font-size:12px;font-weight:600;
+  background:var(--accent);color:#fff;border:none;cursor:pointer;
+  white-space:nowrap;transition:.15s;flex-shrink:0;
+}
+.auto-go:hover{filter:brightness(1.1)}
+.auto-go:disabled{opacity:.45;cursor:not-allowed}
+.auto-focus{
+  width:100%;padding:6px 9px;border-radius:7px;font-size:12px;box-sizing:border-box;
+  background:var(--panel2);color:var(--fg);border:1px solid var(--line);margin-bottom:8px;
+}
+.auto-status{
+  font-size:11.5px;color:var(--faint);line-height:1.6;
+  padding:7px 9px;border-radius:7px;background:var(--code-bg);
+  border:1px solid var(--code-bd);word-break:break-word;
+}
+.auto-status.on{color:var(--fg);border-color:var(--accent)}
+.auto-status b{color:var(--accent)}
+.auto-stop{
+  width:100%;margin-top:7px;padding:5px;border-radius:7px;
+  font-size:11.5px;background:var(--panel2);color:var(--dim);
+  border:1px solid var(--line);cursor:pointer;
+}
+.auto-stop:hover{color:var(--err);border-color:var(--err-bd)}
+
 </style>
 </head>
 <body>
@@ -1277,6 +1347,27 @@ header button,.side-actions button{
 
 <main>
   <aside class="side">
+    <!-- 自主模式卡片。
+         用户明确要「手动触发才启动」，所以这里只有一个按钮 + 「干多久」选择，
+         不做成一直开的开关。 -->
+    <div class="side-block">
+      <h3>自主模式 <span class="cnt" id="autoTag">待命</span></h3>
+      <div class="auto-row">
+        <label class="auto-lbl">干</label>
+        <select id="autoMin">
+          <option value="10">10 分钟</option>
+          <option value="30" selected>30 分钟</option>
+          <option value="60">1 小时</option>
+          <option value="120">2 小时</option>
+        </select>
+        <button class="auto-go" id="autoGo">让它自己干</button>
+      </div>
+      <input type="text" id="autoFocus" class="auto-focus"
+             placeholder="可选：给它一个方向（比如「整理桌面」）">
+      <div class="auto-status" id="autoStatus">没在跑。点了才启动，干完就停。</div>
+      <button class="auto-stop" id="autoStop" style="display:none">停下</button>
+    </div>
+
     <div class="side-block">
       <h3>配置 <span class="cnt" id="cfgModelTag"></span></h3>
       <div class="cfg-grid">
@@ -1353,6 +1444,22 @@ header button,.side-actions button{
       <div class="answer-body">
         <textarea id="answerInput" rows="1" placeholder="回答它，Enter 发送（Shift+Enter 换行）"></textarea>
         <button id="answerSend">回答</button>
+      </div>
+    </div>
+
+    <!-- 删除确认条。和上面的「回答问题」分开做 ——
+         删文件是不可撤销的，给它红色边框和两个明确按钮，
+         不能像回答问题那样随便敲句话就发出去。 -->
+    <div class="del-box" id="delBox">
+      <div class="del-head">
+        <span class="del-ico">⚠</span>
+        <span class="del-title">模型要删除文件</span>
+        <span class="del-cd" id="delCd">180s</span>
+      </div>
+      <div class="del-path" id="delPath">—</div>
+      <div class="del-actions">
+        <button class="del-allow" id="delAllow">允许删除</button>
+        <button class="del-deny" id="delDeny">拒绝</button>
       </div>
     </div>
     <div class="cmdbar" id="cmdBar"></div>
@@ -2074,16 +2181,71 @@ function checkAsk(){
     .then(function(a){
       if (!a || !a.id || !a.question){
         if (curAsk) hideAnswerBox();
+        if (curDel) hideDelBox();
         return;
       }
-      // 新问题
+      var sec = parseInt(a.seconds || 60, 10);
+
+      // 删除确认走单独的红色条，不和"回答问题"混 ——
+      // 删文件不可撤销，必须是两个明确按钮，不能随便敲句话就发出去。
+      if (a.kind === 'delete') {
+        if (curAsk) hideAnswerBox();
+        if (!curDel || curDel.id !== a.id){
+          showDelBox(a.target || a.question, Date.now() + sec * 1000, a.id);
+        }
+        return;
+      }
+
+      if (curDel) hideDelBox();
       if (!curAsk || curAsk.question !== a.question || curAsk.id !== a.id){
-        // 用秒数算截止时间
-        var sec = parseInt(a.seconds || 60, 10);
         showAnswerBox(a.question, Date.now() + sec * 1000, a.id);
       }
     })
     .catch(function(){});
+}
+
+/* ---------- 删除确认条 ---------- */
+var curDel = null, delTimer = null;
+
+function showDelBox(target, deadline, id){
+  var box = $('delBox');
+  if (!box) return;
+  box.className = 'del-box on';
+  $('delPath').textContent = target;
+  curDel = { id: id, target: target, deadline: deadline };
+  tickDelCd();
+  if (delTimer) clearInterval(delTimer);
+  delTimer = setInterval(tickDelCd, 500);
+}
+
+function hideDelBox(){
+  var box = $('delBox');
+  if (box) box.className = 'del-box';
+  curDel = null;
+  if (delTimer) { clearInterval(delTimer); delTimer = null; }
+}
+
+function tickDelCd(){
+  if (!curDel) return;
+  var el = $('delCd');
+  if (!el) return;
+  var left = Math.max(0, Math.ceil((curDel.deadline - Date.now()) / 1000));
+  el.textContent = left + 's';
+  el.className = 'del-cd' + (left <= 15 ? ' hot' : '');
+  if (left <= 0) hideDelBox();
+}
+
+function replyDelete(allow){
+  if (!curDel) return;
+  var id = curDel.id;
+  fetch('/api/answer', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ id: id, answer: allow ? 'allow' : 'deny' })
+  }).then(function(){
+    toast(allow ? '已允许删除' : '已拒绝删除');
+    hideDelBox();
+  }).catch(function(e){ toast('提交失败：' + e.message, true); });
 }
 
 function sendAnswer(){
@@ -2119,6 +2281,10 @@ function bindAnswer(){
   var ta = $('answerInput');
   var btn = $('answerSend');
   if (btn) btn.onclick = sendAnswer;
+  // 删除确认的两个按钮
+  var da = $('delAllow'), dd = $('delDeny');
+  if (da) da.onclick = function(){ replyDelete(true); };
+  if (dd) dd.onclick = function(){ replyDelete(false); };
   if (ta){
     ta.onkeydown = function(e){
       if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); sendAnswer(); }
@@ -2446,6 +2612,69 @@ $('btnPause').onclick = function(){
     .then(function(j){ toast(j && j.ok ? ('已暂停 ' + (j.stopped||0) + ' 个') : '失败', !(j&&j.ok)); lastSig=''; setTimeout(tick, 400); })
     .catch(function(e){ toast('失败：'+e.message, true); });
 };
+/* ---------- 自主模式 ---------- */
+function refreshAutopilot(){
+  fetchJson('/api/autopilot')
+    .then(function(a){
+      if (!a) return;
+      var tag = $('autoTag'), st = $('autoStatus'), stopBtn = $('autoStop'), goBtn = $('autoGo');
+      if (!tag || !st) return;
+      if (a.running === true){
+        tag.textContent = '运行中';
+        st.className = 'auto-status on';
+        var bits = [];
+        if (a.rounds) bits.push('第 <b>' + a.rounds + '</b> 轮');
+        if (a.done) bits.push('做成 <b>' + a.done + '</b> 件');
+        if (a.sleeping && a.next) bits.push(a.next + ' 再醒');
+        if (a.until) bits.push('干到 ' + a.until);
+        st.innerHTML = bits.length ? bits.join(' · ') : '正在准备…';
+        if (stopBtn) stopBtn.style.display = '';
+        if (goBtn) goBtn.disabled = true;
+      } else {
+        tag.textContent = '待命';
+        st.className = 'auto-status';
+        if (a.finished){
+          st.innerHTML = '上一轮结束：跑了 <b>' + (a.rounds||0) + '</b> 轮，做成 <b>' + (a.done||0) + '</b> 件。';
+        } else if (a.reason){
+          st.textContent = a.reason;
+        } else {
+          st.textContent = '没在跑。点了才启动，干完就停。';
+        }
+        if (stopBtn) stopBtn.style.display = 'none';
+        if (goBtn) goBtn.disabled = false;
+      }
+    })
+    .catch(function(){});
+}
+
+function bindAutopilot(){
+  var go = $('autoGo'), stop = $('autoStop');
+  if (go) go.onclick = function(){
+    var mi = $('autoMin');
+    var fi = $('autoFocus');
+    var min = parseInt((mi && mi.value) || '30', 10);
+    var focus = ((fi && fi.value) || '').trim();
+    go.disabled = true;
+    fetch('/api/wake', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ minutes: min, focus: focus })
+    }).then(function(r){ return r.json(); })
+      .then(function(j){
+        if (j && j.ok) { toast('自主模式启动，干 ' + min + ' 分钟'); }
+        else { toast((j && j.msg) || '启动失败', true); go.disabled = false; }
+        setTimeout(refreshAutopilot, 600);
+      })
+      .catch(function(e){ toast('启动失败：' + e.message, true); go.disabled = false; });
+  };
+  if (stop) stop.onclick = function(){
+    fetch('/api/wake/stop', {method:'POST'})
+      .then(function(){ toast('已停下'); setTimeout(refreshAutopilot, 500); })
+      .catch(function(e){ toast('取消失败：' + e.message, true); });
+  };
+  refreshAutopilot();
+}
+
 $('btnClearChat').onclick = function(){
   if (!confirm('清除对话记录？历史保留，但模型会忘掉前文。')) return;
   fetch('/api/session/clear', {method:'POST'})
@@ -3052,8 +3281,12 @@ function bindChips(){
 loadTools();
 thread.innerHTML = emptyHtml();
 bindChips();
+bindAnswer();
+bindAutopilot();
 loadFiles();
 tick();
+// 自主模式状态单独刷：它几秒才变一次，不用挤进主轮询
+setInterval(refreshAutopilot, 4000);
 </script>
 </body>
 </html>

@@ -990,6 +990,72 @@ while ($listener.IsListening) {
                     Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-File',(Join-Path $Root 'launcher.ps1'),'-NoBrowser') -WindowStyle Hidden
                 }
 
+                # 自主模式状态：面板读它显示「在跑吗 / 下次几点醒 / 做了几件」
+                '/api/autopilot' {
+                    $af = Join-Path $Root 'agent\autopilot.json'
+                    if (Test-Path $af) {
+                        try {
+                            $raw = [IO.File]::ReadAllText($af, [Text.Encoding]::UTF8)
+                            Send-Text -Response $resp -Text $raw.Trim()
+                        } catch { Send-Text -Response $resp -Text '{"running":false}' }
+                    } else {
+                        Send-Text -Response $resp -Text '{"running":false}'
+                    }
+                }
+
+                # 手动开一轮自主模式。用户明确要「手动触发才启动」。
+                '/api/wake' {
+                    if ($method -ne 'POST') { Send-Text -Response $resp -Text '{"ok":false}' -Code 405; break }
+                    $body = Read-Body $ctx.Request
+                    $minutes = 30
+                    $focus = ''
+                    try {
+                        $j = $body | ConvertFrom-Json
+                        if ($j.minutes) { $minutes = [int]$j.minutes }
+                        if ($j.focus) { $focus = [string]$j.focus }
+                    } catch { }
+                    if ($minutes -lt 1) { $minutes = 1 }
+                    if ($minutes -gt 240) { $minutes = 240 }
+
+                    $af = Join-Path $Root 'agent\autopilot.json'
+                    $already = $false
+                    if (Test-Path $af) {
+                        try {
+                            $cur = Get-Content $af -Raw -Encoding UTF8 | ConvertFrom-Json
+                            if ($cur.running -eq $true) { $already = $true }
+                        } catch { }
+                    }
+                    if ($already) {
+                        Send-Text -Response $resp -Text '{"ok":false,"msg":"自主模式已经在跑了"}'
+                        break
+                    }
+
+                    $apArgs = @('-NoProfile','-ExecutionPolicy','Bypass','-File',
+                                (Join-Path $Root 'agent\autopilot.ps1'), '-ForMinutes', [string]$minutes)
+                    if ($focus) { $apArgs += @('-Focus', $focus) }
+                    Start-Process -FilePath 'powershell.exe' -ArgumentList $apArgs -WindowStyle Hidden
+                    Send-Text -Response $resp -Text ('{"ok":true,"minutes":' + $minutes + '}')
+                }
+
+                # 停掉自主模式
+                '/api/wake/stop' {
+                    if ($method -ne 'POST') { Send-Text -Response $resp -Text '{"ok":false}' -Code 405; break }
+                    $n = 0
+                    try {
+                        foreach ($pr in @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'")) {
+                            $cl = [string]$pr.CommandLine
+                            if ($cl -match 'autopilot\.ps1') {
+                                try { Stop-Process -Id $pr.ProcessId -Force -ErrorAction SilentlyContinue; $n++ } catch { }
+                            }
+                        }
+                    } catch { }
+                    $af = Join-Path $Root 'agent\autopilot.json'
+                    try {
+                        [IO.File]::WriteAllText($af, '{"running":false,"stopped":"' + (Get-Date -Format 'HH:mm:ss') + '"}', (New-Object Text.UTF8Encoding($false)))
+                    } catch { }
+                    Send-Text -Response $resp -Text ('{"ok":true,"stopped":' + $n + '}')
+                }
+
                 default {
                     Send-Text -Response $resp -Text '{"ok":false,"msg":"not found"}' -Code 404
                 }
