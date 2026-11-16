@@ -1553,9 +1553,19 @@ header button,.side-actions button{
   opacity:.6;
 }
 [data-theme="glass"] .msg.thinking .bubble{
-  background:rgba(255,255,255,.045);
-  border-color:rgba(255,255,255,.18);
-  color:rgba(255,255,255,.72);
+  /* 玻璃主题的底是浅粉→紫的渐变（#ffd3e8 起步），
+     原来这里是 rgba(255,255,255,.72) 的白字压在 rgba(255,255,255,.045) 的浅底上，
+     对比度只有约 2.1 —— 等于看不见。
+     现在垫一层深色玻璃，白字就有支撑了。 */
+  background:rgba(26,8,40,.58);
+  border:1px dashed rgba(255,255,255,.34);
+  color:rgba(255,255,255,.96);
+  backdrop-filter:blur(10px);
+  -webkit-backdrop-filter:blur(10px);
+  text-shadow:0 1px 2px rgba(0,0,0,.4);
+}
+[data-theme="glass"] .msg.thinking .who{
+  color:rgba(255,255,255,.82);
 }
 
 </style>
