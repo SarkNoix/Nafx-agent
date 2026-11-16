@@ -13,6 +13,7 @@
         "append_file",
         "list_dir",
         "skill",
+        "note",
         "finish"
       ],
       "name": "数数量 / 统计",
@@ -97,6 +98,7 @@
         "web_fetch",
         "syshelp",
         "help",
+        "note",
         "finish"
       ],
       "name": "查东西 / 找某个值",
@@ -178,6 +180,7 @@
         "read_file",
         "delete_path",
         "list_dir",
+        "note",
         "finish"
       ],
       "name": "创建文件 / 写内容",
@@ -240,6 +243,7 @@
         "set_line",
         "diff_files",
         "write_file",
+        "note",
         "finish"
       ],
       "name": "改内容 / 替换",
@@ -311,6 +315,7 @@
         "read_file",
         "write_file",
         "make_dir",
+        "note",
         "finish"
       ],
       "name": "格式转换",
@@ -373,6 +378,7 @@
         "write_file",
         "read_file",
         "make_dir",
+        "note",
         "finish"
       ],
       "name": "搜索 / 找关键词",
@@ -447,6 +453,7 @@
         "replace_in_file",
         "run_ps1",
         "make_dir",
+        "note",
         "finish"
       ],
       "name": "写脚本 / 做工具",
@@ -516,6 +523,7 @@
         "write_file",
         "zip_list",
         "skill",
+        "note",
         "finish"
       ],
       "name": "整理 / 批量处理",
@@ -679,6 +687,7 @@
         "syshelp",
         "help",
         "win_doc",
+        "note",
         "finish"
       ],
       "goal": "拿到真实的系统数字，别猜、别用一堆命令行拼",
@@ -698,6 +707,7 @@
         "append_file",
         "write_file",
         "make_dir",
+        "note",
         "finish"
       ],
       "name": "往文件末尾追加内容",

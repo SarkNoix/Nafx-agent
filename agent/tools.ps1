@@ -351,6 +351,31 @@ function Invoke-AiTool {
                 # 模型经常该用 append_file 时又调一次 write_file，把前面的内容冲掉，
                 # 结果里还说「写入成功」，它自己看不出问题。
                 $existed = (Test-Path -LiteralPath $full) -and -not (Test-Path -LiteralPath $full -PathType Container)
+                $oldSize = 0
+                if ($existed) { try { $oldSize = (Get-Item -LiteralPath $full).Length } catch { } }
+
+                $content = [string]$Action.content
+
+                # ---- 拿空内容覆盖一个非空文件 = 纯数据丢失，直接拒 ----
+                #
+                # 实测：让它「把 locked\conflict.txt 挪到根目录」，
+                # 它没用 move_path，而是调 write_file(conflict.txt) 把根目录里
+                # 那个同名文件（原来有内容）覆盖成了 0 字节。
+                # 源文件没动、目标被清空 —— 两个文件都毁了。
+                # 这种行为没有任何正当理由，拦掉。
+                if ($existed -and $oldSize -gt 0 -and [string]::IsNullOrWhiteSpace($content)) {
+                    throw ("不许用空内容覆盖非空文件：" + (Get-RelDisplay $full) + " 原本 " + $oldSize + " 字节，" +
+                           "你现在给的是空内容，写下去原有内容就没了。" +
+                           "如果是想移动/重命名文件，用 move_path；如果是想清空，先说清楚为什么。")
+                }
+
+                # ---- 想「挪」却用 write_file：只在内容疑似是复制来的才提示 ----
+                # 这条不能硬拦（正常写文件也会走到这里），
+                # 但至少在结果里点一句，让它知道自己用错工具了。
+                $usedForMove = $false
+                if ($existed -and $content.Length -gt 0 -and $oldSize -eq $content.Length) {
+                    $usedForMove = $true
+                }
                 # 覆盖已有文件前先留一份，模型改错了还能找回来
                 if ((Test-Path -LiteralPath $full) -and -not (Test-Path -LiteralPath $full -PathType Container)) {
                     try {
@@ -360,7 +385,6 @@ function Invoke-AiTool {
                         Copy-Item -LiteralPath $full -Destination (Join-Path $bkDir $bkName) -Force -ErrorAction SilentlyContinue
                     } catch { }
                 }
-                $content = [string]$Action.content
                 # 不要把命令报错当成结果写进文件
                 if ($content -match '不是内部或外部命令|无法识别|--- 错误输出 ---|is not recognized as') {
                     throw '内容里是命令的报错信息，不能写进文件。请先修正命令，或改用 read_file 直接读文件。'
@@ -408,7 +432,10 @@ function Invoke-AiTool {
                     throw "写不进去：$($_.Exception.Message)。文件可能正被其他程序打开。"
                 }
                 if ($existed) {
-                    return "已覆盖 $(Get-RelDisplay $full)（$($content.Length) 字符）。**这是整个文件重写，原来的内容已经没了。** 本意是追加的话应该用 append_file。改完了直接 finish。"
+                    $moveHint = $(if ($usedForMove) {
+                        ' **注意：如果你是想「移动/复制」这个文件，用错工具了** —— write_file 只会写内容，不会挪走源文件。挪文件要用 move_path。'
+                    } else { '' })
+                    return "已覆盖 $(Get-RelDisplay $full)（$($content.Length) 字符）。**这是整个文件重写，原来的内容已经没了。** 本意是追加的话应该用 append_file。" + $moveHint + "改完了直接 finish。"
                 }
                 return "已写入 $(Get-RelDisplay $full)（$($content.Length) 字符）。写入成功，不用再读一遍验证，直接 finish。"
             }
@@ -2038,6 +2065,35 @@ function Invoke-AiTool {
                     return '（没有要问的内容）如果你想请用户确认，请把问题写在 content 字段。'
                 }
                 return "已向用户提问：$msg`n（等你确认后再继续，本步不执行任何操作）"
+            }
+
+            'note' {
+                # 对用户说一句话 —— 不用等回答。
+                #
+                # 和 say 的区别：
+                #   say  = 问问题，阻塞等 60 秒，用户不回就没法继续
+                #   note = 播报进度，说完立刻继续下一步
+                #
+                # 为什么需要这个：多步任务里模型干着干着就闷头不出声，
+                # 用户看着屏幕不知道在干嘛。但也不能让它用 say 播报 ——
+                # 每步卡 60 秒更难受。
+                #
+                # 内容从任意字段取（沿用 think 的做法，4B 不会严格照 schema 填）。
+                $msg = ''
+                try {
+                    foreach ($p in $Action.PSObject.Properties) {
+                        if ($p.Name -in @('tool', 'n', 'ok', 'raw', 'sec', 'arg', 'note', 'obs')) { continue }
+                        $v = [string]$p.Value
+                        if ($v.Length -gt $msg.Length) { $msg = $v }
+                    }
+                } catch { }
+                $msg = $msg.Trim()
+                if ($msg.Length -lt 2) {
+                    return '（没写要说什么。把要对用户讲的进度写进 content）'
+                }
+                if ($msg.Length -gt 300) { $msg = $msg.Substring(0, 300) + '…' }
+                # 真正把这句话写进会话流由 agent.ps1 负责（它才知道面板怎么读）
+                return ($msg + "`n（已告诉用户。继续说下一步，别停在这儿。）")
             }
 
             default {

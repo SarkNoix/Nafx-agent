@@ -1619,6 +1619,25 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
         $think = [string]$act.content
         if (-not $think.Trim()) { $think = [string]$act.command }
     }
+
+    # ---- think 的内容自动播报给用户 ----
+    #
+    # 加了 note 工具让模型主动交代进度，实测它一次都不调 ——
+    # 4B 手里工具一多，就不会主动想起来用哪个。
+    # 但它的 think 里本来就在写「先列目录看有哪些，再建 text 目录挪文件」，
+    # 这恰恰就是用户想看的进度。与其指望它自觉，不如直接把它想的推给面板。
+    #
+    # 每一条 think 都播报。
+    # 一开始只播第 2 步之后的，觉得第一步那句"我要先想想"没必要显示 ——
+    # 实测这个判断是错的：模型经常只 think 一次就一路连调工具
+    # （这次是 list_dir → make_dir → find_files → move_path ×3，全程没再 think），
+    # 结果一条播报都没有，用户还是看不到进度。
+    if ($toolName -eq 'think' -and $think.Trim().Length -ge 8) {
+        $bc = $think.Trim()
+        if ($bc.Length -gt 160) { $bc = $bc.Substring(0, 160) + '…' }
+        try { Add-SessionTurn -Role 'assistant' -Content ('· ' + $bc) -Ok $true } catch { }
+        Write-Log ("  [播报] " + $bc)
+    }
     $path  = [string]$act.path
 
     # ---------- finish ----------
@@ -1734,6 +1753,33 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
         Write-Closing -State $state -Status 'done' -Summary $state.summary -StepCount $step
         $finished = $true
         break
+    }
+
+    # ---------- note（对用户说话，不等回答）----------
+    #
+    # 和 say 的区别：say 是问问题、阻塞等 60 秒；note 是播报进度、说完就继续。
+    # 这里把这句话写进 session.jsonl，面板每轮读它 —— 用户就能边做边看到进度，
+    # 而不是等任务全干完才蹦出一段总结。
+    if ($toolName -eq 'note') {
+        $msg = [string]$act.message
+        if ([string]::IsNullOrWhiteSpace($msg)) { $msg = [string]$act.content }
+        if ([string]::IsNullOrWhiteSpace($msg)) { $msg = [string]$act.text }
+        $msg = $msg.Trim()
+        if ($msg.Length -lt 2) {
+            $obs = '（没写要说什么。把要对用户讲的进度写进 content）'
+        } else {
+            if ($msg.Length -gt 300) { $msg = $msg.Substring(0, 300) + '…' }
+            try { Add-SessionTurn -Role 'assistant' -Content $msg -Ok $true } catch { }
+            $state.steps += @{ n = $step; think = $think; tool = 'note'; arg = ''; ok = $true
+                               note = $msg; raw = $res.raw_calls; obs = ''; sec = $res.seconds; tok = $res.tokens }
+            $state.phase = $msg
+            Write-State $state
+            Write-Log ("  [{0}] note：{1}" -f $step, $msg)
+            $obs = ("已告诉用户：「" + $msg + "」`n接着做下一步，别停在这儿。")
+        }
+        $history += (Format-ToolCallMessage -Act $act -CallId $callId)
+        $history += @{ role = 'tool'; tool_call_id = $callId; content = $obs }
+        continue
     }
 
     # ---------- say（问用户，等回答，最多 60 秒）----------
@@ -1998,6 +2044,30 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
     Write-State $state
     Write-Log ("  [{0}] {1} -> {2} {3}  ({4} tok / {5:N1}s)" -f $step, $think, $toolName, $stepArg, $res.tokens, $res.seconds)
     Write-Log ("      观察：$obs`n")
+
+    # ---- 做成了事就自动播报一句 ----
+    #
+    # 模型不会主动调 note（手里工具一多就忘了），只靠它 think 也播不了几条。
+    # 那就在「真的动了一个文件」时替它说一句 —— 用户至少能看见东西在动。
+    # 只在有实际产出的工具上播，读目录/查文件这种不出声。
+    if ($ok -and $toolName -in @('move_path', 'copy_path', 'write_file', 'append_file',
+                                 'write_script', 'make_dir', 'delete_path', 'zip_dir', 'unzip')) {
+        $bcLine = ''
+        if ($toolName -in @('move_path', 'copy_path') -and $act.command) {
+            $bcLine = (Get-RelDisplay ([string]$act.path)) + ' → ' + [string]$act.command
+        } elseif ($toolName -eq 'make_dir') {
+            $bcLine = '建好了 ' + [string]$act.path
+        } elseif ($toolName -eq 'write_file' -or $toolName -eq 'write_script') {
+            $bcLine = '写好了 ' + [string]$act.path
+        } elseif ($toolName -eq 'append_file') {
+            $bcLine = '追加到 ' + [string]$act.path
+        } elseif ($toolName -eq 'delete_path') {
+            $bcLine = '删掉了 ' + [string]$act.path
+        }
+        if ($bcLine) {
+            try { Add-SessionTurn -Role 'assistant' -Content ('· ' + $bcLine) -Ok $true } catch { }
+        }
+    }
 
     # ---- 同一个文件别挪两次 ----
     #
