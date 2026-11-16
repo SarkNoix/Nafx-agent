@@ -17,6 +17,12 @@
   --fg:#eef0f4; --dim:#9aa2b1; --faint:#707a8c;
   --line:#232733; --line2:#2c3140;
   --accent:#6ea8fe; --accent2:#a78bfa;
+  /* 压在 --accent 上的文字色。
+     玻璃主题的 accent 是浅粉白，配白字会糊成一片（对比度 1.19，等于看不见），
+     所以按钮文字统一用这个变量，各主题各自定义。
+     深色主题的 accent 是 #6ea8fe（偏亮的天蓝），白字对比度只有 2.42 也不合格，
+     改用深藏青 #08101f 压上去是 7.87。 */
+  --primary-fg:#08101f;
   --ok:#4ade80; --warn:#fbbf24; --err:#f87171; --run:#38bdf8;
   --bubble-user-bg:#1b3352; --bubble-user-bd:#274872; --bubble-user-fg:#dce9ff;
   --bubble-ai-bg:#181b23; --bubble-ai-bd:#232733;
@@ -1301,12 +1307,23 @@ header button,.side-actions button{
   background:var(--panel2);color:var(--fg);border:1px solid var(--line);
 }
 .auto-go{
-  padding:6px 12px;border-radius:7px;font-size:12px;font-weight:600;
-  background:var(--accent);color:#fff;border:none;cursor:pointer;
-  white-space:nowrap;transition:.15s;flex-shrink:0;
+  padding:7px 14px;border-radius:8px;font-size:12px;font-weight:600;
+  /* 玻璃主题下 --accent 是 #ffe4f6（浅粉白），白字压上去整个按钮糊成一片白，
+     所以文字色不能写死 #fff，要用各主题给的 --primary-fg。
+     glass 里它配的是深紫 #5c2d80，压在白底上才看得清。 */
+  background:var(--accent);color:var(--primary-fg);
+  border:none;cursor:pointer;white-space:nowrap;
+  transition:transform .12s, box-shadow .15s, filter .15s;
+  flex-shrink:0;
+  box-shadow:0 1px 3px rgba(0,0,0,.12);
 }
-.auto-go:hover{filter:brightness(1.1)}
-.auto-go:disabled{opacity:.45;cursor:not-allowed}
+.auto-go:hover{
+  filter:brightness(1.06);
+  transform:translateY(-1px);
+  box-shadow:0 3px 10px rgba(0,0,0,.18);
+}
+.auto-go:active{transform:translateY(0);box-shadow:0 1px 2px rgba(0,0,0,.14)}
+.auto-go:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none}
 .auto-focus{
   width:100%;padding:6px 9px;border-radius:7px;font-size:12px;box-sizing:border-box;
   background:var(--panel2);color:var(--fg);border:1px solid var(--line);margin-bottom:8px;
@@ -1356,14 +1373,103 @@ header button,.side-actions button{
   margin-top:9px;display:inline-block;
   padding:5px 13px;border-radius:7px;
   font-size:12px;font-weight:600;cursor:pointer;
-  background:var(--accent);color:#fff;
+  /* 同 .auto-go：玻璃主题下 accent 是浅粉白，文字得用 --primary-fg */
+  background:var(--accent);color:var(--primary-fg);
   transition:.15s;
 }
-.ask-go:hover{filter:brightness(1.1)}
+.ask-go:hover{filter:brightness(1.06);transform:translateY(-1px)}
 [data-theme="glass"] .msg.asking .bubble{
   background:rgba(30,10,50,.55);border-left-color:rgba(255,255,255,.8);
 }
 [data-theme="glass"] .ask-go{background:rgba(255,255,255,.92);color:#5c2d80}
+
+
+/* ============================================================
+   整体观感收一收
+   改的都是「看着细腻一点」的细节，不动布局和功能。
+   ============================================================ */
+
+/* 侧栏卡片：悬停时轻轻抬起，而不是只换边框色 */
+.side-block{
+  transition:background .25s, border-color .25s, box-shadow .22s, transform .22s;
+}
+.side-block:hover{
+  border-color:var(--line2);
+  box-shadow:0 4px 14px rgba(0,0,0,.10);
+  transform:translateY(-1px);
+}
+[data-theme="glass"] .side-block:hover{
+  background:rgba(58,24,84,.40);
+  box-shadow:inset 0 1px 0 var(--inset-hi), 0 6px 20px rgba(30,6,44,.34);
+}
+
+/* 小标题前面加一道短竖线，区块之间更好分 */
+.side h3{
+  padding-left:9px;position:relative;
+}
+.side h3::before{
+  content:"";position:absolute;left:0;top:50%;transform:translateY(-50%);
+  width:3px;height:11px;border-radius:2px;
+  background:var(--accent);opacity:.75;
+}
+
+/* 配置格子：数字更突出，标签更收敛 */
+.cfg-cell b{
+  font-variant-numeric:tabular-nums;
+  letter-spacing:.2px;
+}
+
+/* 输入框：聚焦时有一圈柔光，别只换边框 */
+.composer textarea:focus{
+  box-shadow:0 0 0 3px rgba(110,168,254,.16);
+}
+[data-theme="glass"] .composer textarea:focus{
+  box-shadow:0 0 0 3px rgba(255,255,255,.26), inset 0 1px 0 var(--inset-hi);
+}
+
+/* 消息气泡：圆角再柔一点，AI 侧留白更松 */
+.msg .bubble{padding:11px 14px}
+.msg .who{
+  font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;
+  opacity:.72;margin-bottom:5px;
+}
+
+/* 步骤卡片：悬停轻微提亮，长列表里更好跟 */
+.step:hover{background:rgba(128,148,190,.045)}
+[data-theme="glass"] .step:hover{background:rgba(255,255,255,.055)}
+
+/* 滚动条：细一点，颜色跟主题走 */
+.thread::-webkit-scrollbar,.side::-webkit-scrollbar,.step-obs::-webkit-scrollbar,
+.st-body::-webkit-scrollbar{width:7px;height:7px}
+.thread::-webkit-scrollbar-thumb,.side::-webkit-scrollbar-thumb,
+.step-obs::-webkit-scrollbar-thumb,.st-body::-webkit-scrollbar-thumb{
+  background:rgba(128,148,190,.30);border-radius:4px;
+}
+.thread::-webkit-scrollbar-thumb:hover,.side::-webkit-scrollbar-thumb:hover,
+.step-obs::-webkit-scrollbar-thumb:hover,.st-body::-webkit-scrollbar-thumb:hover{
+  background:rgba(128,148,190,.52);
+}
+[data-theme="glass"] .thread::-webkit-scrollbar-thumb,
+[data-theme="glass"] .side::-webkit-scrollbar-thumb,
+[data-theme="glass"] .step-obs::-webkit-scrollbar-thumb,
+[data-theme="glass"] .st-body::-webkit-scrollbar-thumb{
+  background:rgba(255,255,255,.34);
+}
+
+/* 主按钮：和 auto-go 一致的按压手感 */
+.composer button.primary{
+  transition:transform .12s, box-shadow .16s, filter .16s;
+}
+.composer button.primary:hover{
+  transform:translateY(-1px);
+}
+.composer button.primary:active{transform:translateY(0)}
+
+/* 尊重「减少动效」的系统设置 */
+@media(prefers-reduced-motion:reduce){
+  .side-block:hover,.composer button.primary:hover,
+  .auto-go:hover,.ask-go:hover{transform:none}
+}
 
 </style>
 </head>
