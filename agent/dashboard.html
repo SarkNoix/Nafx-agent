@@ -3035,35 +3035,17 @@ function tick(){
       pollTimer = setTimeout(tick, busy ? 450 : 1600);
       send.disabled = false;
 
-      // 僵死检测。
-      // 模型在跑的时候，step / elapsed 一定会变；如果连着 12 轮
-      // （约 5 秒）指纹一点没动，说明这一侧收到的是旧数据或轮询空转，
-      // 主动清一次缓存并把链重挂，让面板重新对齐。
-      if (st) {
-        // 活着的证据：状态、步骤、阶段文字、以及流式输出的序号。
-        // 原来用的是 Math.floor(elapsed/5) —— 每 5 秒才变一次，
-        // 而下面判断「9 秒没变就强制刷新」；模型思考时 step 不动、
-        // elapsed 又涨得慢，很容易 9 秒里 aliveSig 没变过一次，
-        // 于是被判成「僵死」，走 lastSig='' + 立即重轮询 ——
-        // 那一次必然全量重建，气泡和浮窗就一起消失又出现。
-        // 现在把 phase（每 1.5 秒被 agent 更新）和 streamSeq（模型吐字就越涨）也算进来。
-        var aliveSig = (st.status||'') + '|' + (st.step||0) + '|' + (st.task||'') + '|' +
-                       (st.phase||'') + '|' + streamSeq + '|' + Math.floor((st.elapsed||0));
-        var nowMs = Date.now();
-        if (aliveSig !== lastAliveSig) {
-          lastAliveSig = aliveSig;
-          lastAliveAt = nowMs;
-        } else if (busy && lastAliveAt && (nowMs - lastAliveAt) > 9000) {
-          // 超过 9 秒完全没变化：重置
-          lastAliveAt = nowMs;
-          // 不清 lastSig —— 清了下一轮必然全量重建（几百个节点 + 浮窗重挂），
-          // 用户看到的就是闪一下。这里只清缓存，让下一轮拿新数据；
-          // 结构真变了 renderFlow 自己会发现，不用我们替它决定。
-          window.__lastSess = null;
-          try { console.warn('面板数据长时间无变化，强制刷新'); } catch(_){}
-          return tick();
-        }
-      }
+      // 这里原来有个「僵死检测」：9 秒没变化就 lastSig='' + 立即重轮询。
+      // 它的本意是救回卡死的轮询链，但副作用太大 ——
+      // 模型在 CPU 上首字要等 70 秒，这期间 step 不动、state 也可能没更新，
+      // 于是每 9 秒就被判一次「僵死」，走一次强制刷新：
+      // 清缓存 + 立即重轮询 + 全量重建对话区 + 流式浮窗重挂。
+      // 用户看到的就是气泡和浮窗一直消失又出现。
+      //
+      // 而轮询链本身已经有两层保护了：
+      //   · 下面的 .catch 无论成败都会挂下一轮，不会断
+      //   · fetchJson 有 8 秒超时，卡住也会 reject 后重来
+      // 所以这段强制刷新是多余的，直接去掉。
     })
     .catch(function(e){
       // 轮询链断掉 = 面板永远停在最后一帧，用户看到的就是「卡死了」，

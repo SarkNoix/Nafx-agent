@@ -2030,7 +2030,49 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
     try {
         # 输出额度 $mt0 在上面已经按任务类型算好了（和 ctxLimit 用的是同一个值），
         # 这里直接用，别再算一遍 —— 两处各算各的迟早会对不上。
+        # 发请求前挂一个心跳。
+        #
+        # Write-LivePhase 原来只在流式循环里调 —— 也就是模型开始吐字之后。
+        # 但模型首字在 CPU 上要等 70 秒以上，这 70 秒里 state.json 一次都不更新，
+        # 面板的僵死检测（9 秒没变化）就会判定「面板死了」并强制刷新，
+        # 一轮一轮地刷 —— 表现就是气泡和浮窗一直闪。
+        #
+        # 这里用一个 Runspace 后台跑循环，每 1.5 秒把 elapsed 和 phase 写一次。
+        # 不用 Timer + 事件回调：那种写法在脚本作用域里拿不到 $script: 变量。
+        $hbRunspace = $null; $hbPs = $null; $hbHandle = $null
+        try {
+            $hbScript = {
+                param($StateFile, $Clock)
+                while ($true) {
+                    Start-Sleep -Milliseconds 1500
+                    try {
+                        $raw = [IO.File]::ReadAllText($StateFile, [Text.Encoding]::UTF8)
+                        if (-not $raw) { continue }
+                        $o = $raw | ConvertFrom-Json
+                        if ([string]$o.status -ne 'running') { break }
+                        if ([string]$o.phase -notlike '正在*') { $o.phase = '正在请求模型…' }
+                        $o.elapsed = [double]$Clock.Elapsed.TotalSeconds
+                        $j = $o | ConvertTo-Json -Depth 6 -Compress
+                        $tmp = $StateFile + '.hb'
+                        [IO.File]::WriteAllText($tmp, $j, (New-Object Text.UTF8Encoding($false)))
+                        if (Test-Path $StateFile) { [IO.File]::Replace($tmp, $StateFile, $null) } else { [IO.File]::Move($tmp, $StateFile) }
+                    } catch { }
+                }
+            }
+            $hbRunspace = [runspacefactory]::CreateRunspace()
+            $hbRunspace.Open()
+            $hbPs = [powershell]::Create()
+            $hbPs.Runspace = $hbRunspace
+            [void]$hbPs.AddScript($hbScript.ToString()).AddArgument($script:LiveStateFile).AddArgument($script:LiveClock)
+            $hbHandle = $hbPs.BeginInvoke()
+        } catch { $hbRunspace = $null }
+
         $res = Invoke-Model -Messages $history -ToolsJson $toolsJson -ForceTool:($noToolCount -gt 0) -MaxTokens $mt0
+
+        # 拿到结果就停心跳
+        if ($hbPs) { try { $hbPs.Stop() } catch { } }
+        if ($hbRunspace) { try { $hbRunspace.Dispose() } catch { } }
+
     } catch {
         Write-Host ''
         # 请求超时也要分辨是真慢还是服务挂了。挂了就报卡死，别报个含糊的"超时"。
