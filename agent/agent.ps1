@@ -372,7 +372,15 @@ function Get-HistoryTokens {
 function Trim-ToolsToBudget {
     param([string[]]$Names, [int]$Budget)
     # 优先级：越靠前越该保留
-    $mustKeep = @('think', 'finish', 'say', 'rethink')
+    # 从后往前砍，所以这里排的是「最不该砍的」。
+    #
+    # 原来保底只有 think/finish/say/rethink —— 全是"会说话"的工具，
+    # 一个"能干活"的都没有。实测砍到 5 个时 write_file / read_file / grep_file
+    # 全没了，模型手里只剩会说话的工具：想写 err.txt 写不了，连试三次 think，
+    # 最后居然去下 https://example.com/big.log。
+    # 「能读能写」是干活的底线，必须和 think/finish 一样受保护。
+    $mustKeep = @('think', 'note', 'finish', 'say', 'rethink',
+                  'read_file', 'write_file', 'append_file', 'list_dir')
     $list = @($Names)
     $json = Get-ToolsJsonWithFinish -Names $list
     if ((Get-CtxTokens $json) -le $Budget) { return $list }

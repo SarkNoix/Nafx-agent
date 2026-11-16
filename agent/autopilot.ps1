@@ -34,7 +34,13 @@ function AutoLog {
     param([string]$Text)
     $line = ('[{0}] {1}' -f (Get-Date -Format 'HH:mm:ss'), $Text)
     Write-Host $line
-    try { Add-Content -Path $AutoLog -Value $line -Encoding UTF8 } catch { }
+    # 用 IO.File.AppendAllText + 显式 UTF8 无 BOM。
+    # Add-Content -Encoding UTF8 在 PowerShell 5.1 里第一次写带 BOM、
+    # 之后追加不带，中间别的进程按 GBK 读一次就整片乱码 ——
+    # 实测日志里全是「鈫?鐘舵€?done」这种，根本没法排查。
+    try {
+        [IO.File]::AppendAllText($AutoLog, $line + "`r`n", (New-Object Text.UTF8Encoding($false)))
+    } catch { }
 }
 
 # 状态文件：面板读它来显示「自主模式在跑吗、下次几点醒」
@@ -123,6 +129,18 @@ function Format-Size {
 function Ask-WhatToDo {
     param([string]$Scene)
 
+    # 把「之前做过什么」喂回去。
+    #
+    # 原来只传现场，模型每轮都像第一次看 —— 实测 8 次任务全都在说
+    # 「发现工作区有多个 PowerShell 脚本，建议分析/整理」，
+    # 改几个字就重来一遍。它不知道这些话自己已经说过了。
+    $histBlock = ''
+    if ($script:History -and $script:History.Count -gt 0) {
+        $recent = @($script:History | Select-Object -Last 6)
+        $histBlock = "`n`n你之前已经提过、也已经做过的（**别再提同样的，换个方向或者跳过**）：`n" +
+                     (($recent | ForEach-Object { "- " + $_ }) -join "`n")
+    }
+
     $sys = @"
 你是一个在用户电脑上工作的助手，现在是自主模式。
 用户已经授权你：可以在工作区和桌面创建、修改文件，可以写脚本并运行。
@@ -131,23 +149,24 @@ function Ask-WhatToDo {
 - 不许碰系统目录、程序目录、用户配置目录
 - 不许关机、改注册表、改服务、建计划任务
 
-你的任务是：看一眼现场，判断有没有值得做的事。
-**没想做的事就回答「跳过」，不要为了做事而做事。**
-真有值得做的，用一句话描述要做什么，别写步骤。
+看一眼现场，判断**有没有一件具体、能做完、有实际产出的事**值得做。
 
-能做的事举例：
-- 发现桌面有一堆散乱文件 → 提议按类型归档
-- 发现工作区有没用的临时文件 → 提议清理（但删除要问）
-- 发现某个日志或数据文件 → 提议统计/整理成报告
-- 没有明显需要动的 → 跳过
+判断标准（三条都要满足）：
+1. **具体**：不是"分析一下""整理一下"，而是"把 log 里的 ERROR 行提出来写成 err.txt"
+2. **能做完**：一次任务内（25 步以内）能出结果
+3. **有产出**：做完会多出或改变一个文件，而不是只是读了几个文件
+
+**读完文件就算完的不叫做成。** 「分析了脚本功能」「查看了日志内容」这类没有产出的活，别提。
+
+**没想做的事就回答「跳过」。** 宁可跳过，也别为了做事而做事。
 
 回答格式（只要一行）：
   跳过
 或者
-  任务：<一句话描述>
+  任务：<一句话，要具体到做什么、产出什么文件>
 "@
 
-    $user = "现在的现场：`n`n$Scene"
+    $user = "现在的现场：`n`n$Scene" + $histBlock
     if ($Focus) { $user += "`n`n用户给的方向：" + $Focus }
 
     $body = @{
@@ -157,7 +176,9 @@ function Ask-WhatToDo {
             @{ role = 'user';   content = $user }
         )
         max_tokens  = 200
-        temperature = 0.6
+        # 0.3：自主决策要的是"想清楚哪个值得做"，不是"随便挑一个"。
+        # 原来 0.6 太发散，每轮挑的都差不多。
+        temperature = 0.3
         stream      = $false
     } | ConvertTo-Json -Depth 8 -Compress
 
@@ -203,13 +224,38 @@ function Invoke-Task {
     $sw.Stop()
     $stateFile = Join-Path $AgentDir 'state.json'
     $status = '?'
+    $answerText = ''
+    $stepTools = @()
     if (Test-Path $stateFile) {
         try {
             $st = Get-Content $stateFile -Raw -Encoding UTF8 | ConvertFrom-Json
             $status = [string]$st.status
-            if ($st.answer) { AutoLog ('← 结果：' + ([string]$st.answer).Substring(0, [Math]::Min(120, ([string]$st.answer).Length))) }
+            $answerText = [string]$st.answer
+            $stepTools = @($st.steps | ForEach-Object { [string]$_.tool })
+            if ($answerText) { AutoLog ('← 结果：' + $answerText.Substring(0, [Math]::Min(120, $answerText.Length))) }
         } catch { }
     }
+
+    # ---- 判断这一轮到底算不算「做成一件事」----
+    #
+    # 原来只要 status=done 就算做成，结果 8 次全是 done，但实际一件都没做成：
+    # 5 个 read_file 读完，answer 是「文件 big.log 的内容：第 1 行…」——
+    # 那只是把它读到的东西复述了一遍，工作区一个字节都没变。
+    #
+    # 现在要求：done 且至少动过一个文件（写/挪/建/删/跑脚本）。
+    # 只读不写的不算做成，也记进历史，让它下轮别再提同类的事。
+    $didChange = (@($stepTools | Where-Object {
+        $_ -in @('write_file', 'append_file', 'write_script', 'move_path', 'copy_path',
+                 'make_dir', 'delete_path', 'run_ps1', 'run_script', 'zip_dir', 'unzip')
+    }).Count -gt 0)
+
+    if ($status -eq 'done' -and $didChange) {
+        $status = 'done'
+    } elseif ($status -eq 'done') {
+        AutoLog '← 只是读了文件，没有产出，不算做成'
+        $status = 'noop'
+    }
+
     AutoLog ('← 状态 ' + $status + '，用时 ' + [math]::Round($sw.Elapsed.TotalSeconds) + ' 秒')
     return $status
 }
@@ -220,6 +266,29 @@ function Invoke-Task {
 $endAt = (Get-Date).AddMinutes($ForMinutes)
 $round = 0
 $done = 0
+
+# ---- 做过什么：跨会话记住 ----
+# 实测 8 次自主任务全在提议「发现工作区有多个 PowerShell 脚本，建议分析/整理」，
+# 因为它每轮都像第一次看现场，不知道自己已经说过了。
+# 这里落一个文件，重启后也能读到，模型每轮都能看见「这些已经做过了」。
+$HistoryFile = Join-Path $AgentDir 'autopilot-history.jsonl'
+$script:History = @()
+try {
+    if (Test-Path $HistoryFile) {
+        $hl = @(Get-Content $HistoryFile -Encoding UTF8 | Where-Object { $_.Trim() })
+        $script:History = @($hl | Select-Object -Last 20)
+    }
+} catch { $script:History = @() }
+if ($script:History.Count -gt 0) { AutoLog ('接过往记录 ' + $script:History.Count + ' 条') }
+
+function Add-AutoHistory {
+    param([string]$Line)
+    try {
+        [IO.File]::AppendAllText($HistoryFile, ($Line -replace '\s+', ' ') + "`r`n", (New-Object Text.UTF8Encoding($false)))
+    } catch { }
+    $script:History = @(@($script:History) + @($Line))
+    if ($script:History.Count -gt 40) { $script:History = @($script:History | Select-Object -Last 40) }
+}
 
 Save-AutoState @{ running = $true; started = (Get-Date -Format 'HH:mm:ss'); until = $endAt.ToString('HH:mm'); rounds = 0; done = 0 }
 
@@ -251,6 +320,7 @@ while ((Get-Date) -lt $endAt) {
             } else {
                 $st = Invoke-Task -TaskText $taskText
                 if ($st -eq 'done') { $done++ }
+                Add-AutoHistory ('[' + (Get-Date -Format 'HH:mm') + '] ' + $st + '：' + $taskText)
             }
         } else {
             AutoLog '任务描述太短，跳过。'
