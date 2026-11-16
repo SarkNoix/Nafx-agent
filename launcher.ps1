@@ -116,11 +116,27 @@ if (-not (Test-AiUp)) {
     )
 
     # KV 缓存量化：这是省内存的关键。fp16 的 KV 很占地方，
-    # 压到 8bit/4bit 后同样内存能多装 2-4 倍上下文。
+    # 压到 8bit 后同样内存能多装 2 倍上下文（4B 模型上质量几乎无感）。
+    #
+    # 优先级：内存脚本算出来的 kvType > config.json 里的手动设置。
+    # 为什么：内存脚本是按「现在能装多少」实时算的，
+    # 手动设的 f16 在内存紧的时候会直接爆。
+    # 之前这里只读 $Cfg.kvCacheTypeK，内存脚本算出的 q8_0 压根没用上 ——
+    # 结果就是「预算说能跑 6144，实际按 f16 启动直接 OOM」。
     try {
         $ctk = [string]$Cfg.kvCacheTypeK
         $ctv = [string]$Cfg.kvCacheTypeV
         $fa  = [string]$Cfg.flashAttn
+        if ($memObj -and $memObj.kvType) {
+            $autoKv = [string]$memObj.kvType
+            if ($autoKv -and $autoKv -ne $ctk) {
+                Write-Host ("  KV 缓存按当前内存用 " + $autoKv + "（配置里是 " + $(if($ctk){$ctk}else{'f16'}) + "）") -ForegroundColor DarkYellow
+            }
+            $ctk = $autoKv
+            $ctv = $autoKv
+            # KV 量化必须配 flash attention，否则 llama 会拒绝启动
+            if ($autoKv -ne 'f16') { $fa = 'auto' }
+        }
         if ($ctk -and $ctk -ne 'f16') { $argList += @('-ctk', $ctk) }
         if ($ctv -and $ctv -ne 'f16') { $argList += @('-ctv', $ctv) }
         if ($fa -in @('on','off','auto')) { $argList += @('-fa', $fa) }

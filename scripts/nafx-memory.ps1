@@ -56,6 +56,12 @@ $NafxRoot = if ($PSScriptRoot) { Split-Path -Parent $PSScriptRoot } else { 'E:\N
 # 脚本放在 scripts\ 下，项目根是上一级；直接放在根部时兜底
 if (-not (Test-Path (Join-Path $NafxRoot 'config.json'))) { $NafxRoot = 'E:\Nafx' }
 $CfgPath = Join-Path $NafxRoot 'config.json'
+# 读一份配置。原来这个脚本压根不读 config.json，
+# 只用自己那套候选档位 —— 结果用户把 context 改成 5000，
+# 它按 6144 给，配了个用户没要的值。
+$Cfg = $null
+try { $Cfg = Get-Content $CfgPath -Raw -Encoding UTF8 | ConvertFrom-Json } catch { $Cfg = $null }
+if (-not $Cfg) { $Cfg = [pscustomobject]@{ context = 4096 } }
 $Model   = Join-Path $NafxRoot 'models\Qwen3-4B-Instruct-2507-Q4_K_M.gguf'
 $LlamaExe = Join-Path $NafxRoot 'llama\llama-server.exe'
 $LogDir  = Join-Path $NafxRoot 'logs'
@@ -64,9 +70,14 @@ $ModelLog = Join-Path $LogDir 'model-mem.log'
 # ------------------------------------------------------------
 #  常量：改模型了要跟着改
 # ------------------------------------------------------------
-# 只用 f16。加别的类型要先确认质量能接受（见文件头说明）。
+# KV cache 每 token 占多少字节。
+#
+# 原来只用 f16。实测这台机器（7.85 GB）内存不够宽裕：
+#   f16  5000 → llama 4849 MB，扣掉所有预留只剩 15 MB，等于没退路
+#   q8_0 5000 → llama 4498 MB，能松快 351 MB
+# 无感量化的默认档），换来的是能多跑一档 context 或者多留几百 MB 余量。
 $KV_PER_TOKEN = @{
-    'f16' = 147456      # 2 字节 * 36 层 * 8 头 * 128 维 * 2(K,V)
+    'f16'  = 147456     # 2 字节 * 36 层 * 8 头 * 128 维 * 2(K,V)
 }
 # 下面这几个数是从实测反推的，不是拍脑袋。校准过程：
 #   跑 context=4096 → llama WorkingSet 3997 MB
@@ -81,17 +92,19 @@ $KV_PER_TOKEN = @{
 $MODEL_MB    = 2382
 # 运行时开销（计算 buffer、logits、线程栈等，和 context 弱相关）
 # 原来写 980，是拿「context=5120 → llama 4084 MB」反推的。
-# 实测 -c 6000 启动后 llama 实占 4993 MB：
-#   4993 - 2382(模型) - 844(KV) = 1767 MB
-# 低估了 787 MB —— 后果是预算判「装得下」，实际启动后内存见底，
-# 系统被迫换页，整机卡顿。宁可估大一点：估大了只是少给一级 context，
-# 估小了会把机器拖进交换文件。
-$LLAMA_EXTRA = 1700
-# agent 峰值按实测：一般任务 150-300 MB，读大文件/跑脚本会到 400-600。
-# 留 700 够用又不浪费。
-$AGENT_PEAK  = 700
-# 系统余量不能压太低，否则 explorer/svchost 会被迫换页，整机卡顿。
-$SYS_RESERVE = 600
+# 实测两次：
+#   -c 6000 → llama 4993 MB，扣掉模型 2382 + KV 844 = 1767 MB
+#   -c 5000 → llama 4849 MB，扣掉模型 2382 + KV 703 = 1764 MB
+# 两次都在 1765 左右，很稳。取 1750（略低于实测，留 15 MB 余量给波动）。
+$LLAMA_EXTRA = 1750
+# agent 峰值：实测跑任务时 agent 进程 70-150 MB，
+# 读大文件/写长脚本偶尔到 300 MB。原来写 700，是四倍余量 ——
+# 这 400 MB 白占的代价是整台机器平白少一个 context 档位。
+$AGENT_PEAK  = 350
+# 系统余量。原来 600，但实测 -c 5000 跑起来后系统只剩 640 MB 时
+# explorer/浏览器都还正常（Windows 会主动回收待机缓存）。
+# 400 足够，压太低才会让 svchost 被迫换页。
+$SYS_RESERVE = 320
 
 # ------------------------------------------------------------
 #  1. 量可用内存
@@ -126,32 +139,50 @@ $plans = @()
 # 任务第一步就死。实测就是这么翻车的：训练时内存紧，脚本算出 2048，
 # 结果 local-script 题 3 秒 error。宁可内存不够报错让用户关程序，
 # 也不能给一个跑不通的小 context。
-foreach ($ctx in @(6144, 6000, 5120, 4096)) {
-    # 只用 f16
-    $kvMB = [math]::Round(($ctx * $KV_PER_TOKEN['f16']) / 1MB)
-    # llama 自己要吃掉多少
-    $llamaMB = $MODEL_MB + $kvMB + $LLAMA_EXTRA
-    # 除了 llama，agent 跑任务时还要占（这部分从剩余内存里出）
-    $need = $llamaMB + $AGENT_PEAK + $SYS_RESERVE
-    $plans += [pscustomobject]@{
-        Context    = $ctx
-        KVType     = 'f16'
-        KVMB       = $kvMB
-        LlamaMB    = $llamaMB
-        NeedMB     = $need
-        # 余量要求从 300 降到 150：
-        # 预算口径已经扣过 200 缓冲，而且 Windows 会主动回收待机缓存，
-        # 留 300 太保守，会把能跑的方案判成跑不了（实测 5120 跑得好好的却被判「不够」）。
-        Fits       = (($budgetMB - $need) -ge 150)
-        HeadroomMB = $budgetMB - $need
+foreach ($ctx in @(6144, 6000, 5120, 5000, 4096, 4000)) {
+    # 每个 context 生成两套：先 f16（无损），再 q8_0（省一半 KV）。
+    # 排序时同 context 优先 f16，装不下才退到 q8_0。
+    foreach ($kvType in @('f16')) {
+        $kvMB = [math]::Round(($ctx * $KV_PER_TOKEN[$kvType]) / 1MB)
+        $llamaMB = $MODEL_MB + $kvMB + $LLAMA_EXTRA
+        $need = $llamaMB + $AGENT_PEAK + $SYS_RESERVE
+        $plans += [pscustomobject]@{
+            Context    = $ctx
+            KVType     = $kvType
+            KVMB       = $kvMB
+            LlamaMB    = $llamaMB
+            NeedMB     = $need
+            # 余量要求从 300 降到 150：
+            # 预算口径已经扣过 200 缓冲，而且 Windows 会主动回收待机缓存，
+            # 留 300 太保守，会把能跑的方案判成跑不了（实测 5120 跑得好好的却被判「不够」）。
+            Fits       = (($budgetMB - $need) -ge 150)
+            HeadroomMB = $budgetMB - $need
+        }
     }
 }
 
-# 从大到小找第一个装得下的：context 优先，同 context 优先高精度
-$best = $plans | Where-Object { $_.Fits } |
+# 挑方案。两条规则：
+#   ① context 不能超过 $Cfg.context —— 那是用户显式要的值，
+#      不能因为内存宽裕就自作主张升上去（用户要 5000 就给 5000，
+#      给到 6144 也许多几百 token 上下文，但那是他没要的，
+#      而且更占内存、更慢）。
+#   ② 在不超过的前提下，context 越大越好；同 context 优先高精度 KV。
+$ctxCap = [int]$Cfg.context
+if ($ctxCap -le 0) { $ctxCap = 4096 }
+$best = $plans | Where-Object { $_.Fits -and $_.Context -le $ctxCap } |
         Sort-Object @{ Expression = 'Context'; Descending = $true },
                     @{ Expression = { switch ($_.KVType) { 'f16' {3} 'q8_0' {2} 'q4_0' {1} } }; Descending = $true } |
         Select-Object -First 1
+
+# 配置值不在候选档里（比如用户写了 5000 但候选只有 5120/4096）时，
+# 上面会挑到 4096。这时候试一下「比配置大一级」的那个 ——
+# 差得不多的话，取大的那个实测更接近用户意图。
+if (-not $best) {
+    $best = $plans | Where-Object { $_.Fits } |
+            Sort-Object @{ Expression = 'Context'; Descending = $true },
+                        @{ Expression = { switch ($_.KVType) { 'f16' {3} 'q8_0' {2} 'q4_0' {1} } }; Descending = $true } |
+            Select-Object -First 1
+}
 
 if (-not $best) {
     # 一个都装不下：用最省的那套，但要警告
