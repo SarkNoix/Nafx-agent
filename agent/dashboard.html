@@ -1115,48 +1115,66 @@ header button,.side-actions button{
 
 /* ---------- 流式逐字输出（固定底部浮层）---------- */
 .stream-out{
-  /* 浮层，但钉在「对话区右下」而不是「输入框正上方」。
-     之前用 position:fixed 贴在输入框上面，直接压住输入框；
-     后来改成 static 塞进 #thread，结果每次重建都被冲掉，一直闪。
-     现在：fixed 定位在 body 上（不参与任何重建），
-     右边、贴近对话区底部；宽 420px 不挡中间，挡不住输入框。 */
+  /* 浮窗：钉在对话区右下角。
+     宽度按对话区宽度走（不再死板 430px），最窄 560px、最宽 720px；
+     高度最多 210px，够看七八行。
+     它挂在 body 上、不参与 thread 重建，所以不会闪。 */
   position:fixed;
-  right:calc((100vw - min(900px, 100vw - 36px)) / 2 + 18px);
-  bottom:150px;
-  width:min(430px, 40vw);
-  max-height:150px;
+  right:calc((100vw - min(1100px, 100vw - 40px)) / 2 + 20px);
+  bottom:132px;
+  width:clamp(560px, 46vw, 720px);
   z-index:55;
   pointer-events:auto;
-  box-shadow:0 6px 22px rgba(0,0,0,.28);
-  border-radius:12px;
+  /* 毛玻璃卡片，和面板整体质感统一 */
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:10px 12px 8px;
+  box-shadow:0 10px 34px rgba(0,0,0,.34), 0 0 0 1px rgba(255,255,255,.03) inset;
+  backdrop-filter:blur(14px) saturate(1.4);
+  -webkit-backdrop-filter:blur(14px) saturate(1.4);
+  transition:opacity .18s ease;
 }
-/* 浮窗在「回合进行中」始终显示，不靠 :empty 自动隐藏 —— 显隐由 JS 按 status 控制。 */
+[data-theme="glass"] .stream-out{
+  background:rgba(28,10,44,.52);
+  border-color:rgba(255,255,255,.22);
+}
+/* 回合不在跑就收起（.hide），避免占地方 */
 .stream-out.hide{display:none;}
 .stream-out > *{pointer-events:auto;}
 
 /* 收起状态：只留标题那一行，不挡任何内容 */
 .stream-out.collapsed .st-body{display:none;}
-.stream-out.collapsed{opacity:.72;}
+.stream-out.collapsed{opacity:.8;}
 .st-label{
-  font-size:var(--fs-xs);color:var(--faint);letter-spacing:.4px;margin-bottom:5px;
-  cursor:pointer;user-select:none;display:flex;align-items:center;gap:7px;
+  display:flex;align-items:center;gap:8px;
+  font-size:11.5px;color:var(--dim);
+  letter-spacing:.3px;margin-bottom:7px;
+  cursor:pointer;user-select:none;
 }
+/* 左边一个小呼吸点，一眼看出「它还在动」 */
+.st-label::before{
+  content:"";width:7px;height:7px;border-radius:50%;
+  background:var(--accent);flex:none;
+  animation:pulse 1.6s ease-in-out infinite;
+}
+@keyframes pulse{0%,100%{opacity:.35;transform:scale(.85)}50%{opacity:1;transform:scale(1)}}
 .st-fold{
   margin-left:auto;font-size:10px;color:var(--faint);
-  padding:1px 7px;border-radius:5px;
+  padding:2px 8px;border-radius:6px;
   border:1px solid var(--line);background:var(--panel2);
 }
+.st-fold:hover{color:var(--fg);border-color:var(--line2);}
 .st-body{
   font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
-  font-size:var(--fs-base);line-height:1.6;
-  background:var(--panel);
+  font-size:12.5px;line-height:1.66;
+  background:var(--panel2);
   border:1px solid var(--line);
   border-left:3px solid var(--accent);
-  border-radius:10px;padding:9px 12px;
-  /* 限高 110px（约 4 行）：再高就挡对话了。超出自动滚到底（renderStream 里做的） */
-  max-height:110px;overflow-y:auto;
+  border-radius:9px;padding:9px 12px;
+  /* 比之前高：210px 约 8 行，够看出它在写什么 */
+  max-height:210px;overflow-y:auto;
   white-space:pre-wrap;word-break:break-word;
-  box-shadow:0 -2px 16px rgba(0,0,0,.08);
 }
 .st-body.st-tool{color:#d9a441;}
 .st-body.st-text{color:var(--code-fg);}
@@ -1166,9 +1184,10 @@ header button,.side-actions button{
   margin-left:1px;
 }
 @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
-[data-theme="glass"] .st-body{background:rgba(20,6,32,.42);border-color:rgba(255,255,255,.22);}
+[data-theme="glass"] .st-body{background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.2);}
 [data-theme="glass"] .st-body.st-tool{color:#ffe0a3;}
 [data-theme="glass"] .st-body.st-text{color:rgba(255,255,255,.92);}
+[data-theme="glass"] .st-label{color:rgba(255,255,255,.8);}
 @media(prefers-reduced-motion:reduce){.st-caret{animation:none}}
 
 /* ---------- 想法块（think 单独显示）---------- */
@@ -1265,7 +1284,6 @@ header button,.side-actions button{
 .st-label::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--accent);
   animation:stPulse 1.2s ease-in-out infinite;flex-shrink:0;}
 @keyframes stPulse{0%,100%{opacity:.35;transform:scale(.85)}50%{opacity:1;transform:scale(1.15)}}
-.st-caret{font-size:.85em;vertical-align:.05em;}
 
 /* 消息气泡：更柔和的圆角和阴影 */
 .msg .bubble{border-radius:var(--radius-lg);line-height:1.7;}
@@ -1702,18 +1720,15 @@ header button,.side-actions button{
       </div>
     </div>
     <div class="cmdbar" id="cmdBar"></div>
-      <!-- 模式选择。三档，切换一次记住，下次打开还是上次选的。
-           常规 = 日常问答；工作 = 复杂任务（更多步、先列计划）；
-           自主 = 无人值守（禁止向用户提问，卡住自己想办法）。 -->
+      <!-- 模式选择。两档，切换一次记住，下次打开还是上次选的。
+           常规 = 日常问答，一步到三步就动手；工作 = 复杂任务，先拆再排再做。
+           自主模式不在这里 —— 它在左侧抽屉里，单独一套（不向你提问、自己拍板）。 -->
       <div class="mode-row" id="modeRow">
         <button class="mode-btn on" data-mode="normal" title="日常问答和简单任务：直接给结果">
           <span class="mi">💬</span>常规
         </button>
         <button class="mode-btn" data-mode="work" title="复杂任务：步数翻倍、强制先列计划、可用技能">
           <span class="mi">🔧</span>工作
-        </button>
-        <button class="mode-btn" data-mode="auto" title="无人值守：不向你提问，卡住自己想办法">
-          <span class="mi">🤖</span>自主
         </button>
         <span class="mode-hint" id="modeHint">日常问答、简单任务</span>
       </div>
@@ -2336,29 +2351,35 @@ function resetStream(){
    ② 收之前先把光标停掉，避免「文字没了光标还在闪」的感觉。 */
 var streamHideTimer = null;
 function hideStreamSoon(){
+  // 任务刚结束（或进入停顿）时，延时把浮窗收掉。
+  //
+  // 这个延时是为了避免「两步之间停顿十几秒，浮窗一闪一闪」。
+  // 但定时器里如果直接清文字，而下一个 tick 又判定 busy 把浮窗亮起来，
+  // 两者就会打架 —— 你看到的就是浮窗在闪。
+  //
+  // 所以：定时器触发时先复查一遍 status，还在跑就直接跳过。
   if (streamHideTimer) clearTimeout(streamHideTimer);
   streamHideTimer = setTimeout(function(){
     streamHideTimer = null;
+    // 还在跑就不收
+    if (curState && curState.status === 'running') return;
     var el = document.getElementById('streamOut');
-    // 只清文字，不清 innerHTML —— 骨架是静态的，删了整个浮窗就散了。
-  if (el) { var t0 = el.querySelector('.st-txt'); if (t0) t0.textContent = ''; }
+    if (el) { var t0 = el.querySelector('.st-txt'); if (t0) t0.textContent = ''; }
     stNode = null;
     streamText = '';
     // 不要把 streamSeq 清成 0：agent 的 seq 在一个任务内连续递增，
-    // 清 0 之后新内容的 seq 会落在「已经收过」的区间里被去重丢掉，浮窗就一直空着。
-    // 只清显示内容，序号留着（新任务开始时 resetStream 统一置零）。
+    // 清 0 之后新内容的 seq 会落在「已经收过」的区间里被去重丢掉。
     //streamSeq = 0;
   }, 1200);
 }
 
-function showStreamPanel(text){
-  // 显示浮窗。回合在跑就一直显示，不因为「还没输出」而藏起来 ——
-  // 模型思考几十秒不出字的时候，最需要让用户看到它在干活。
+function showStreamPanel(){
+  // 只负责显隐，不碰文字。
+  // 之前它和 renderStream 都在写同一个文字节点（一个写「正在思考…」、
+  // 一个写 streamText），每轮互相覆盖一次 —— 这就是浮窗一直闪的原因。
+  // 现在文字只由 renderStream 一处写。
   var el = document.getElementById('streamOut');
-  if (!el) return;
-  el.classList.remove('hide');
-  var t = el.querySelector('.st-txt');
-  if (t && text !== undefined && t.textContent !== text) t.textContent = text;
+  if (el) el.classList.remove('hide');
 }
 function hideStreamPanel(){
   var el = document.getElementById('streamOut');
@@ -2408,8 +2429,9 @@ function renderStream(){
   var el = ensureStreamSkeleton();
   if (!el || !stNode) return;
   // 直接替换文本节点的内容，不走 innerHTML 解析
-  if (stNode.firstChild) stNode.firstChild.nodeValue = streamText;
-  else stNode.appendChild(document.createTextNode(streamText));
+  var shown = streamText || '正在思考…';
+  if (stNode.firstChild) stNode.firstChild.nodeValue = shown;
+  else stNode.appendChild(document.createTextNode(shown));
   // 配色只在类型变化时改，避免每帧改 class 触发样式重算
   var body = el.querySelector('.st-body');
   if (body) {
@@ -3049,7 +3071,7 @@ function tick(){
       // 回合在跑 → 浮窗一直亮着。
       // 之前靠 .stream-out:empty 自动隐藏，模型思考的几十秒里一个字都不吐，
       // 浮窗就消失了 —— 用户以为它挂了。现在只看 status，不看有没有内容。
-      if (busy) { showStreamPanel(streamText ? undefined : '（正在思考…）'); }
+      if (busy) { showStreamPanel(); renderStream(); }
       else { hideStreamPanel(); }
       // 任务在跑才拉流式增量。
       //
