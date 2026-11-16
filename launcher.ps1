@@ -209,3 +209,29 @@ if (-not $NoBrowser) {
         Start-Process $panelUrl
     }
 }
+
+# ------------------------------------------------------------
+#  面板看门狗
+#  面板偶尔会自己退出，用户看到的就是「面板突然没了」，
+#  还得手动重开。这里顺手带一个：端口不通就拉起来。
+#  已经在跑就不重复起（先查一下进程，免得越开越多）。
+# ------------------------------------------------------------
+try {
+    $wdScript = Join-Path $Root 'scripts\watchdog.ps1'
+    if (Test-Path $wdScript) {
+        $wdRunning = $false
+        try {
+            foreach ($wp in @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue)) {
+                if ([string]$wp.CommandLine -match 'watchdog\.ps1') { $wdRunning = $true; break }
+            }
+        } catch { }
+        if (-not $wdRunning) {
+            $wdPort = if ($Cfg.monitorPort) { [int]$Cfg.monitorPort } else { 8090 }
+            Start-Process -FilePath 'powershell.exe' `
+                -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-WindowStyle','Hidden',
+                                '-File', $wdScript, '-Port', [string]$wdPort) `
+                -WindowStyle Hidden
+            Write-Host '看门狗已启动（面板掉了会自动拉起）' -ForegroundColor DarkGray
+        }
+    }
+} catch { }

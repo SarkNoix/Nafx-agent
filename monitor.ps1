@@ -280,15 +280,36 @@ function Get-MergedState {
 
     # state.json 说 running，但 agent 进程已经没了——系统重启、Ctrl+C、被 taskkill。
     # 这时候还照 state 显示「思考中」，用户看到的就是一个永远不动的死面板。
+    #
+    # 但这个判断必须很保守，误报比不报更难受：
+    #   ① Get-CimInstance 偶尔查不全（进程刚起来、命令行还没就绪），
+    #      直接判"没了"会让正在跑的任务显示成"已中断"。
+    #   ② 原来只匹配 '-File\s+.*agent\.ps1'，路径带引号/空格就匹配不上。
+    #   ③ 用 state.json 的修改时间做第二重证据：agent 每步都会 Write-State，
+    #      只要最近改过，就说明它还活着。
+    # 只有「找不到进程」且「state.json 已经 25 秒没更新」才判中断。
     if ([string]$main.status -eq 'running') {
         $hasAgent = $false
         try {
             foreach ($ap in @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue)) {
                 $acl = [string]$ap.CommandLine
-                if ($acl -match '-File\s+.*agent\.ps1') { $hasAgent = $true; break }
+                # 宽松匹配：只要命令行里出现 agent.ps1 就算，不再依赖 -File 的写法
+                if ($acl -match 'agent\.ps1') { $hasAgent = $true; break }
             }
-        } catch { $hasAgent = $true }   # 查不到就当作在跑，宁可不动也别误报
-        if (-not $hasAgent) {
+        } catch {
+            $hasAgent = $true   # 查询本身失败就当作在跑
+        }
+
+        # 第二重证据：state 文件最近还在被写吗
+        $staleSec = 9999
+        try {
+            $sf0 = Get-SlotStateFile ([int]$main.slot)
+            if (Test-Path $sf0) {
+                $staleSec = ((Get-Date) - (Get-Item $sf0).LastWriteTime).TotalSeconds
+            }
+        } catch { }
+
+        if (-not $hasAgent -and $staleSec -gt 25) {
             $main.status = 'interrupted'
             $main.phase = '上次运行被中断（进程已退出），结果可能不完整'
         }
@@ -1066,8 +1087,33 @@ while ($listener.IsListening) {
         Invoke-Dispatch
 
     } catch {
-        # 单次请求出错不能拖垮整个面板
+        # 单次请求出错不能拖垮整个面板。
+        #
+        # 关键是这里必须把监听句柄重新挂上。
+        # 如果异常发生在 EndGetContext 之后、或者 async 本身已经失效，
+        # 原来的写法只关流 + 睡 200ms 就继续循环 ——
+        # 下一轮 WaitOne 立刻返回、EndGetContext 又抛，转成死循环，
+        # 表现就是"面板突然没反应了"，浏览器一直转圈。
         try { [void]$ctx.Response.OutputStream.Close() } catch { }
-        Start-Sleep -Milliseconds 200
+        try {
+            if (-not $listener.IsListening) { break }
+            # 重新挂一个干净的异步监听
+            $async = $listener.BeginGetContext($null, $null)
+        } catch {
+            # 连 BeginGetContext 都失败，说明监听器本身废了，重建它
+            try {
+                $listener.Stop()
+                $listener.Close()
+            } catch { }
+            try {
+                $listener = New-Object System.Net.HttpListener
+                $listener.Prefixes.Add("http://$($Cfg.host):$Port/")
+                $listener.Start()
+                $async = $listener.BeginGetContext($null, $null)
+            } catch {
+                Start-Sleep -Seconds 2
+            }
+        }
+        Start-Sleep -Milliseconds 150
     }
 }
