@@ -2334,6 +2334,10 @@ function taskLabel(task){
    拼起来就是完整参数 —— 这正是模型一个字一个字写出来的样子。 */
 var streamText = '';
 var streamKind = '';
+// 最后一次「真的收到模型输出」的时间戳。
+// 浮窗靠它判断到底在不在输出 —— 只看 status=running 会出问题：
+// 进程卡住/死掉时 status 可能还停在 running，浮窗就一直挂着「正在输出」。
+var lastStreamAt = 0;
 
 /* 流式渲染：只追加文字节点，不重建 DOM。
    之前每次 pullStream 都 el.innerHTML = '<div>...' + streamText + '...'，
@@ -2347,6 +2351,7 @@ function resetStream(){
   streamSeq = 0;
   streamText = '';
   streamKind = '';
+  lastStreamAt = 0;
   stNode = null;
   if (streamHideTimer) { clearTimeout(streamHideTimer); streamHideTimer = null; }
   var el = document.getElementById('streamOut');
@@ -2439,7 +2444,22 @@ function renderStream(){
   var el = ensureStreamSkeleton();
   if (!el || !stNode) return;
   // 直接替换文本节点的内容，不走 innerHTML 解析
-  var shown = streamText || '正在思考…';
+  // 显示内容分三种情况：
+  //   ① 有输出 → 显示输出（streamText）
+  //   ② 没有输出、但 20 秒内收到过心跳 → 「正在思考…」
+  //   ③ 20 秒以上一个字都没吐 → 「好像没动静了」+ 已等秒数
+  // 第三种是在修「显示模型正在输出，实际上并不在输出」：
+  // 进程卡住或死掉时 status 仍可能停在 running，
+  // 光看 status 会一直挂着「正在输出」，误导人。
+  var shown = streamText;
+  if (!shown) {
+    var idleMs = lastStreamAt ? (Date.now() - lastStreamAt) : 0;
+    if (curState && curState.status === 'running' && idleMs > 20000) {
+      shown = '没动静了 —— 已等 ' + Math.round((curState.elapsed||0)) + ' 秒';
+    } else {
+      shown = '正在思考…';
+    }
+  }
   if (stNode.firstChild) stNode.firstChild.nodeValue = shown;
   else stNode.appendChild(document.createTextNode(shown));
   // 配色只在类型变化时改，避免每帧改 class 触发样式重算
@@ -2479,6 +2499,7 @@ function pullStream(){
           if (s && s <= streamSeq) continue;
           streamText += it.text || '';
           streamKind = it.kind || 'text';
+          lastStreamAt = Date.now();
         }
         renderStream();
       }
@@ -3092,10 +3113,16 @@ function tick(){
       // 或者同一个任务重开（步数回到 1、用时归零），都能认出来。
       if (busy) {
         var taskFp = String(st.task || '') + '|' + (st.step || 0) + '|';
+        // 只用「任务名变了」判断是不是新任务。
+        //
+        // 原来还加了 (step<=1 || elapsed<3) —— 那是想覆盖「同一个任务重开」的情况，
+        // 但 elapsed 在 agent 侧会被心跳反复写，step 也可能短暂回到 1，
+        // 于是运行途中时不时被判成「重开」，resetStream 清空浮窗文字，
+        // 下一轮 renderStream 又写回来 —— 这就是一直闪的原因。
+        //
+        // 同一个任务重开时任务名本来就一样，靠 __lastTask 在任务结束时置空来兜底就够了。
         var restarted = !!window.__lastTask &&
-                        (String(st.task || '') !== String(window.__lastTaskText || '') ||
-                         (st.step || 0) <= 1 ||
-                         (st.elapsed || 0) < 3);
+                        (String(st.task || '') !== String(window.__lastTaskText || ''));
         if (!window.__lastTask || restarted) {
           resetStream();
           window.__lastTaskText = String(st.task || '');
