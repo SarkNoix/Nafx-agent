@@ -1328,6 +1328,31 @@ header button,.side-actions button{
   box-shadow:0 1px 6px rgba(120,70,220,.5);
 }
 
+
+/* ---------- 模型提问气泡 ---------- */
+.msg.asking .bubble{
+  border-left:3px solid var(--accent);
+  background:linear-gradient(135deg,var(--panel2) 0%,var(--panel) 100%);
+}
+.msg.asking .who{color:var(--accent);font-weight:600}
+.ask-cd{
+  font-family:ui-monospace,Consolas,monospace;
+  font-size:11px;font-weight:400;color:var(--faint);margin-left:4px;
+}
+.ask-cd.hot{color:var(--err,#e2544c);font-weight:700}
+.ask-go{
+  margin-top:9px;display:inline-block;
+  padding:5px 13px;border-radius:7px;
+  font-size:12px;font-weight:600;cursor:pointer;
+  background:var(--accent);color:#fff;
+  transition:.15s;
+}
+.ask-go:hover{filter:brightness(1.1)}
+[data-theme="glass"] .msg.asking .bubble{
+  background:rgba(30,10,50,.55);border-left-color:rgba(255,255,255,.8);
+}
+[data-theme="glass"] .ask-go{background:rgba(255,255,255,.92);color:#5c2d80}
+
 </style>
 </head>
 <body>
@@ -2194,12 +2219,20 @@ function hideAnswerBox(){
 
 function tickAnswerCd(){
   if (!curAsk) return;
-  var el = $('answerCd');
-  if (!el) return;
   var left = Math.max(0, Math.ceil((curAsk.deadline - Date.now()) / 1000));
-  el.textContent = left + 's';
-  el.className = 'cd' + (left <= 10 ? ' hot' : '');
-  if (left <= 0) { hideAnswerBox(); }
+  var el = $('answerCd');
+  if (el) {
+    el.textContent = left + 's';
+    el.className = 'cd' + (left <= 10 ? ' hot' : '');
+  }
+  // 气泡里的倒计时也一起走。
+  // 原来这里 if(!el) return 就先退出了，气泡上的秒数会卡住不动。
+  var bcd = document.querySelector('.msg.asking .ask-cd');
+  if (bcd) {
+    bcd.textContent = left + 's';
+    bcd.className = 'ask-cd' + (left <= 10 ? ' hot' : '');
+  }
+  if (left <= 0) { hideAnswerBox(); lastSig = ''; renderFlow(window.__lastSess, window.curState); }
 }
 
 function checkAsk(){
@@ -2225,8 +2258,17 @@ function checkAsk(){
       }
 
       if (curDel) hideDelBox();
-      if (!curAsk || curAsk.question !== a.question || curAsk.id !== a.id){
+
+      // 判重只看 id。
+      // 原来是 `!curAsk || question 不同 || id 不同` —— 三个条件是「或」的关系，
+      // 只要 id 变一下就重开，而后端每次重新生成 id（面板重连、任务重试）都会导致
+      // 同一条问题被再渲染一遍，看起来就是「重复问了你两遍」。
+      // 现在同一 id 只开一次；id 变了才当新问题。
+      if (!curAsk || curAsk.id !== a.id){
         showAnswerBox(a.question, Date.now() + sec * 1000, a.id);
+        // 让对话流重画一次，把提问气泡插进去
+        lastSig = '';
+        renderFlow(window.__lastSess, window.curState);
       }
     })
     .catch(function(){});
@@ -2415,10 +2457,33 @@ function renderFlow(sess, st){
   var wasAtBottom = (thread.scrollHeight - thread.scrollTop - thread.clientHeight) < 140;
   var html = '';
   for (var k=0;k<arr.length;k++) html += msgBubble(arr[k], k);
+  // 模型正在问你的话，直接渲染成对话气泡。
+  // 原来只有输入区上面一条细横条，用户感觉不到"它在问我"，
+  // 而且横条一旦被滚出视野就彻底看不见了。
+  html += askBubble();
   html += liveBox(st);
   thread.innerHTML = html;
   bindMsgOps();
   if (wasAtBottom) thread.scrollTop = thread.scrollHeight;
+}
+
+/* 模型提问的气泡。和普通消息一个样子，只是标成「Nafx · 提问中」，
+   底下带倒计时和「去回答」按钮（点了把焦点送进输入框）。 */
+function askBubble(){
+  if (!curAsk || !curAsk.question) return '';
+  var left = Math.max(0, Math.ceil((curAsk.deadline - Date.now()) / 1000));
+  return '<div class="msg assistant asking"><div class="wrap"><div class="bubble">' +
+    '<div class="who">Nafx · 问你 <span class="ask-cd">' + left + 's</span></div>' +
+    fmtMsg(curAsk.question) +
+    '<div class="ask-go" onclick="focusAnswer()">去回答 ↓</div>' +
+    '</div></div></div>';
+}
+
+function focusAnswer(){
+  var ta = $('answerInput');
+  var box = $('answerBox');
+  if (box) box.className = 'answer-box on';
+  if (ta) { ta.focus(); }
 }
 
 function bindMsgOps(){
