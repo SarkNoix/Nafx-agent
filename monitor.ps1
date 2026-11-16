@@ -138,13 +138,19 @@ function Save-Queue {
 }
 
 function Add-QueueItem {
-    param([string]$TaskText, [int]$Priority = 5)
+    param([string]$TaskText, [int]$Priority = 5, [string]$Mode = 'normal')
+    # 模式随任务入队，调度时再传给 agent。
+    #   normal 常规 / work 工作（步数多、先列计划）/ auto 自主（禁止提问）
+    # 写错了一律当 normal，别因为一个参数拼错任务就跑不起来。
+    $Mode = ([string]$Mode).Trim().ToLower()
+    if ($Mode -notin @('normal', 'work', 'auto')) { $Mode = 'normal' }
     $items = Get-Queue
     $item = [pscustomobject]@{
         id        = 'q' + (Get-Date -Format 'HHmmss') + [Guid]::NewGuid().ToString('N').Substring(0,4)
         task      = $TaskText
         status    = 'pending'
         priority  = $Priority
+        mode      = $Mode
         addedAt   = (Get-Date -Format 'MM-dd HH:mm:ss')
         startedAt = ''
         doneAt    = ''
@@ -230,10 +236,22 @@ function Invoke-Dispatch {
 
         Set-QueueStatus -Id $next.id -Status 'running' -Slot $slot
 
+        # 取任务模式（老队列项没有 mode 字段，当 normal）
+        $nextMode = 'normal'
+        if ($next.PSObject.Properties.Name -contains 'mode' -and $next.mode) { $nextMode = [string]$next.mode }
+        if ($nextMode -notin @('normal', 'work', 'auto')) { $nextMode = 'normal' }
+
+        # 各模式的步数上限要和 agent.ps1 里的判断一致，
+        # 不然面板显示的 maxSteps 和实际跑的不一样。
+        $modeMaxSteps = [int]$Cfg.maxSteps
+        if ($nextMode -eq 'work') { $modeMaxSteps = [int][Math]::Min(60, [int]$Cfg.maxSteps * 2) }
+        if ($nextMode -eq 'auto') { $modeMaxSteps = [int][Math]::Min(40, [int]$Cfg.maxSteps + 10) }
+
         $slotState = Get-SlotStateFile $slot
-        $ph = '{"status":"running","task":' + (J $next.task) + ',"steps":[],"step":1,"maxSteps":' + $Cfg.maxSteps +
+        $ph = '{"status":"running","task":' + (J $next.task) + ',"steps":[],"step":1,"maxSteps":' + $modeMaxSteps +
               ',"elapsed":0,"phase":"第' + $slot + '路 准备","model":' + (J $Cfg.modelLabel) +
-              ',"workspace":' + (J $Cfg.workspace) + ',"answer":"","logFile":"","slot":' + $slot + '}'
+              ',"workspace":' + (J $Cfg.workspace) + ',"answer":"","logFile":"","slot":' + $slot +
+              ',"mode":' + (J $nextMode) + '}'
         [IO.File]::WriteAllText($slotState, $ph, (New-Object Text.UTF8Encoding($false)))
         # 第 1 路的也同步到主 state，兼容老逻辑
         if ($slot -eq 1) { [IO.File]::WriteAllText($StateFile, $ph, (New-Object Text.UTF8Encoding($false))) }
@@ -243,10 +261,10 @@ function Invoke-Dispatch {
         $env:NAFX_STATE = $slotState
         try {
             $proc = Start-Process -FilePath 'powershell.exe' `
-                -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $AgentPath, '-MaxSteps', "$($Cfg.maxSteps)" `
+                -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $AgentPath, '-MaxSteps', "$modeMaxSteps", '-Mode', $nextMode `
                 -RedirectStandardOutput $uiLog -WindowStyle Hidden -PassThru
             $Workers[$slot] = $proc
-            Write-Host ("  [第{0}路] {1}" -f $slot, $next.task) -ForegroundColor Green
+            Write-Host ("  [第{0}路] ({1}) {2}" -f $slot, $nextMode, $next.task) -ForegroundColor Green
         } catch {
             Write-Host ("  [第{0}路] 启动失败：{1}" -f $slot, $_.Exception.Message) -ForegroundColor Red
             Set-QueueStatus -Id $next.id -Status 'failed' -Result '进程启动失败'
@@ -497,18 +515,20 @@ while ($listener.IsListening) {
 
                 '/api/run' {
                     if ($method -ne 'POST') { Send-Text -Response $resp -Text '{"ok":false,"msg":"只接受 POST"}' -Code 405; break }
-                    $task = ''; $prio = 5
+                    $task = ''; $prio = 5; $runMode = 'normal'
                     try {
                         $b = Read-Body $ctx.Request | ConvertFrom-Json
                         $task = ([string]$b.task).Trim()
                         if ($b.PSObject.Properties.Name -contains 'priority') { $prio = [int]$b.priority }
+                        if ($b.PSObject.Properties.Name -contains 'mode') { $runMode = [string]$b.mode }
                     } catch { }
+                    if ($runMode -notin @('normal', 'work', 'auto')) { $runMode = 'normal' }
                     if ([string]::IsNullOrWhiteSpace($task)) { Send-Text -Response $resp -Text '{"ok":false,"msg":"任务不能为空"}' -Code 400; break }
-                    $item = Add-QueueItem -TaskText $task -Priority $prio
+                    $item = Add-QueueItem -TaskText $task -Priority $prio -Mode $runMode
                     $q = Get-Queue
                     $pend = 0; $run = 0
                     foreach ($it in $q) { if ($it.status -eq 'pending') { $pend++ }; if ($it.status -eq 'running') { $run++ } }
-                    Send-Text -Response $resp -Text ('{"ok":true,"id":' + (J $item.id) + ',"pending":' + $pend + ',"running":' + $run + '}')
+                    Send-Text -Response $resp -Text ('{"ok":true,"id":' + (J $item.id) + ',"mode":' + (J $runMode) + ',"pending":' + $pend + ',"running":' + $run + '}')
                 }
 
                 '/api/answer' {

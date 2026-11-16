@@ -13,6 +13,12 @@
 param(
     [string]$Task = '',
     [int]$MaxSteps = 0,
+    # 三种模式，决定「想多深、能走多远、能不能问人」：
+    #   normal  常规：日常问答和简单任务。步数少、直接给结果，别绕
+    #   work    工作：复杂任务。步数多、强制先列计划、允许用技能
+    #   auto    自主：无人值守。**禁止 say（问了也没人答）**，
+    #           卡住就自己想办法，实在不行 finish 说清楚卡在哪
+    [string]$Mode = 'normal',
     [switch]$ShowRaw
 )
 
@@ -42,13 +48,64 @@ if (Test-Path $modsLoader) {
 
 if (-not $Task) { $Task = [string]$env:NAFX_TASK }
 if (-not $Task) { $Task = '你好' }
-if ($MaxSteps -le 0) { $MaxSteps = [int]$Cfg.maxSteps }
+
+# ----
+# 模式：normal / work / auto
+#
+# 三种模式调的其实是同一套东西（同一个模型、同一批工具），
+# 差别只在"给多少预算、要它想多深、允不允许问人"：
+#
+#   normal（常规）  日常问答、简单任务。就是现在这套，不加负担。
+#   work（工作）    复杂任务。步数翻倍、强制每步先列计划、
+#                   允许用技能和脚本。慢但能把多步任务走完。
+#   auto（自主）    无人值守。**say 直接禁掉** —— 自主模式下没人看着，
+#                   问了也没人答，只会卡 60 秒然后超时。
+#                   卡住就自己换路子，实在不行 finish 说清卡在哪。
+#
+# 模式没设或者写错，一律当 normal —— 别因为一个参数拼错就跑不起来。
+$Mode = ([string]$Mode).Trim().ToLower()
+if ($Mode -notin @('normal', 'work', 'auto')) { $Mode = 'normal' }
+$script:AgentMode = $Mode
+
+# auto 模式下不能问人
+$script:AllowAsk = ($Mode -ne 'auto')
+# work 模式要求先列计划（plan），normal 不强制
+$script:WantPlan = ($Mode -eq 'work')
+
+if ($MaxSteps -le 0) {
+    $MaxSteps = [int]$Cfg.maxSteps
+    if ($Mode -eq 'work') { $MaxSteps = [int][Math]::Min(60, $MaxSteps * 2) }
+    if ($Mode -eq 'auto') { $MaxSteps = [int][Math]::Min(40, $MaxSteps + 10) }
+}
 
 $Api       = "http://$($Cfg.host):$($Cfg.port)"
 $Workspace = if ([IO.Path]::IsPathRooted([string]$Cfg.workspace)) { [string]$Cfg.workspace } else { Join-Path $Root ([string]$Cfg.workspace) }
 $LogDir    = Join-Path $AgentDir 'logs'
 $StateFile = if ($env:NAFX_STATE) { $env:NAFX_STATE } else { Join-Path $AgentDir 'state.json' }
 if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Force -Path $LogDir | Out-Null }
+
+# ---- 真实上下文长度 ----
+# 问 llama 一次要它实际的 n_ctx，拿 config.json 的值当兜底。
+#
+# 为什么不能直接用 config：内存脚本会按可用内存把 -c 降档
+# （配置写 5000，实际起 -c 4000 → n_ctx 4096），但 config.json 不会跟着改。
+# agent 照着 5000 算预算，就会以为能塞 4340 token 输入，比实际多出 844 ——
+# 一超就是 400（实测 prompt 4009 ok、4209 直接 400，body 还是空的，很难查）。
+$script:RealCtx = [int]$Cfg.context
+try {
+    $propsResp = Invoke-WebRequest -Uri ($Api + '/props') -UseBasicParsing -TimeoutSec 5
+    $propsObj = $propsResp.Content | ConvertFrom-Json
+    $realCtx = [int]$propsObj.default_generation_settings.n_ctx
+    if ($realCtx -gt 0) {
+        $script:RealCtx = $realCtx
+        if ($realCtx -ne [int]$Cfg.context) {
+            Write-Host ("  上下文按 llama 实际值 " + $realCtx + "（配置里是 " + [int]$Cfg.context + "）") -ForegroundColor DarkYellow
+        }
+    }
+} catch {
+    # 问不到就用配置值。这种情况一般说明模型还没起来，
+    # 后面每步开头还有 Test-ModelAlive 兜着。
+}
 
 # 日志要定期清理。每次任务生成一个 run_*.txt，跑几十轮训练就是几百个，
 # 实测已经堆到 560 个（0.7 MB）。虽然不大，但会一直涨，
@@ -176,10 +233,17 @@ $ToolsSchemaRaw = (Get-Content (Join-Path $AgentDir 'tools-schema.json') -Raw -E
 # ------------------------------------------------------------
 $script:StreamFile = Join-Path $AgentDir 'stream.jsonl'
 $script:StreamSeq  = 0
+# 上一次已经吐过的参数指纹，防止同一条工具调用被重复播报
+$script:lastArgTool = ''
+$script:lastArgLen  = -1
 function Reset-Stream {
     try {
         [IO.File]::WriteAllText($script:StreamFile, '', (New-Object Text.UTF8Encoding($false)))
         $script:StreamSeq = 0
+        # 指纹也要清。不然新任务第一次调 write_file，
+        # 要是参数长度恰好和上个任务的相同，会被判成「已经吐过」而静默跳过。
+        $script:lastArgTool = ''
+        $script:lastArgLen  = -1
     } catch { }
 }
 function StreamPiece {
@@ -196,6 +260,108 @@ function StreamPiece {
             $fs.Flush()
         } finally { $fs.Close() }
     } catch { }
+}
+
+# 把累积到一半的 tool_call 参数 JSON 翻成「人读的那一段」。
+#
+# 目标是：用户看到的是
+#   → move_path  note.txt → test\note.txt
+# 而不是
+#   → move_path  {"path": "note.txt", "command": "test\\note.txt"}
+#
+# 做法：每次拿到新分片，先试着把整段 JSON 解析出来。
+#   解析成功 → 把关键字段拼成一行，只吐出「比上次多出来的那部分」
+#             （这样 stream 里是追加语义，前端直接拼，不用重画）
+#   解析失败 → JSON 还没写完，退回逐字吐原始分片，保留「正在打字」的观感
+#
+# 参数各工具的字段名不一样，这里按工具挑最该看的 1-2 个：
+#   路径类看 path，move/copy 还看 command（目标），write 类看内容开头
+function Get-ReadableArgPiece {
+    param([string]$Tool, [string]$Raw, [int]$PrevLen = 0)
+
+    if ([string]::IsNullOrWhiteSpace($Raw)) { return '' }
+    $obj = $null
+    try { $obj = $Raw | ConvertFrom-Json } catch { $obj = $null }
+
+    if (-not $obj) {
+        # JSON 还没写完：吐新增的原始分片（保持逐字效果）
+        if ($PrevLen -ge 0 -and $PrevLen -lt $Raw.Length) { return $Raw.Substring($PrevLen) }
+        return ''
+    }
+
+    # 解析成功：按工具挑字段拼成一行
+    $parts = @()
+    $get = {
+        param($n)
+        if ($obj.PSObject.Properties.Name -contains $n) {
+            $v = [string]$obj.$n
+            if ($v.Trim()) { return $v.Trim() }
+        }
+        return ''
+    }
+    $p    = & $get 'path'
+    $cmd  = & $get 'command'
+    $cont = & $get 'content'
+    $find = & $get 'find'
+    $rep  = & $get 'replace'
+
+    switch -Regex ($Tool) {
+        '^move_path$|^copy_path$' {
+            if ($p -and $cmd) { $parts += ($p + ' → ' + $cmd) }
+            elseif ($p)       { $parts += $p }
+        }
+        '^write_file$|^append_file$|^write_script$' {
+            if ($p) { $parts += $p }
+            if ($cont) {
+                $one = ($cont -replace '\s+', ' ')
+                if ($one.Length -gt 40) { $one = $one.Substring(0, 40) + '…' }
+                $parts += ('「' + $one + '」')
+            }
+        }
+        '^replace_in_file$' {
+            if ($p) { $parts += $p }
+            if ($find -and $rep) {
+                $f2 = if ($find.Length -gt 20) { $find.Substring(0, 20) + '…' } else { $find }
+                $r2 = if ($rep.Length -gt 20)  { $rep.Substring(0, 20) + '…' }  else { $rep }
+                $parts += ($f2 + ' → ' + $r2)
+            }
+        }
+        '^run_cmd$|^run_ps$|^run_ps1$|^syshelp$|^skill$|^web_search$' {
+            if ($cmd) { $parts += $cmd }
+        }
+        '^think$|^note$|^finish$' {
+            if ($cont) {
+                $one = ($cont -replace '\s+', ' ')
+                if ($one.Length -gt 80) { $one = $one.Substring(0, 80) + '…' }
+                $parts += $one
+            }
+        }
+        default {
+            if ($p) { $parts += $p }
+            if ($cmd) { $parts += $cmd }
+        }
+    }
+
+    if ($parts.Count -eq 0) { return '' }
+    $line = ($parts -join '  ')
+
+    # 只吐一次。
+    #
+    # 这里没法做"纯追加"：JSON 是流式到的，
+    # {"path": "note.txt"} 先到、{"path": "note.txt", "command": "test\note.txt"} 后到，
+    # 解析出来的行会从「note.txt」变成「note.txt → test\note.txt」——
+    # 追加的话用户会看到「note.txtnote.txt → test\note.txt」这种叠加。
+    # 所以用「参数长度过阈值才算稳定」来判断：
+    #   还没稳定 → 返回空（等它把 JSON 写完）
+    #   稳定了   → 一次性给完整那行
+    # 前端把同一工具的多次 tool 片段拼起来时，最后那条会盖掉前面，
+    # 面板那边已经按 kind 累积，这里只要保证「稳定后只发一次」即可。
+    if ($script:lastArgLen -ne $null -and $script:lastArgTool -eq $Tool -and $Raw.Length -eq $script:lastArgLen) {
+        return ''
+    }
+    $script:lastArgTool = $Tool
+    $script:lastArgLen = $Raw.Length
+    return $line
 }
 
 # 把 schema 按工具名拆开，路由时只发相关的几个
@@ -658,6 +824,7 @@ function Invoke-Model {
                         if ($tc.function -and $tc.function.name) { $cur.name = [string]$tc.function.name }
                         if ($tc.function -and $null -ne $tc.function.arguments) {
                             $frag = [string]$tc.function.arguments
+                            $prevArgsLen = $cur.args.Length
                             $cur.args += $frag
                             # 参数分片实时显示（这就是「一个字一个字」的效果）
                             if (-not $cur.shown) {
@@ -666,7 +833,17 @@ function Invoke-Model {
                                 StreamPiece -Text ("→ " + $cur.name + " ") -Kind 'tool'
                             }
                             Write-Host $frag -NoNewline -ForegroundColor DarkYellow
-                            StreamPiece -Text $frag -Kind 'tool'
+
+                            # 流里不写原始 JSON，写「人能读懂的那部分」。
+                            #
+                            # 原来把分片原样灌进 stream，用户看到的是
+                            #   → write_file {"path": "selftest/readme.txt", "content": "自审通过"}
+                            # 全是引号冒号，读起来费劲。
+                            # 现在只吐参数值：先把当前累积的 JSON 尝试解析，
+                            # 成功了就把每个字段的值拼成一行；没解析完（JSON 还不完整）
+                            # 就退回去逐字吐，保持「正在打字」的感觉。
+                            $piece = Get-ReadableArgPiece -Tool $cur.name -Raw $cur.args -PrevLen $prevArgsLen
+                            if ($piece) { StreamPiece -Text $piece -Kind 'tool' }
                         }
                     }
                 }
@@ -1271,6 +1448,27 @@ if ($script:ActiveMods -and $script:ActiveMods.Count -gt 0) {
     foreach ($ml in $modScriptLog) { Write-Host ("  [mod] " + $ml) -ForegroundColor DarkCyan }
 }
 # 消息顺序直接影响速度：llama 的 prompt cache 按「从头匹配到哪」算，
+# ---- 按模式追加作业要求 ----
+# 放在 sysFull 拼完之后、history 组装之前。
+# 三段的差别只在"要不要问人、想多深、卡住了怎么办"，
+# 其余规则（路径、工具选择、出错怎么办）三种模式共用，不重复写。
+if ($Mode -eq 'auto') {
+    $sysFull += "`n`n## 现在是自主模式" + "`n`n" +
+        "**没有人在看着。`say` 在这个模式下是禁用的 —— 问了也没人答，只会白等。**" + "`n" +
+        "遇到不确定的地方，自己选一个最合理的做法往下做，在 answer 里说明你选了什么、为什么。" + "`n" +
+        "实在做不下去，用 `finish` 说清楚卡在哪一步、缺什么，别硬耗。"
+    Write-Log '  模式：自主（禁止 say）'
+} elseif ($Mode -eq 'work') {
+    $sysFull += "`n`n## 现在是工作模式" + "`n`n" +
+        "这是复杂任务，慢慢来，做扎实比做快重要。" + "`n" +
+        "**第一步先用 `plan` 把步骤列出来**，每步写清用什么工具、产出什么。" + "`n" +
+        "做完一步回头对一下计划，下一步该干什么写进 `think`。" + "`n" +
+        "有现成技能（`skill list`）能用的优先用技能，别自己造轮子。"
+    Write-Log '  模式：工作（要求先列计划）'
+} else {
+    Write-Log '  模式：常规'
+}
+
 # 前缀越长越稳定，缓存命中越多。实测同一段 2779 token 的 prompt，
 # 冷启动 70.9 秒，热缓存 5.2 秒 —— 差 13 倍。
 # 所以固定不变的内容（system）放最前，易变的（工作区快照、当前任务）放最后。
@@ -1319,12 +1517,38 @@ $state = [pscustomobject]@{
     # 不能用整个 schema 文件的大小——那是 50 个全量，实际只发 4-10 个。
     toolTokens = [int][Math]::Round($toolsJson.Length / 3.5)
     flowTools  = $script:ActiveFlowToolCount
+    # ---- 上下文占用（面板显示用）----
+    # 这几个值必须由 agent 自己报，面板算不出来：
+    #   ctxReal    llama 实际 n_ctx（内存不够时会被降档，和 config 对不上）
+    #   ctxLimit   这轮真正可用的输入预算（ctxReal - 输出余量 - 安全边距）
+    #   ctxUsed    这一轮实际塞了多少（提示词 + 历史 + 工具）
+    #   ctxPrompt  其中提示词部分
+    #   ctxHistory 其中历史对话部分
+    #   ctxTools   其中工具定义部分
+    # 面板原来只拿 config.context 和「全量 schema 字节数」硬凑，
+    # 分母比实际大 1000+，已用还漏掉整个对话历史 —— 显示出来是错的。
+    ctxReal    = [int]$script:RealCtx
+    # 这时 $mt0 还没算（它在主循环里按任务类型定），先用配置的 maxTokens 估，
+    # 主循环每轮会再更新成准确值。
+    ctxLimit   = [int]($script:RealCtx - [int]$Cfg.maxTokens - 60)
+    ctxPrompt  = [int](Get-CtxTokens $sysFull)
+    ctxTools   = [int](Get-CtxTokens $toolsJson)
+    ctxHistory = 0
+    ctxUsed    = [int](Get-CtxTokens $sysFull) + [int](Get-CtxTokens $toolsJson)
     phase     = '准备'
 }
 Write-State $state
 
 $finished    = $false
 $noToolCount = 0
+# 模型「还没说完」的那段话。
+# 4B 经常把一段回答拆成几次输出：先「我先看看有哪些文件」，再给结论。
+# 这里累积成一整条，而不是每段都往 history 塞一条 assistant ——
+# 塞了就等于告诉它「上一句已经说完了」，它接着说下一段，
+# 用户看到的就是一句一句蹦出来的碎片。
+$script:PendingSpeech = ''
+# 那条累积消息在 history 里的下标（-1 表示还没有）
+$script:SpeechIdx = -1
 # 第一步「必须先 think」的打回次数。限 2 次，防止模型死活不肯 think 时把上下文撑爆。
 $script:thinkNudge = 0
 # finish 时「任务要文件但一个都没写」的打回次数。同样限 2 次。
@@ -1407,12 +1631,31 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
         $mt0 = [Math]::Max(500, [int]$Cfg.maxTokens)
     }
 
-    # 输入上限 = context - 这次真正要留的输出 - 一点余量。
-    # 注意这里必须和上面 $mt0 用同一个值算，各算各的必然对不上 ——
-    # 之前 ctxLimit 按 600 留、实际发 1200，输入占满时输出就没地方，直接 400。
-    $ctxLimit = [int]$Cfg.context - $mt0 - 60
+    # 输入上限 = 真实上下文 - 这次要留的输出 - 一点余量。
+    #
+    # ⚠ 这里必须用「llama 实际的 n_ctx」，不能用 config.json 里的值。
+    # 内存脚本会按可用内存把 -c 降档（比如配置写 5000，实际起 -c 4000 → n_ctx 4096），
+    # 但 config.json 不会跟着改。agent 要是照着 5000 算预算，
+    # 就会算出 4340 的输入上限，比实际能装的 3496 多出 844 token ——
+    # 请求一发出去，llama 直接回 400（实测 prompt 4009 ok，4209 就 400）。
+    #
+    # 所以：启动时问一次 /props 拿真实 n_ctx，问不到才退回配置值。
+    # 这台机器上这一步很快（10ms 左右），而且整个任务只做一次。
+    $ctxLimit = [int]$script:RealCtx - $mt0 - 60
     $histTok = Get-HistoryTokens -History $history
     $toolsTokNow = Get-CtxTokens $toolsJson
+
+    # 把这一轮真实的上下文用量写进 state，面板直接读，不用自己猜。
+    # 注意是在裁历史之前算的「进来时」的量，这才是用户关心的
+    # 「这一轮差点撑爆没有」。
+    $ctxPromptNow = [int](Get-CtxTokens ([string]$history[0].content))
+    $state.ctxReal    = [int]$script:RealCtx
+    $state.ctxLimit   = [int]$ctxLimit
+    $state.ctxPrompt  = $ctxPromptNow
+    $state.ctxTools   = [int]$toolsTokNow
+    $state.ctxHistory = [int][Math]::Max(0, $histTok - $ctxPromptNow)
+    $state.ctxUsed    = [int]($histTok + $toolsTokNow)
+    $state.toolTokens = [int]$toolsTokNow
 
     # ① 历史太长先裁历史。
     #
@@ -1424,7 +1667,68 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
     #
     # 现在改成按条数留 14 条（约 7 步），再按 token 上限兜一层：
     # 光是条数够但内容太长也会超，所以最后再按 token 砍到 tailTok 以内。
-    if ($histTok + $toolsTokNow + $mt0 -gt $ctxLimit -and $history.Count -gt 8) {
+    #
+    # ⚠ 这里原来还有个 `-and $history.Count -gt 8`，是个大坑：
+    # 第一轮 history 只有 3-4 条（system + 任务 + 工作区快照），
+    # 但 system 里塞了 prompt.md + project.md 段 + flow 模板，轻松 2000+ tok。
+    # 条件不成立就完全不裁，进来时已经超了，后面砍工具也救不回来 ——
+    # 实测「统计 data 目录下有多少个文件」：think 完直接 400，
+    # 收尾时把 think 的返回值「想法已记下」当成了答案显示给用户。
+    #
+    # 现在分两种情况：
+    #   条数多（>6）：照旧裁历史
+    #   条数少但已超：说明是 system 本身太大，把 project.md 段/flow 模板摘掉重试
+    $overBudget = ($histTok + $toolsTokNow + $mt0 -gt $ctxLimit)
+    # 只能在开局精简一次。
+    # 这段原来每轮都跑，而且每次都往 $sysFull 尾巴上加「我的习惯」，
+    # 结果越精简越大（日志打出 1521 → 1618 tok），纯属反效果。
+    # 用一个标记位锁住：精简过就不再动，保持首轮那个稳定前缀（还能吃 prompt cache）。
+    if ($script:SysSlimmed) { $overBudget = $false }
+    if ($overBudget -and $history.Count -le 6 -and $sysFull.Length -gt 400) {
+        # system 太大就按段落砍。
+        #
+        # 第一版只摘掉 project.md 段 —— 实测没用：那题 project 根本没加载，
+        # 于是 $slimSys = $SystemPrompt，日志打出「1521 → 1521 tok」，
+        # 一个字都没省下来，预算照样超。
+        #
+        # prompt.md 里有十来个小节，重要性差很多：
+        #   「Windows 不是 Linux」「路径怎么推」「别用错工具」—— 砍了就必然出错
+        #   「什么时候必须先查」「怎么说话」「信息不够就问」—— 砍了做得糙一点，但能做完
+        # 所以超预算时按优先级从低到高丢，丢到装得下为止。
+        $slimSys = $sysFull
+        if ($projPick) { $slimSys = $slimSys.Replace("`n`n" + $projPick, '') }
+        # 可丢的小节，从最不重要的开始
+        $droppable = @('## 怎么说话', '## 信息不够就问', '## 什么时候必须先查', '## 出错怎么办')
+        $headTok = Get-CtxTokens $slimSys
+        foreach ($sec in $droppable) {
+            if (($headTok + $toolsTokNow + $mt0) -le $ctxLimit) { break }
+            $m2 = [regex]::Match($slimSys, '(?s)' + [regex]::Escape($sec) + '.*?(?=\r?\n## |\z)')
+            if ($m2.Success) {
+                $slimSys = $slimSys.Remove($m2.Index, $m2.Length)
+                $headTok = Get-CtxTokens $slimSys
+            }
+        }
+        # 还超就把 project.md 段也整个去掉（上面可能没匹配上）
+        if (($headTok + $toolsTokNow + $mt0) -gt $ctxLimit -and $projPick) {
+            $slimSys = $slimSys.Replace("`n`n" + $projPick, '')
+            $headTok = Get-CtxTokens $slimSys
+        }
+        # 保留必要的作业要求（模糊任务要先问、个人指令），这两条不能丢
+        if ($isVague -and $slimSys -notmatch '这个任务没说清楚') {
+            $slimSys += "`n`n## 这个任务没说清楚`n`n用户只说了「$TaskText」，没说对什么东西做。**必须先用 say 问一句具体要处理哪个目录、按什么方式。**"
+        }
+        if (-not [string]::IsNullOrWhiteSpace($personalPrompt)) {
+            $slimSys += "`n`n## 我的习惯`n`n" + $personalPrompt
+        }
+        $history[0] = @{ role = 'system'; content = $slimSys }
+        $sysFull = $slimSys
+        $script:SysSlimmed = $true
+        $histTok = Get-HistoryTokens -History $history
+        Write-Log ("  [精简 system] 开局就超预算，按重要性丢掉次要章节：" +
+                   "$([Math]::Round((Get-CtxTokens $SystemPrompt))) → $([Math]::Round((Get-CtxTokens $slimSys))) tok")
+    }
+
+    if ($overBudget -and $history.Count -gt 6) {
         $head = @($history[0])
         $hi = 1
         while ($hi -lt $history.Count -and [string]$history[$hi].role -eq 'user' -and $hi -le 3) {
@@ -1547,7 +1851,37 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
             break
         }
         Write-Log ("  [空转] 第 {0} 次没调工具" -f $noToolCount)
-        $history += @{ role = 'assistant'; content = [string]$res.content }
+
+        # 模型这次说的话，先累积到「当前回合」里。
+        #
+        # 4B 经常把一段回答拆成几次说完：第一次输出「我先看看有哪些文件」，
+        # 第二次才给结论。原来每收到一段就往 history 里塞一条 assistant，
+        # 等于告诉模型「你上一句已经说完了」——于是它接着说下一段，
+        # 用户看到的就是一句一句蹦出来的碎片，而不是一段完整回答。
+        #
+        # 现在：把内容累进 $pendingSpeech，history 里只保留一条「正在说」的消息，
+        # 每次更新它的内容（而不是新增一条）。等真的收尾时再一次性落定。
+        if (-not $script:PendingSpeech) { $script:PendingSpeech = '' }
+        $newPiece = [string]$res.content
+        if ($newPiece.Trim()) {
+            if ($script:PendingSpeech -and -not $script:PendingSpeech.EndsWith("`n")) {
+                $script:PendingSpeech += "`n"
+            }
+            $script:PendingSpeech += $newPiece.Trim()
+        }
+
+        # 历史里维持「一条」assistant 消息，内容随累积更新。
+        # 最后那条如果是本次的占位消息就替换，否则追加。
+        $speechMsg = @{ role = 'assistant'; content = $script:PendingSpeech }
+        if ($script:SpeechIdx -ge 0 -and $script:SpeechIdx -lt $history.Count -and
+            [string]$history[$script:SpeechIdx].role -eq 'assistant' -and
+            -not $history[$script:SpeechIdx].tool_calls_json) {
+            $history[$script:SpeechIdx] = $speechMsg
+        } else {
+            $history += $speechMsg
+            $script:SpeechIdx = $history.Count - 1
+        }
+
         $lastTool = ''
         if ($state.steps.Count -gt 0) { $lastTool = [string]$state.steps[-1].tool }
         $hint = if ($lastTool) {
@@ -1558,6 +1892,11 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
         $history += @{ role = 'user'; content = $hint }
         continue
     }
+
+    # 一旦真调了工具，这段「还没说完的话」就该落定了：
+    # 下一次说话重新开始累积。
+    $script:PendingSpeech = ''
+    $script:SpeechIdx = -1
 
     $noToolCount = 0
     $call = @($res.calls)[0]
@@ -1661,6 +2000,12 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
     if ($toolName -eq 'finish') {
         $answer = [string]$act.answer
         if (-not $answer) { $answer = [string]$res.content }
+        # 还空的话，用这一轮累积的完整发言。
+        # 模型可能把回复拆成几段说完，最后才调 finish(answer="")，
+        # 真正的内容在 $script:PendingSpeech 里，别丢掉。
+        if (-not $answer.Trim() -and $script:PendingSpeech.Trim()) {
+            $answer = $script:PendingSpeech.Trim()
+        }
 
         # ---- 收尾前查：该联网搜的题有没有真搜 ----
         # 实测题库 6 道联网题全部失分，共同原因是「没用到 web_search」。
@@ -1800,6 +2145,21 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
     }
 
     # ---------- say（问用户，等回答，最多 60 秒）----------
+    if ($toolName -eq 'say' -and -not $script:AllowAsk) {
+        # 自主模式没有人在场，问了也只会白等 60 秒然后超时。
+        # 直接回一句"这条路走不通"，让它自己拿主意。
+        # 不能静默忽略：模型会以为问了、在等答案，然后一直不动。
+        $obs = ('自主模式下不能问人（没有人在看着）。' +
+                '自己挑一个最合理的做法往下做，在最后的 answer 里说明选了哪个、为什么。' +
+                '实在做不下去就用 finish 说清楚卡在哪。')
+        $state.steps += @{ n = $step; think = $think; tool = 'say'; arg = ''; ok = $false
+                           note = '自主模式禁止提问'; raw = $res.raw_calls; obs = $obs; sec = $res.seconds; tok = $res.tokens }
+        Write-State $state
+        Write-Log ("  [禁止提问] 自主模式下拒绝了 say")
+        $history += (Format-ToolCallMessage -Act $act -CallId $callId)
+        $history += @{ role = 'tool'; tool_call_id = $callId; content = $obs }
+        continue
+    }
     if ($toolName -eq 'say') {
         $what = [string]$act.message
         if (-not $what) { $what = [string]$res.content }

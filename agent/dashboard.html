@@ -875,6 +875,8 @@ button:disabled{opacity:.42;cursor:not-allowed;transform:none!important}
 }
 .ctx-seg{height:100%;transition:width .45s cubic-bezier(.4,0,.2,1)}
 .ctx-seg.seg-prompt{background:linear-gradient(90deg,var(--accent),var(--accent2))}
+/* 对话历史：用青色，和「提示词」（蓝紫）「工具」（黄）都分得开 */
+.ctx-seg.seg-history{background:linear-gradient(90deg,var(--run,#38bdf8),#3b82f6)}
 .ctx-seg.seg-tools{background:linear-gradient(90deg,var(--warn),#f59e0b)}
 .ctx-legend{
   display:flex;gap:12px;margin-top:7px;font-size:10.5px;
@@ -886,6 +888,7 @@ button:disabled{opacity:.42;cursor:not-allowed;transform:none!important}
   font-style:normal;display:inline-block;
 }
 .ctx-legend i.lg-prompt{background:var(--accent)}
+.ctx-legend i.lg-history{background:var(--run,#38bdf8)}
 .ctx-legend i.lg-tools{background:var(--warn)}
 
 /* ---------- 工具：搜索 + chip 微调 ---------- */
@@ -1112,13 +1115,15 @@ header button,.side-actions button{
 
 /* ---------- 流式逐字输出（固定底部浮层）---------- */
 .stream-out{
-  /* 贴在输入区正上方、和输入框同宽（900px）。
-     之前 180px 高 + 实心背景，挡掉一大块对话，用户翻记录时很难受。
-     现在：限高 110px（约 4 行）、半透明磨砂、右上角能收起。 */
-  position:fixed;left:50%;transform:translateX(-50%);
-  bottom:calc(112px + env(safe-area-inset-bottom, 0px));
-  width:min(900px, calc(100vw - 36px));
-  z-index:60;pointer-events:none;
+  /* 内嵌在对话流里，不做浮层。
+     原来是 position:fixed 贴在输入框正上方，结果直接压住输入框，
+     用户打字都被挡住，翻记录也看不清。
+     现在它就是一个普通的块，跟在任务卡后面一起滚——
+     既看得到模型正在吐什么，又不可能遮住任何东西。 */
+  position:static;
+  margin:0 14px 10px;padding:0;
+  width:auto;max-width:100%;
+  z-index:auto;pointer-events:auto;
 }
 .stream-out:empty{display:none;}
 .stream-out > *{pointer-events:auto;}
@@ -1471,18 +1476,47 @@ header button,.side-actions button{
   .auto-go:hover,.ask-go:hover{transform:none}
 }
 
+
+/* ---------- 模式选择 ---------- */
+.mode-row{
+  display:flex;align-items:center;gap:6px;
+  max-width:900px;margin:0 auto 8px;padding:0 2px;
+}
+.mode-btn{
+  display:inline-flex;align-items:center;gap:5px;
+  padding:5px 12px;border-radius:18px;
+  font-size:12px;font-weight:500;cursor:pointer;
+  background:var(--panel2);color:var(--dim);
+  border:1px solid var(--line);
+  transition:all .16s;white-space:nowrap;
+}
+.mode-btn:hover{border-color:var(--line2);color:var(--fg)}
+.mode-btn .mi{font-size:12px;line-height:1;opacity:.85}
+.mode-btn.on{
+  background:var(--accent);color:var(--primary-fg);
+  border-color:transparent;font-weight:600;
+  box-shadow:0 1px 4px rgba(0,0,0,.14);
+}
+.mode-btn.on .mi{opacity:1}
+.mode-hint{
+  margin-left:auto;font-size:11px;color:var(--faint);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+[data-theme="glass"] .mode-btn{background:rgba(58,24,84,.34);color:rgba(255,255,255,.82);border-color:rgba(255,255,255,.26)}
+[data-theme="glass"] .mode-btn.on{background:var(--accent);color:var(--primary-fg);border-color:transparent}
+[data-theme="glass"] .mode-hint{color:rgba(255,255,255,.66)}
+
 </style>
 </head>
 <body>
 
 <div id="glassBg"><div class="glass-blob b1"></div></div>
 
-<!-- 流式输出浮层。
-     原来它嵌在 liveBox 里，而 liveBox 只有 renderFlow 判定「结构变了」才重建。
-     结果模型在吐字时，只要那一步的步数/状态没变，streamOut 元素就不存在或指向旧节点，
-     页面上什么都看不到（后端 seq 一直在涨，前端静默丢弃）。
-     现在拎出来做成固定在底部的浮层，不依赖任何重建逻辑。 -->
-<div id="streamOut" class="stream-out"></div>
+<!-- 流式输出：不再做浮层。
+     之前是 position:fixed 贴在输入框上方，直接挡住输入框，打字都看不清。
+     现在由 ensureStreamSkeleton() 动态创建并挂到对话流（#thread）里面，
+     跟着内容一起滚 —— 能看见模型在吐什么，又不会遮住任何东西。
+     （这里不放静态元素，交给 JS 管，省得和 thread 的 innerHTML 重建打架。） -->
 
 <header>
   <div class="brand" id="brandEgg" title="点我"><span class="dot idle" id="dot"></span><span>Nafx</span></div>
@@ -1548,11 +1582,13 @@ header button,.side-actions button{
         </div>
         <div class="ctx-bar">
           <div class="ctx-seg seg-prompt" id="segPrompt" style="width:0%"></div>
+          <div class="ctx-seg seg-history" id="segHistory" style="width:0%"></div>
           <div class="ctx-seg seg-tools" id="segTools" style="width:0%"></div>
         </div>
         <div class="ctx-legend">
           <span><i class="lg-prompt"></i>提示词</span>
-          <span><i class="lg-tools"></i>工具定义</span>
+          <span><i class="lg-history"></i>对话</span>
+          <span><i class="lg-tools"></i>工具</span>
           <span><i style="background:var(--panel3)"></i>剩余</span>
         </div>
       </div>
@@ -1561,11 +1597,15 @@ header button,.side-actions button{
         <div class="gauge-bar"><div class="gauge-fill" id="gbPrompt" style="width:0%"></div></div>
       </div>
       <div class="gauge">
+        <div class="gauge-label"><span>对话历史</span><span id="gHistory">—</span></div>
+        <div class="gauge-bar"><div class="gauge-fill" id="gbHistory" style="width:0%"></div></div>
+      </div>
+      <div class="gauge">
         <div class="gauge-label"><span>工具定义</span><span id="gTools">—</span></div>
         <div class="gauge-bar"><div class="gauge-fill" id="gbTools" style="width:0%"></div></div>
       </div>
       <div class="gauge">
-        <div class="gauge-label"><span>对话可用</span><span id="gFree">—</span></div>
+        <div class="gauge-label"><span>剩余可用</span><span id="gFree">—</span></div>
         <div class="gauge-bar"><div class="gauge-fill" id="gbFree" style="width:0%"></div></div>
       </div>
     </div>
@@ -1621,6 +1661,21 @@ header button,.side-actions button{
       </div>
     </div>
     <div class="cmdbar" id="cmdBar"></div>
+      <!-- 模式选择。三档，切换一次记住，下次打开还是上次选的。
+           常规 = 日常问答；工作 = 复杂任务（更多步、先列计划）；
+           自主 = 无人值守（禁止向用户提问，卡住自己想办法）。 -->
+      <div class="mode-row" id="modeRow">
+        <button class="mode-btn on" data-mode="normal" title="日常问答和简单任务：直接给结果">
+          <span class="mi">💬</span>常规
+        </button>
+        <button class="mode-btn" data-mode="work" title="复杂任务：步数翻倍、强制先列计划、可用技能">
+          <span class="mi">🔧</span>工作
+        </button>
+        <button class="mode-btn" data-mode="auto" title="无人值守：不向你提问，卡住自己想办法">
+          <span class="mi">🤖</span>自主
+        </button>
+        <span class="mode-hint" id="modeHint">日常问答、简单任务</span>
+      </div>
       <div class="composer-inner">
         <textarea id="input" rows="1" placeholder="说点什么，让它去做…"></textarea>
         <button class="primary" id="send" style="height:46px;padding:0 22px">发送</button>
@@ -2247,19 +2302,20 @@ function hideStreamSoon(){
 
 function ensureStreamSkeleton(){
   var el = document.getElementById('streamOut');
-  // 兜底：元素被别处清掉或还没建，就重新造一个挂到 body 上。
-  // 流式浮层不能依赖「某个渲染函数刚好跑过」——原来它嵌在 liveBox 里，
-  // liveBox 只在 renderFlow 判定结构变了才重建，于是模型吐字时页面上什么都没有。
+  // 元素被 thread 的 innerHTML 重建冲掉了，或者还没建 → 重新造一个。
+  // 这次挂在 #thread 里面（不是 body），它就成了对话流的一部分，
+  // 会跟着一起滚动，不可能浮在输入框上面挡人。
   if (!el) {
     el = document.createElement('div');
     el.id = 'streamOut';
     el.className = 'stream-out';
-    document.body.appendChild(el);
+    var host = document.getElementById('thread');
+    if (host) { host.appendChild(el); }
+    else { document.body.appendChild(el); }
     stNode = null;
   }
   if (stNode && el.contains(stNode)) return el;
-  // 骨架只建一次。
-  // 标题行可以点，点一下收起/展开正文 —— 浮窗挡视野时用户能自己腾地方。
+  // 骨架只建一次
   el.innerHTML = '<div class="st-label" onclick="toggleStreamFold(event)">' +
                  '<span>模型正在输出</span>' +
                  '<span class="st-fold">收起</span></div>' +
@@ -2585,9 +2641,24 @@ function renderFlow(sess, st){
   // 一来面板卡，二来只要那一轮 session 恰好读到半行或缺记录，
   // 界面就被清空重画 —— 用户看到的就是「任务突然消失，过一会儿又出现」。
   // 只把「结构真的变了」算进去：会话条数、状态、步数、任务名。
+  //
+  // ⚠ 会话条数不能只看 arr.length。
+  // note 播报让 session.jsonl 变得很热闹：每一步至少追加一条
+  // （「建好了 text」「check.txt → text/check.txt」…），
+  // arr.length 每变一次整个 thread.innerHTML 就重建一遍 ——
+  // 用户看到的就是所有气泡一起闪、消失又出现。
+  //
+  // 现在改成「只追加，不重排」：
+  //   条数只增不减、而且前 N 条内容没变 → 走增量追加，不动已有的 DOM
+  //   其它情况（条数变少 / 中间内容改了 / 状态变了）才全量重建
   var stepsLen = (st && st.steps) ? st.steps.length : 0;
-  var sig = arr.length + '|' + (st ? (st.intent||'') + '|' + (st.status||'') : '') + '|' +
-            (running ? (st.task + '|' + st.step + '|' + stepsLen) : 'idle');
+  var tailSig = '';
+  if (arr.length > 0) {
+    var lastM = arr[arr.length - 1];
+    tailSig = String(lastM.role || '') + ':' + String(lastM.content || '').length;
+  }
+  var sig = (st ? (st.intent||'') + '|' + (st.status||'') : '') + '|' +
+            (running ? (st.task + '|' + st.step + '|' + stepsLen) : 'idle') + '|' + tailSig;
   if (sig === lastSig) {
     // 结构没变，只刷新顶部的用时（轻量，改一个 textContent）
     if (running && st) {
@@ -2596,7 +2667,31 @@ function renderFlow(sess, st){
     }
     return;
   }
+
+  // 纯追加：条数变多了，而且前缀部分没动 → 只把新增的那几条插进去
+  var wasAtBottom = (thread.scrollHeight - thread.scrollTop - thread.clientHeight) < 140;
+  if (arr.length > prevSessLen && prevSessLen > 0 && lastSig !== '') {
+    var canAppend = true;
+    for (var ai = 0; ai < prevSessLen; ai++) {
+      if (String(arr[ai].content || '') !== String((window.__sessSnap || [])[ai] || '')) { canAppend = false; break; }
+    }
+    if (canAppend) {
+      lastSig = sig;
+      var box = thread.querySelector('#threadInner') || thread;
+      for (var ak = prevSessLen; ak < arr.length; ak++) {
+        var wrapTmp = document.createElement('div');
+        wrapTmp.innerHTML = msgBubble(arr[ak], ak);
+        box.appendChild(wrapTmp.firstChild);
+      }
+      bindMsgOps();
+      prevSessLen = arr.length;
+      window.__sessSnap = arr.map(function(m){ return String(m.content || ''); });
+      if (wasAtBottom) thread.scrollTop = thread.scrollHeight;
+      return;
+    }
+  }
   lastSig = sig;
+  window.__sessSnap = arr.map(function(m){ return String(m.content || ''); });
 
   if (arr.length === 0 && !running){
     // 别一读到空就清屏。
@@ -2615,7 +2710,7 @@ function renderFlow(sess, st){
   emptySessStreak = 0;
   prevSessLen = arr.length;
 
-  var wasAtBottom = (thread.scrollHeight - thread.scrollTop - thread.clientHeight) < 140;
+  // wasAtBottom 在函数开头已经算过了，这里不能重复声明（会报错）
   var html = '';
   for (var k=0;k<arr.length;k++) html += msgBubble(arr[k], k);
   // 模型正在问你的话，直接渲染成对话气泡。
@@ -2624,6 +2719,10 @@ function renderFlow(sess, st){
   html += askBubble();
   html += liveBox(st);
   thread.innerHTML = html;
+  // 重建会把 streamOut 一起冲掉（它现在是 thread 的子节点）。
+  // 正在输出的话立刻重新挂上，否则流式内容要等下一轮 pollStream 才回来，
+  // 看起来就是「文字断一下又续上」。
+  if (streamText) { stNode = null; ensureStreamSkeleton(); renderStream(); }
   bindMsgOps();
   if (wasAtBottom) thread.scrollTop = thread.scrollHeight;
 }
@@ -2713,31 +2812,43 @@ function renderSystem(sys, st){
   var cmt = $('cfgModelTag');
   if (cmt) cmt.textContent = (sys.context || '—') + ' tok';
 
-  var per = sys.contextPerSlot || 1;
-  var pt = sys.promptTokens || 0;
+  // 上下文占用的三个数全部由 agent 上报，面板不算。
+  //
+  // 原来这里是自己硬凑的：
+  //   per  = sys.contextPerSlot    ← 用的是 config.context，可能和 llama 实际不符
+  //   used = promptTokens + toolTokens  ← 只算提示词和工具，整个对话历史没算
+  // 结果「已用」严重偏低、「总量」虚高，占用条基本没意义。
+  //
+  // 现在：agent 每轮把 ctxReal（真实 n_ctx）/ ctxLimit（真实输入预算）/
+  // ctxUsed（提示词+历史+工具）写进 state，这里直接用。
+  var hasReal = !!(st && typeof st.ctxUsed === 'number' && st.ctxUsed > 0);
 
-  // 工具 token：sys.toolTokens 是「51 个工具全量」，约 4000，不是实际发送量。
-  // 真实值只有 agent 跑过任务后才会写进 state.toolTokens（按流程过滤，通常 700 上下）。
-  // 没跑任务时用全量画进度条会把占用显示成 90%，误导人，所以分开处理。
-  var hasReal = !!(st && typeof st.toolTokens === 'number' && st.toolTokens > 0);
-  var tt = hasReal ? st.toolTokens : 0;
-  var ttAll = sys.toolTokens || 0;
-  var free = Math.max(0, per - pt - tt);
-  var used = pt + tt;
+  // 分母优先用 agent 报的 ctxLimit（真正可用的输入预算），
+  // 拿不到才退到 sys.contextPerSlot。
+  var per = hasReal ? (st.ctxLimit || st.ctxReal || sys.contextPerSlot || 1)
+                    : (sys.contextPerSlot || sys.contextLimit || 1);
+  var pt = hasReal ? (st.ctxPrompt || 0) : (sys.promptTokens || 0);
+  var th = hasReal ? (st.ctxHistory || 0) : 0;
+  var tt = hasReal ? (st.ctxTools || 0) : 0;
+  var used = hasReal ? (st.ctxUsed || (pt + th + tt)) : pt;
+  var free = Math.max(0, per - used);
   var pct = per > 0 ? Math.min(100, used / per * 100) : 0;
 
-  // 三段细分
+  // 四段细分：提示词 / 对话历史 / 工具定义 / 剩余
   $('gPrompt').textContent = fmtNum(pt) + ' tok';
   $('gbPrompt').style.width = Math.min(100, pt/per*100) + '%';
 
-  $('gTools').textContent = hasReal
-    ? (fmtNum(tt) + ' tok')
-    : ('全量 ' + fmtNum(ttAll) + ' tok');
+  var gh = $('gHistory');
+  if (gh){
+    gh.textContent = hasReal ? (fmtNum(th) + ' tok') : '等任务开始后算';
+  }
+  var gbh = $('gbHistory');
+  if (gbh) gbh.style.width = hasReal ? (Math.min(100, th/per*100) + '%') : '0%';
+
+  $('gTools').textContent = hasReal ? (fmtNum(tt) + ' tok') : '等任务开始后算';
   $('gbTools').style.width = hasReal ? (Math.min(100, tt/per*100) + '%') : '0%';
 
-  $('gFree').textContent = hasReal
-    ? (fmtNum(free) + ' tok')
-    : '等任务开始后算';
+  $('gFree').textContent = hasReal ? (fmtNum(free) + ' tok') : '等任务开始后算';
   $('gbFree').style.width = hasReal ? (Math.min(100, free/per*100) + '%') : '0%';
 
   // 总条
@@ -2745,18 +2856,20 @@ function renderSystem(sys, st){
   if (cu){
     cu.textContent = hasReal
       ? (fmtNum(used) + ' / ' + fmtNum(per) + ' tok')
-      : (fmtNum(pt) + ' / ' + fmtNum(per) + ' tok　工具另算');
+      : ('— / ' + fmtNum(per) + ' tok');
   }
   var sp = $('segPrompt');
   if (sp) sp.style.width = Math.min(100, pt/per*100) + '%';
+  var sph = $('segHistory');
+  if (sph) sph.style.width = hasReal ? (Math.min(100, th/per*100) + '%') : '0%';
   var stg = $('segTools');
   if (stg) stg.style.width = hasReal ? (Math.min(100, tt/per*100) + '%') : '0%';
 
   // 标题右侧百分比
   var ct = $('ctxTag');
   if (ct){
-    var showPct = hasReal ? pct : (per > 0 ? pt / per * 100 : 0);
-    ct.textContent = Math.round(showPct) + '%';
+    var showPct = hasReal ? pct : 0;
+    ct.textContent = hasReal ? (Math.round(showPct) + '%') : '';
     ct.style.color = showPct >= 85 ? 'var(--err)' : (showPct >= 65 ? 'var(--warn)' : 'var(--faint)');
   }
 }
@@ -2886,12 +2999,52 @@ function tick(){
     });
 }
 
+/* ---------- 模式选择 ----------
+   normal 常规：日常问答和简单任务，直接给结果
+   work   工作：复杂任务，步数翻倍、强制先列计划、可用技能
+   auto   自主：无人值守，禁止向你提问，卡住自己想办法
+
+   选择存在 localStorage，下次打开还是上次选的。
+   模式随任务一起发给 /api/run，之后写进队列项，调度时传给 agent。 */
+var curMode = 'normal';
+var MODE_INFO = {
+  normal: { hint: '日常问答、简单任务', ph: '说点什么，让它去做…' },
+  work:   { hint: '复杂任务：多花点时间想清楚再做', ph: '描述一个复杂的活，它会先列计划…' },
+  auto:   { hint: '无人值守：不会向你提问，卡住自己想办法', ph: '交给它自己搞定，中途不打扰你…' }
+};
+
+function setMode(m){
+  if (!MODE_INFO[m]) m = 'normal';
+  curMode = m;
+  var btns = document.querySelectorAll('.mode-btn');
+  for (var i=0;i<btns.length;i++){
+    btns[i].className = 'mode-btn' + (btns[i].getAttribute('data-mode') === m ? ' on' : '');
+  }
+  var hint = $('modeHint');
+  if (hint) hint.textContent = MODE_INFO[m].hint;
+  var inp = $('input');
+  if (inp) inp.placeholder = MODE_INFO[m].ph;
+  try { localStorage.setItem('nafx-mode', m); } catch(_){}
+}
+
+function bindMode(){
+  var btns = document.querySelectorAll('.mode-btn');
+  for (var i=0;i<btns.length;i++){
+    (function(btn){
+      btn.onclick = function(){ setMode(btn.getAttribute('data-mode')); };
+    })(btns[i]);
+  }
+  var saved = 'normal';
+  try { saved = localStorage.getItem('nafx-mode') || 'normal'; } catch(_){}
+  setMode(saved);
+}
+
 function submit(){
   var t = input.value.trim();
   if (!t) return;
   var backup = input.value;
   input.value = ''; autoGrow();
-  fetch('/api/run', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({task:t})})
+  fetch('/api/run', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({task:t, mode:curMode})})
     .then(function(r){ return r.json(); })
     .then(function(j){
       if (!j || !j.ok){ toast((j&&j.msg)||'提交失败', true); input.value = backup; autoGrow(); return; }
@@ -3588,6 +3741,7 @@ thread.innerHTML = emptyHtml();
 bindChips();
 bindAnswer();
 bindAutopilot();
+bindMode();
 loadFiles();
 tick();
 // 自主模式状态单独刷：它几秒才变一次，不用挤进主轮询
