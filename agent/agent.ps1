@@ -635,7 +635,11 @@ function Get-ToolsJsonWithFinish {
 # ============================================================
 
 function Get-SessionHistory {
-    param([int]$MaxTurns = 2, [int]$MaxCharsPerMsg = 180)
+    # 4 轮、每条 400 字。
+    # 原来是 2 轮 / 180 字 —— 问答一来一回就占满了，
+    # 用户回答「data」之后，下一轮根本看不到「我在问哪个目录」，
+    # 于是又从头问一遍。
+    param([int]$MaxTurns = 4, [int]$MaxCharsPerMsg = 400)
     $out = @()
     if (-not (Test-Path $SessionFile)) { return $out }
     try {
@@ -1157,7 +1161,7 @@ function Invoke-ChatTask {
     param([string]$Text)
     $sys = $SystemPrompt + "`n`n（现在是闲聊，不用调工具。像朋友那样回一两句，轻松点，别端着。）"
     $msgs = @('{"role":"system","content":' + (To-JsonStr $sys) + '}')
-    foreach ($h in (Get-SessionHistory -MaxTurns 2)) {
+    foreach ($h in (Get-SessionHistory -MaxTurns 4)) {
         $msgs += '{"role":' + (To-JsonStr $h.role) + ',"content":' + (To-JsonStr $h.content) + '}'
     }
     $msgs += '{"role":"user","content":' + (To-JsonStr $Text) + '}'
@@ -1504,7 +1508,7 @@ try {
             if ($gt) { $genTs = [datetime]::Parse($gt, [Globalization.CultureInfo]::InvariantCulture) }
         } catch { }
     }
-    $rawHist = @(Get-SessionHistory -MaxTurns 2)
+    $rawHist = @(Get-SessionHistory -MaxTurns 4)
     if ($rawHist.Count -gt 0 -and $genTs -ne [datetime]::MinValue) {
         # 只有带着 ts 且晚于清除时间的才保留
         $sessionMsgs = @($rawHist | Where-Object {
@@ -1758,6 +1762,8 @@ $noToolCount = 0
 $script:PendingSpeech = ''
 # 那条累积消息在 history 里的下标（-1 表示还没有）
 $script:SpeechIdx = -1
+# 已经问过的问题（防止同一个问题反复问）
+$script:AskedQuestions = @()
 # 第一步「必须先 think」的打回次数。限 2 次，防止模型死活不肯 think 时把上下文撑爆。
 $script:thinkNudge = 0
 # finish 时「任务要文件但一个都没写」的打回次数。同样限 2 次。
@@ -2405,10 +2411,33 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
         if (-not $what) { $what = [string]$res.content }
         if ([string]::IsNullOrWhiteSpace($what)) { $what = '（模型没写问题，你想怎么办？）' }
 
+        # 同一个问题问两遍就没意义了。
+        # 实测的乱象：问「处理哪个目录」→ 用户答 data → 又问「要干什么」→
+        # 用户答统计 → 又回到「处理哪个目录」，用户一脸问号。
+        # 这里检查最近问过的问题，重复的直接拦掉，把已知信息还给模型。
+        if (-not $script:AskedQuestions) { $script:AskedQuestions = @() }
+        if (@($script:AskedQuestions) -contains $what.Trim()) {
+            $known = (@($script:AskedQuestions) -join '；')
+            $obs = ('这个问题你已经问过了（' + $known + '）。用户也已经回答过了。' +
+                    '请直接根据已知信息往下做；实在还缺东西，就换个角度问一个没问过的点。')
+            $state.steps += @{ n = $step; think = $think; tool = 'say'; arg = '' ; ok = $false
+                               note = '重复提问，已拦'; raw = $res.raw_calls; obs = $obs; sec = $res.seconds; tok = $res.tokens }
+            Write-State $state
+            Write-Log ("  [重复提问] 拦掉：" + $what)
+            $history += (Format-ToolCallMessage -Act $act -CallId $callId)
+            $history += @{ role = 'tool'; tool_call_id = $callId; content = $obs }
+            continue
+        }
+        $script:AskedQuestions = @($script:AskedQuestions) + @($what.Trim())
+
         $askId = 'q' + [Guid]::NewGuid().ToString('N').Substring(0, 8)
         $askFile = Join-Path $AgentDir 'ask.json'
         $ansFile = Join-Path $AgentDir 'answer.json'
-        $waitSec = 60
+        # 3 分钟。原来是 60 秒 —— 模型首字在 CPU 上都要等 70 秒，
+        # 人在键盘前看到问题、想一下、打几个字，一分钟根本不够。
+        # 超时就结束整个回合，用户再打的字就变成「新任务」，
+        # 模型完全不知道前面问过什么 —— 于是就出现「问了目录又问干什么」。
+        $waitSec = 180
 
         if (Test-Path $ansFile) { Remove-Item $ansFile -Force -ErrorAction SilentlyContinue }
 
@@ -2489,6 +2518,17 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
         $tcMsg = Format-ToolCallMessage -Act $act -CallId $callId
         $history += $tcMsg
         $history += @{ role = 'tool'; tool_call_id = $callId; content = ("用户回答：" + $userAnswer + "`n`n（用户已经回答了。根据这个回答继续做，别再问同样的问题。）") }
+        # ---- 把「问题 + 回答」记进会话 ----
+        # 这是「问了目录又问干什么」的根子：
+        # 问题写在 assistant 的 tool_call 里，回答写在 tool 消息里，
+        # 两者都只活在本次 history 中，任务一结束（或被超时收掉）就没了。
+        # 下一轮用户再答一句，模型看到的只有孤立的一句话。
+        # 记进 session.jsonl 之后，Get-SessionHistory 能把它们带进下一轮，
+        # 模型就知道「我已经问过目录，用户答的是 data」。
+        try {
+            Add-SessionTurn -Role 'assistant' -Content ('（我问：' + $what + '）') -Ok $true
+            Add-SessionTurn -Role 'user' -Content ('（我答：' + $userAnswer + '）') -Ok $true
+        } catch { }
         continue
     }
 
