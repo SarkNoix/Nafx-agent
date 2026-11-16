@@ -49,6 +49,8 @@ if (-not (Test-Path $script:PanelLogDir)) {
 # 要排查「面板到底在请求什么」时，把 config.json 里的 panelVerbose 设成 true。
 $script:PanelVerbose = $false
 try { if ($Cfg.PSObject.Properties.Name -contains 'panelVerbose') { $script:PanelVerbose = [bool]$Cfg.panelVerbose } } catch { }
+# 连续查不到 agent 进程的轮数（用于给中断判定防抖）
+$script:agentMissStreak = 0
 $script:PanelLogFile = Join-Path $script:PanelLogDir 'panel.log'
 $script:ReqLogFile   = Join-Path $script:PanelLogDir 'requests.log'
 
@@ -367,12 +369,16 @@ function Get-MergedState {
     #      只要最近改过，就说明它还活着。
     # 只有「找不到进程」且「state.json 已经 25 秒没更新」才判中断。
     if ([string]$main.status -eq 'running') {
+        # 连续两轮都查不到才算「真的没了」。
+        # Get-CimInstance 在忙的时候偶尔返回不全（尤其模型吃满 CPU 时），
+        # 单次查不到就判中断，用户会看到跑得好好的任务被打上「已中断」。
+        $script:agentMissStreak = [int]$script:agentMissStreak + 1
         $hasAgent = $false
         try {
             foreach ($ap in @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue)) {
                 $acl = [string]$ap.CommandLine
                 # 宽松匹配：只要命令行里出现 agent.ps1 就算，不再依赖 -File 的写法
-                if ($acl -match 'agent\.ps1') { $hasAgent = $true; break }
+                if ($acl -match 'agent\.ps1') { $hasAgent = $true; $script:agentMissStreak = 0; break }
             }
         } catch {
             $hasAgent = $true   # 查询本身失败就当作在跑
@@ -402,7 +408,14 @@ function Get-MergedState {
         if (-not $hasResult) {
             foreach ($ss in @($main.steps)) { if ([string]$ss.tool -eq 'finish') { $hasResult = $true; break } }
         }
-        if (-not $hasAgent -and -not $hasResult -and $staleSec -gt $graceSec) {
+        # $agentMissStreak >= 2：连续两轮都没查到进程才认。
+# 再叠一层：思考期（elapsed 小于 180 秒、还没有任何步骤）永远不判中断 ——
+# CPU 上模型首字就要等 70 秒以上，这段时间什么都没有是正常的。
+$inThinking = $false
+try {
+    if ([double]$main.elapsed -lt 180 -and @($main.steps).Count -eq 0) { $inThinking = $true }
+} catch { }
+if ($script:agentMissStreak -ge 2 -and -not $hasAgent -and -not $hasResult -and -not $inThinking -and $staleSec -gt $graceSec) {
             $main.status = 'interrupted'
             $main.phase = '上次运行被中断（进程已退出），结果可能不完整'
         }
@@ -1133,7 +1146,7 @@ while ($listener.IsListening) {
                             $lines = @($raw -split "`r?`n" | Where-Object { $_.Trim() -ne '' })
                         } catch { }
 
-                        $take = @($lines | Select-Object -Last 200)
+                        $take = @($lines | Select-Object -Last 300)
                         $bad = 0
                         foreach ($ln in $take) {
                             try { [void]$list.Add(($ln | ConvertFrom-Json)) }

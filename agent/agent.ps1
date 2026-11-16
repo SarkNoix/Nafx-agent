@@ -699,8 +699,10 @@ function Add-SessionNote {
         $arr = @($script:NoteLinesSay)
     }
     $body = ($arr -join "`n")
-    if ($arr.Count -gt 10) {
-        $body = ((@($arr | Select-Object -First 5)) -join "`n") + "`n…" + "`n" + ((@($arr | Select-Object -Last 4)) -join "`n")
+    # 24 行才折叠。原来是 10 行，think 一多就被「…」吃掉中间那段，
+    # 用户看不到完整过程。折叠时保留头 14 行 + 尾 8 行。
+    if ($arr.Count -gt 24) {
+        $body = ((@($arr | Select-Object -First 14)) -join "`n") + "`n…（中间省略）…`n" + ((@($arr | Select-Object -Last 8)) -join "`n")
     }
     try {
         $sf = $SessionFile
@@ -751,8 +753,9 @@ function Add-SessionTurn {
         $script:sessWrites = [int]$script:sessWrites + 1
         if ($script:sessWrites % 20 -eq 0) {
             $all = @(Get-Content $SessionFile -Encoding UTF8 | Where-Object { $_.Trim() -ne '' })
-            if ($all.Count -gt 60) {
-                [IO.File]::WriteAllLines($SessionFile, @($all | Select-Object -Last 60), (New-Object Text.UTF8Encoding($false)))
+            # 120 条。原来是 60，聊久一点前面的记录就被滚掉了。
+            if ($all.Count -gt 120) {
+                [IO.File]::WriteAllLines($SessionFile, @($all | Select-Object -Last 120), (New-Object Text.UTF8Encoding($false)))
             }
         }
     } catch { }
@@ -2313,7 +2316,9 @@ Add-SessionNote -Text $bcSay -Kind 'say'
     if ($toolName -eq 'think' -and $think.Trim().Length -ge 8) {
         $bc = $think.Trim()
         if ($bc.Length -gt 160) { $bc = $bc.Substring(0, 160) + '…' }
-        Add-SessionNote -Text $bc -Kind 'think'
+        # 带上步数，把多次 think 分开。
+        # 原来所有 think 都塞进同一条消息，连成一片，看不出哪句是第几步想的。
+        Add-SessionNote -Text ("第" + $step + "步 · " + $bc) -Kind 'think'
         Write-Log ("  [播报] " + $bc)
     }
     $path  = [string]$act.path
