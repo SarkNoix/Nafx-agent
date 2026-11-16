@@ -137,7 +137,10 @@ function Ask-WhatToDo {
     $histBlock = ''
     if ($script:History -and $script:History.Count -gt 0) {
         $recent = @($script:History | Select-Object -Last 6)
-        $histBlock = "`n`n你之前已经提过、也已经做过的（**别再提同样的，换个方向或者跳过**）：`n" +
+        $histBlock = "`n`n【之前几轮的情况】每行开头有标记，**看清标记再决定**：`n" +
+                     "  ✔ 已做成      → 这件真的做完了，别再提`n" +
+                     "  △ 试过没产出  → 做过但白干，可以换个做法再试，或者换别的事`n" +
+                     "  ✘ 没跑完      → 上次中断/超时了，**可以重试**`n`n" +
                      (($recent | ForEach-Object { "- " + $_ }) -join "`n")
     }
 
@@ -157,6 +160,9 @@ function Ask-WhatToDo {
 3. **有产出**：做完会多出或改变一个文件，而不是只是读了几个文件
 
 **读完文件就算完的不叫做成。** 「分析了脚本功能」「查看了日志内容」这类没有产出的活，别提。
+
+**优先重试没跑完的。** 如果上面有「✘ 没跑完」的，那件事本来值得做（只是被打断了），
+先重新提出它，别因为「之前试过」就跳过 —— 那是两回事。
 
 **没想做的事就回答「跳过」。** 宁可跳过，也别为了做事而做事。
 
@@ -249,6 +255,14 @@ function Invoke-Task {
                  'make_dir', 'delete_path', 'run_ps1', 'run_script', 'zip_dir', 'unzip')
     }).Count -gt 0)
 
+    # status 还是 running / waiting，说明 agent 根本没走到收尾逻辑 ——
+    # 被杀、崩溃、超时被收掉，都算「没跑完」，不是「做成了」。
+    # 原来这种也记进历史当「做过了」，于是后面几轮全在跳过。
+    if ($status -in @('running', 'waiting', '?')) {
+        AutoLog ('← 任务没走完（状态 ' + $status + '），按未完成处理')
+        $status = 'interrupted'
+    }
+
     if ($status -eq 'done' -and $didChange) {
         $status = 'done'
     } elseif ($status -eq 'done') {
@@ -331,7 +345,14 @@ while ((Get-Date) -lt $endAt) {
             } else {
                 $st = Invoke-Task -TaskText $taskText
                 if ($st -eq 'done') { $done++ }
-                Add-AutoHistory ('[' + (Get-Date -Format 'HH:mm') + '] ' + $st + '：' + $taskText)
+                # 只有真做成（done）才记进「做过了」，别的记「试过但没成功」。
+                # 原来不管什么状态都记成一条，于是 running / noop / failed 的
+                # 也会被模型当成「已做，不重复」—— 整场空转的根源。
+                $tag = ''
+                if ($st -eq 'done') { $tag = '✔ 已做成' }
+                elseif ($st -eq 'noop') { $tag = '△ 试过但没产出（可以换做法再试）' }
+                else { $tag = '✘ 没跑完（' + $st + '，可以重试）' }
+                Add-AutoHistory ('[' + (Get-Date -Format 'HH:mm') + '] ' + $tag + '：' + $taskText)
             }
         } else {
             AutoLog '任务描述太短，跳过。'
