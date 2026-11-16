@@ -1003,25 +1003,57 @@ while ($listener.IsListening) {
 
                 '/api/session/clear' {
                     if ($method -ne 'POST') { Send-Text -Response $resp -Text '{"ok":false}' -Code 405; break }
-                    # 先停掉正在跑的任务，不然它一直往 state 里写，清不干净
+
+                    # 先停掉所有 agent 进程 —— 不只是面板自己启动的那些。
+                    # 原来只杀 $Workers 里登记的，漏掉两类：
+                    #   ① autopilot.ps1 派出去的任务（不在 $Workers 里）
+                    #   ② 面板重启前留下的孤儿（$Workers 是新字典，空的）
+                    # 漏掉的结果：点了「清除对话」界面上看着清了，
+                    # 但那些进程还在往 session.jsonl 追加，而且下个任务启动时
+                    # 会把旧内容当历史读回来 —— 就是「清除了还有旧对话，还污染新对话」。
+                    # 按命令行匹配杀，宁可多杀也别漏。
+                    $killed = 0
+                    try {
+                        foreach ($kp in @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue)) {
+                            $kcl = [string]$kp.CommandLine
+                            if ($kcl -match 'agent\.ps1' -or $kcl -match 'autopilot\.ps1') {
+                                try { Stop-Process -Id $kp.ProcessId -Force -ErrorAction SilentlyContinue; $killed++ } catch { }
+                            }
+                        }
+                    } catch { }
                     foreach ($slot in @($Workers.Keys)) {
                         try { $Workers[$slot] | Stop-Process -Force -ErrorAction SilentlyContinue } catch { }
                     }
                     $Workers.Clear()
+
                     $items = Get-Queue
                     foreach ($it in $items) {
                         if ($it.status -eq 'running') { $it.status = 'cancelled'; $it.result = '对话已清除' }
                     }
                     Save-Queue $items
 
+                    # 等进程真的退出再清文件，否则它们退出前还会写最后一行
+                    Start-Sleep -Milliseconds 500
+
                     $sf = Join-Path $Root 'agent\logs\session.jsonl'
                     try { [IO.File]::WriteAllText($sf, '', (New-Object Text.UTF8Encoding($false))) } catch { }
+                    # 记一个「清除时间」。agent 启动读历史时会拿它做门槛，
+                    # 只认晚于这个时间的记录 —— 兜住"进程杀不干净、清完又写了一行"的竞态。
+                    try {
+                        $genFile = Join-Path $Root 'agent\logs\session_gen.txt'
+                        [IO.File]::WriteAllText($genFile, (Get-Date).ToString('yyyy-MM-dd HH:mm:ss', [Globalization.CultureInfo]::InvariantCulture), (New-Object Text.UTF8Encoding($false)))
+                    } catch { }
+                    # 流式记录也清，不然新对话开头会先冒出上一次的残字
+                    try {
+                        $stf = Join-Path $Root 'agent\stream.jsonl'
+                        [IO.File]::WriteAllText($stf, '', (New-Object Text.UTF8Encoding($false)))
+                    } catch { }
                     # 状态文件也一并删掉，面板上的任务卡才会消失
                     for ($sl = 1; $sl -le $WorkerCount; $sl++) {
                         $sf2 = Get-SlotStateFile $sl
                         try { if (Test-Path $sf2) { Remove-Item $sf2 -Force -ErrorAction SilentlyContinue } } catch { }
                     }
-                    Send-Text -Response $resp -Text '{"ok":true}'
+                    Send-Text -Response $resp -Text ('{"ok":true,"killed":' + $killed + '}')
                 }
 
 

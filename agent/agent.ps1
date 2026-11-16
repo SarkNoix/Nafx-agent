@@ -430,7 +430,8 @@ function Get-SessionHistory {
             if (-not $content) { continue }
             if ($role -notin @('user', 'assistant')) { continue }
             if ($content.Length -gt $MaxCharsPerMsg) { $content = $content.Substring(0, $MaxCharsPerMsg) + '…' }
-            $out += @{ role = $role; content = $content }
+            # 带上 ts：调用方要靠它判断这条是不是「清除之前」的记录
+            $out += @{ role = $role; content = $content; ts = [string]$o.ts }
         } catch { }
     }
     return $out
@@ -1026,8 +1027,37 @@ try {
 } catch { }
 
 # 会话历史
+#
+# 加一道「代际」保险：
+# 用户点「清除对话」时，面板会写一个 session_gen 文件夹（里面是时间戳）。
+# 这里只认「比清除时间更新」的会话记录 —— 万一还有漏网的老进程在清完之后
+# 又写了一行，也不会被当成本次对话的历史读进来。
+# 光靠"杀进程 + 清文件"不够稳：进程杀可能有几百毫秒延迟，
+# 而这段时间足够它写完一行。代际号是为了兜住这个竞态。
 $sessionMsgs = @()
-try { $sessionMsgs = @(Get-SessionHistory -MaxTurns 2) } catch { }
+try {
+    $genFile = Join-Path $LogDir 'session_gen.txt'
+    $genTs = [datetime]::MinValue
+    if (Test-Path $genFile) {
+        try {
+            $gt = ([IO.File]::ReadAllText($genFile, [Text.Encoding]::UTF8)).Trim()
+            if ($gt) { $genTs = [datetime]::Parse($gt, [Globalization.CultureInfo]::InvariantCulture) }
+        } catch { }
+    }
+    $rawHist = @(Get-SessionHistory -MaxTurns 2)
+    if ($rawHist.Count -gt 0 -and $genTs -ne [datetime]::MinValue) {
+        # 只有带着 ts 且晚于清除时间的才保留
+        $sessionMsgs = @($rawHist | Where-Object {
+            $t = $null
+            try {
+                if ($_.ts) { $t = [datetime]::Parse([string]$_.ts, [Globalization.CultureInfo]::InvariantCulture) }
+            } catch { }
+            ($t -ne $null) -and ($t -gt $genTs)
+        })
+    } else {
+        $sessionMsgs = $rawHist
+    }
+} catch { $sessionMsgs = @() }
 
 # 按任务挑 project.md 的相关段落（不再是全量 1826 token）
 $sysFull = $SystemPrompt
