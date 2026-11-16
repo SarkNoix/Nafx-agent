@@ -565,21 +565,29 @@ function Invoke-AiTool {
                            '目标路径填在 command 里，比如 command="脚本/calc.ps1"。' +
                            '别用 write_file 新建 —— 那是造空文件，不是挪。')
                 }
+                # 先把 $dst 算出来，后面所有判断都要用它。
+                # 之前 $dst = Resolve-AiPath 写在 Test-Path $dst 之后，
+                # 等于拿一个空变量去判断，永远不成立。
+                $dst = Resolve-AiPath $dstRel
+                Assert-CanWrite -Full $dst -RelPath $dstRel
+
                 if (-not (Test-Path $src)) {
                     # 源没了但目标在 —— 多半是它自己刚才已经挪过了。
-                    # 实测归类任务：move_path 成功一次，模型没意识到，
-                    # 又对同一个源调了一次，拿到「源不存在」后开始绕圈。
-                    # 这种情况直接说清楚「你要的已经是这个结果了」。
                     if (Test-Path $dst) {
-                        return ("不用再挪了：" + (Get-RelDisplay $dst) + " 已经存在，" +
-                                (Get-RelDisplay $src) + " 已经不在了 —— 说明之前就挪好了。继续下一个文件。")
+                        return ("这个文件已经挪过了：" + (Get-RelDisplay $dst) + " 就是它的新位置（源已不在）。" +
+                                "别再动它，接着处理下一个文件。")
                     }
                     throw "源不存在：$($Action.path)"
                 }
-                $dst = Resolve-AiPath $dstRel
-                Assert-CanWrite -Full $dst -RelPath $dstRel
                 if (Test-Path $dst) {
-                    return ("不用再挪了：" + (Get-RelDisplay $dst) + " 已经有了，这个文件已经归到位。继续下一个。")
+                    # 目标位置已经有东西了 —— 但这不代表源文件已经归好。
+                    # 之前这里返回「不用再挪了，已经归到位」，是错的：
+                    # 实测把 hello.txt 往 logs/ 挪，logs/ 里已经有别的文件叫 hello.txt，
+                    # 模型收到「已经归到位」就以为完成了，源文件其实还躺在根目录。
+                    # 所以这里必须如实报冲突，并说清楚源还在。
+                    throw ("目标位置 " + (Get-RelDisplay $dst) + " 已经被别的文件占着了，" +
+                           "而 " + (Get-RelDisplay $src) + " 还在原地。" +
+                           "换个目标路径（比如换个目录名），或者先挪走那个占位的文件。")
                 }
                 $d = Split-Path $dst -Parent
                 if ($d -and -not (Test-Path $d)) { New-Item -ItemType Directory -Force -Path $d | Out-Null }

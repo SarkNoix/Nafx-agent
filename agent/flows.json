@@ -584,7 +584,7 @@
         },
         {
           "n": 2,
-          "do": "照 cheatsheet 调现成技能（find_duplicates / batch_rename / zip_dir / archive_by_date 等）。技能名就在上面那张表里，别自己编命令名",
+          "do": "照 cheatsheet 调现成技能（archive_by_type / find_duplicates / batch_rename 等）。技能名就在上面那张表里，别自己编命令名。**能用技能就别一个个手动挪**",
           "need": "找到能用的"
         },
         {
@@ -614,6 +614,14 @@
         "其余：dedupe_lines(重复行去重) / compare_files(比较两文件) / merge_files(合并) / clean_empty_dirs(清空目录)"
       ],
       "forbid": [
+        "只列目录不挪文件就说完成",
+        "同一个 find_files 反复调",
+        "把「目录已存在」当成任务完成",
+        "同一个文件挪第二次",
+        "目录名中途改来改去（定了「脚本」就一直是「脚本」，别换成 scripts 又换回 脚本）",
+        "把文件名当目录名（note.txt 不能挪进 note/）",
+        "把扩展名当目录名（staff.csv 不能挪进 data/csv）",
+        "挪动时把文件名弄丢（staff.csv 挪进 data/ 应该叫 data/staff.csv）",
         "不预览直接动手",
         "任务没要求删的也删",
         "批量操作后用 list_dir 反复确认超过两次",

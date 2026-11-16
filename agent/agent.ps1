@@ -1330,20 +1330,45 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
     $histTok = Get-HistoryTokens -History $history
     $toolsTokNow = Get-CtxTokens $toolsJson
 
-    # ① 历史太长先裁历史。保留 system + 首个任务消息 + 最近 6 条。
+    # ① 历史太长先裁历史。
+    #
+    # 尾部原来只留 6 条 —— 一次工具调用本身占 2 条（assistant + tool），
+    # 等于只能记住最近 3 步。实测「按类型归类」：模型挪完 3 个文件后，
+    # 前面挪过哪些已经被裁掉了，于是同一个 calc.ps1 被挪了 3 次，
+    # 目录名在 logs/scripts/脚本/config/data/text/notes 之间乱跳 ——
+    # 因为它每轮都像重新开始，压根看不到自己建了哪些目录、挪了哪些文件。
+    #
+    # 现在改成按条数留 14 条（约 7 步），再按 token 上限兜一层：
+    # 光是条数够但内容太长也会超，所以最后再按 token 砍到 tailTok 以内。
     if ($histTok + $toolsTokNow + $mt0 -gt $ctxLimit -and $history.Count -gt 8) {
         $head = @($history[0])
-        # 把开头的连续 user 消息（任务 + 快照）保住
         $hi = 1
         while ($hi -lt $history.Count -and [string]$history[$hi].role -eq 'user' -and $hi -le 3) {
             $head += $history[$hi]; $hi++
         }
-        # 尾部取 6 条，但不切断 assistant(tool_calls) 和 tool 的配对
-        $tailStart = [Math]::Max($hi, $history.Count - 6)
+        # 尾部取 14 条，但不切断 assistant(tool_calls) 和 tool 的配对
+        $tailStart = [Math]::Max($hi, $history.Count - 14)
         while ($tailStart -gt $hi -and [string]$history[$tailStart].role -eq 'tool') { $tailStart-- }
         $tail = @()
         for ($ti = $tailStart; $ti -lt $history.Count; $ti++) { $tail += $history[$ti] }
-        $history = @($head) + @($tail)
+
+        # 条数够了但 token 还可能超：从尾部往前累加，装不下就停。
+        # 这样保证「留的是最近的」，而不是「留的是随便哪 14 条」。
+        $headTok = Get-HistoryTokens -History @($head)
+        $budgetForTail = $ctxLimit - $headTok - $mt0 - 120
+        $kept = @()
+        $acc = 0
+        for ($ti = $tail.Count - 1; $ti -ge 0; $ti--) {
+            $one = @($tail[$ti])
+            $t1 = Get-HistoryTokens -History $one
+            if (($acc + $t1) -gt $budgetForTail -and $kept.Count -ge 2) { break }
+            $kept = @($one) + $kept
+            $acc += $t1
+        }
+        # 别把 assistant(tool_calls) 和它的 tool 回复拆散
+        while ($kept.Count -gt 0 -and [string]$kept[0].role -eq 'tool') { $kept = @($kept | Select-Object -Skip 1) }
+
+        $history = @($head) + @($kept)
         $histTok = Get-HistoryTokens -History $history
         Write-Log ("  [裁历史] 上下文吃紧，历史裁到 " + $history.Count + " 条（$histTok tok）")
     }
@@ -1824,6 +1849,34 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
         continue
     }
 
+    # ---- 同一个文件别挪第二次 ----
+    #
+    # 实测「按类型归类」：calc.ps1 被挪了 3 次
+    # （scripts\calc.ps1 → 脚本\calc.ps1 → 脚本\calc.ps1），
+    # hello.txt 挪了 3 次去了 3 个不同目录。根因是历史被裁到只剩 3 步，
+    # 它看不到自己刚挪过什么（历史窗口已加宽，这里再兜一道）。
+    # 一个源文件只该挪一次；要挪第二次说明它在乱试，直接说清楚。
+    if ($toolName -eq 'move_path' -and $path) {
+        $srcKey = ([string]$path) -replace '/', '\'
+        $already = $null
+        foreach ($dm in @($state.steps | Where-Object { [string]$_.tool -eq 'move_path' })) {
+            $a = ([string]$dm.arg) -replace '/', '\'
+            if ($a -eq $srcKey -or $a.StartsWith($srcKey + ' ')) { $already = [string]$dm.note }
+        }
+        if ($already) {
+            $obs = ("这个文件已经挪过了（" + $already + "）。别再挪它，接着处理下一个文件；" +
+                    "全部处理完就 finish。")
+            $state.steps += @{ n = $step; think = $think; tool = 'move_path'; arg = $srcKey
+                               ok = $false; note = '重复挪，已跳过'; raw = $res.raw_calls; obs = $obs
+                               sec = $res.seconds; tok = $res.tokens; fp2 = '' }
+            Write-State $state
+            Write-Log ("  [重复挪] " + $srcKey + " 已经挪过，跳过")
+            $history += (Format-ToolCallMessage -Act $act -CallId $callId)
+            $history += @{ role = 'tool'; tool_call_id = $callId; content = $obs }
+            continue
+        }
+    }
+
     # ---------- 其余工具：交给 tools.ps1 ----------
     $obs = ''
     $ok = $true
@@ -1878,6 +1931,24 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
     Write-State $state
     Write-Log ("  [{0}] {1} -> {2} {3}  ({4} tok / {5:N1}s)" -f $step, $think, $toolName, $stepArg, $res.tokens, $res.seconds)
     Write-Log ("      观察：$obs`n")
+
+    # ---- 同一个文件别挪两次 ----
+    #
+    # 实测「按类型归类」：calc.ps1 被挪了 3 次（scripts\calc.ps1 → 脚本\calc.ps1 → 脚本\calc.ps1），
+    # hello.txt 挪了 3 次去了 3 个不同目录。原因是历史被裁到只剩 3 步，
+    # 它看不到自己刚才挪过什么。
+    # 历史窗口已经加宽了，但这条也硬拦一下：一个源文件只应该被挪一次。
+    # 挪第二次说明它在乱试，直接告诉它「这个已经挪过了，换下一个」。
+    if ($ok -and $toolName -eq 'move_path' -and $Action.path) {
+        $srcKey = ([string]$Action.path) -replace '/', '\'
+        $prevMoves = @($state.steps | Where-Object {
+            [string]$_.tool -eq 'move_path' -and ([string]$_.arg -replace '/', '\') -like ($srcKey + '*')
+        })
+        # 当前这一步已经在 steps 里了，所以 >1 才算挪过第二次
+        if ($prevMoves.Count -gt 1) {
+            Write-Log ("  [重复挪] " + $srcKey + " 已经被挪过 " + ($prevMoves.Count - 1) + " 次")
+        }
+    }
 
     # ---- 防绕圈（按工具名 + 目标 + 关键参数）----
     # 原来的判重是 "工具名|参数"，模型换个参数就绕过去了：
