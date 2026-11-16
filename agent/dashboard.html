@@ -1106,9 +1106,9 @@ header button,.side-actions button{
 
 /* ---------- 流式逐字输出（固定底部浮层）---------- */
 .stream-out{
-  /* 位置：贴在输入区正上方、宽度和输入框对齐（900px）。
-     原来 bottom:100px + 760px 宽，既比输入框窄一截，又压着输入区下沿，
-     看着像浮在空中。现在跟 composer-inner 同宽同中线，视觉上是一条连续的信息流。 */
+  /* 贴在输入区正上方、和输入框同宽（900px）。
+     之前 180px 高 + 实心背景，挡掉一大块对话，用户翻记录时很难受。
+     现在：限高 110px（约 4 行）、半透明磨砂、右上角能收起。 */
   position:fixed;left:50%;transform:translateX(-50%);
   bottom:calc(112px + env(safe-area-inset-bottom, 0px));
   width:min(900px, calc(100vw - 36px));
@@ -1116,16 +1116,28 @@ header button,.side-actions button{
 }
 .stream-out:empty{display:none;}
 .stream-out > *{pointer-events:auto;}
-.st-label{font-size:var(--fs-xs);color:var(--faint);letter-spacing:.4px;margin-bottom:6px;}
+
+/* 收起状态：只留标题那一行，不挡任何内容 */
+.stream-out.collapsed .st-body{display:none;}
+.stream-out.collapsed{opacity:.72;}
+.st-label{
+  font-size:var(--fs-xs);color:var(--faint);letter-spacing:.4px;margin-bottom:5px;
+  cursor:pointer;user-select:none;display:flex;align-items:center;gap:7px;
+}
+.st-fold{
+  margin-left:auto;font-size:10px;color:var(--faint);
+  padding:1px 7px;border-radius:5px;
+  border:1px solid var(--line);background:var(--panel2);
+}
 .st-body{
   font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
-  font-size:var(--fs-base);line-height:1.65;
+  font-size:var(--fs-base);line-height:1.6;
   background:var(--panel);
   border:1px solid var(--line);
   border-left:3px solid var(--accent);
-  border-radius:10px;padding:11px 13px;
-  /* 限高 180px：再高就把对话顶没了。超出自动滚到底（renderStream 里做的） */
-  max-height:180px;overflow-y:auto;
+  border-radius:10px;padding:9px 12px;
+  /* 限高 110px（约 4 行）：再高就挡对话了。超出自动滚到底（renderStream 里做的） */
+  max-height:110px;overflow-y:auto;
   white-space:pre-wrap;word-break:break-word;
   box-shadow:0 -2px 16px rgba(0,0,0,.08);
 }
@@ -1231,11 +1243,11 @@ header button,.side-actions button{
 .step-obs-wrap.bad .step-obs{border-color:var(--err-bd);background:var(--err-bg);color:var(--err);}
 
 /* 流式区：更像「正在打字」 */
-.st-label{display:flex;align-items:center;gap:7px;font-size:11px;letter-spacing:.5px;}
+/* .st-label 的完整定义在上面（限高那一段），这里只补脉冲点，
+   别再重复写 display/gap —— 三处同一条规则互相覆盖，改一处忘两处。 */
 .st-label::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--accent);
-  animation:stPulse 1.2s ease-in-out infinite;}
+  animation:stPulse 1.2s ease-in-out infinite;flex-shrink:0;}
 @keyframes stPulse{0%,100%{opacity:.35;transform:scale(.85)}50%{opacity:1;transform:scale(1.15)}}
-.st-body{border-radius:10px;padding:11px 13px;box-shadow:inset 0 1px 2px rgba(0,0,0,.04);}
 .st-caret{font-size:.85em;vertical-align:.05em;}
 
 /* 消息气泡：更柔和的圆角和阴影 */
@@ -1608,6 +1620,10 @@ var thread = $('thread'), input = $('input'), send = $('send'), dot = $('dot');
 var curState = null;
 var pollTimer = null, lastSig = '', fileSig = '';
 var curSession = [];
+// 上一次读到的会话条数 + 连续空了几轮。
+// 用来防「读抖了就把界面清空」：上一轮有内容、这一轮读成空，
+// 不当真清空，等下一轮再说。
+var prevSessLen = 0, emptySessStreak = 0;
 
 var STATUS_TEXT = {
   idle:'空闲', running:'执行中', done:'完成', failed:'出错了',
@@ -2127,11 +2143,25 @@ function ensureStreamSkeleton(){
     stNode = null;
   }
   if (stNode && el.contains(stNode)) return el;
-  // 骨架只建一次
-  el.innerHTML = '<div class="st-label">模型正在输出</div>' +
+  // 骨架只建一次。
+  // 标题行可以点，点一下收起/展开正文 —— 浮窗挡视野时用户能自己腾地方。
+  el.innerHTML = '<div class="st-label" onclick="toggleStreamFold(event)">' +
+                 '<span>模型正在输出</span>' +
+                 '<span class="st-fold">收起</span></div>' +
                  '<div class="st-body"><span class="st-txt"></span><span class="st-caret">▍</span></div>';
   stNode = el.querySelector('.st-txt');
   return el;
+}
+
+/* 点标题收起/展开浮窗正文。收起来只剩一行标题，基本不挡视野。 */
+function toggleStreamFold(e){
+  if (e) e.stopPropagation();
+  var el = $('streamOut');
+  if (!el) return;
+  var collapsed = el.className.indexOf('collapsed') >= 0;
+  el.className = collapsed ? 'stream-out' : 'stream-out collapsed';
+  var tag = el.querySelector('.st-fold');
+  if (tag) tag.textContent = collapsed ? '收起' : '展开';
 }
 
 function renderStream(){
@@ -2432,12 +2462,17 @@ function renderFlow(sess, st){
   var running = (st && st.task && (st.status === 'running' || st.status === 'done' || st.status === 'error' || st.status === 'timeout' || st.status === 'stuck' || st.status === 'interrupted'));
 
   // 签名决定要不要重建整个消息区。
-  // 这里刻意不含 st.elapsed —— 它每 450ms 都变，会逼着每一轮都全量重建
-  // thread.innerHTML（几百个节点），那才是「面板卡」的主因。
+  //
+  // 这里刻意不含 st.elapsed 和 st.phase —— 两个都会每隔几百毫秒变一次：
+  //   · elapsed 是秒数，一直涨
+  //   · phase 里有倒计时（「等你确认删除（170 秒）」）
+  // 带上它们等于每轮都重建 thread.innerHTML（几百个节点）：
+  // 一来面板卡，二来只要那一轮 session 恰好读到半行或缺记录，
+  // 界面就被清空重画 —— 用户看到的就是「任务突然消失，过一会儿又出现」。
   // 只把「结构真的变了」算进去：会话条数、状态、步数、任务名。
   var stepsLen = (st && st.steps) ? st.steps.length : 0;
   var sig = arr.length + '|' + (st ? (st.intent||'') + '|' + (st.status||'') : '') + '|' +
-            (running ? (st.task + '|' + st.step + '|' + stepsLen + '|' + st.phase) : 'idle');
+            (running ? (st.task + '|' + st.step + '|' + stepsLen) : 'idle');
   if (sig === lastSig) {
     // 结构没变，只刷新顶部的用时（轻量，改一个 textContent）
     if (running && st) {
@@ -2449,10 +2484,21 @@ function renderFlow(sess, st){
   lastSig = sig;
 
   if (arr.length === 0 && !running){
+    // 别一读到空就清屏。
+    // 后端读 session.jsonl 时，agent 可能正在追加，偶尔会拿到空或半行；
+    // 上一轮明明有内容这一轮变空，多半是读抖了，不是真的清空了会话。
+    // 连续两轮都空才真的清。
+    emptySessStreak = (prevSessLen > 0) ? (emptySessStreak + 1) : 0;
+    if (emptySessStreak < 2 && prevSessLen > 0) {
+      lastSig = '';   // 下一轮再判断
+      return;
+    }
     thread.innerHTML = emptyHtml();
     bindChips();
     return;
   }
+  emptySessStreak = 0;
+  prevSessLen = arr.length;
 
   var wasAtBottom = (thread.scrollHeight - thread.scrollTop - thread.clientHeight) < 140;
   var html = '';

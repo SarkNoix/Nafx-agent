@@ -966,17 +966,37 @@ while ($listener.IsListening) {
                 }
 
                 '/api/session' {
-                    # 会话流：把 user / assistant 的轮次按时间顺序返回
+                    # 会话流：把 user / assistant 的轮次按时间顺序返回。
+                    #
+                    # 两个坑：
+                    # ① 原来只取最后 40 行，会话一长就截掉前面的记录，
+                    #    面板上看到的是"任务突然消失"。
+                    # ② agent 正在往文件里追加内容时，Get-Content 可能读到
+                    #    只写了一半的行，ConvertFrom-Json 失败后被我 catch 吞掉，
+                    #    这一轮就少一条 —— 下一轮又读到了，于是"消失又出现"。
+                    # 现在：用 FileShare.ReadWrite 显式共享读，跳过错行但记数，
+                    # 并且把上限提到 200 行。
                     $sf = Join-Path $Root 'agent\logs\session.jsonl'
                     $list = New-Object System.Collections.ArrayList
                     if (Test-Path $sf) {
+                        $lines = @()
                         try {
-                            $all = @(Get-Content $sf -Encoding UTF8 | Where-Object { $_.Trim() -ne '' })
-                            $take = @($all | Select-Object -Last 40)
-                            foreach ($ln in $take) {
-                                try { [void]$list.Add(($ln | ConvertFrom-Json)) } catch { }
-                            }
+                            # 允许别处同时写（agent 在追加），不自锁也不被别人锁
+                            $fs = [IO.File]::Open($sf, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+                            try {
+                                $sr = New-Object IO.StreamReader($fs, [Text.Encoding]::UTF8)
+                                $raw = $sr.ReadToEnd()
+                            } finally { $fs.Close() }
+                            $lines = @($raw -split "`r?`n" | Where-Object { $_.Trim() -ne '' })
                         } catch { }
+
+                        $take = @($lines | Select-Object -Last 200)
+                        $bad = 0
+                        foreach ($ln in $take) {
+                            try { [void]$list.Add(($ln | ConvertFrom-Json)) }
+                            catch { $bad++ }   # 半行就跳过，别让整批都挂掉
+                        }
+                        if ($bad -gt 0) { Write-Host ("  [session] 跳过 $bad 条不完整记录") -ForegroundColor DarkGray }
                     }
                     Send-Text -Response $resp -Text (ConvertTo-Json -InputObject $list.ToArray() -Depth 6 -Compress)
                 }
