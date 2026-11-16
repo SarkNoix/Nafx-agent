@@ -1130,7 +1130,8 @@ header button,.side-actions button{
   box-shadow:0 6px 22px rgba(0,0,0,.28);
   border-radius:12px;
 }
-.stream-out:empty{display:none;}
+/* 浮窗在「回合进行中」始终显示，不靠 :empty 自动隐藏 —— 显隐由 JS 按 status 控制。 */
+.stream-out.hide{display:none;}
 .stream-out > *{pointer-events:auto;}
 
 /* 收起状态：只留标题那一行，不挡任何内容 */
@@ -1545,11 +1546,18 @@ header button,.side-actions button{
 
 <div id="glassBg"><div class="glass-blob b1"></div></div>
 
-<!-- 流式输出：不再做浮层。
-     之前是 position:fixed 贴在输入框上方，直接挡住输入框，打字都看不清。
-     现在由 ensureStreamSkeleton() 动态创建并挂到对话流（#thread）里面，
-     跟着内容一起滚 —— 能看见模型在吐什么，又不会遮住任何东西。
-     （这里不放静态元素，交给 JS 管，省得和 thread 的 innerHTML 重建打架。） -->
+<!-- 流式输出浮窗：常驻元素。
+     之前是 JS 动态创建，每次清空后要重新造一遍 —— 看起来就是「重新渲染」。
+     现在它在 HTML 里就有，只有 .st-txt 的文字会变，元素本身永远不动。
+     显隐由 showStreamPanel / hideStreamPanel 按「回合是否在跑」控制，
+     所以回合进行中它一直亮着，哪怕模型还在思考、一个字都没吐。 -->
+<div id="streamOut" class="stream-out hide">
+  <div class="st-label" onclick="toggleStreamFold(event)">
+    <span class="st-title">模型输出</span>
+    <span class="st-fold">收起</span>
+  </div>
+  <div class="st-body"><span class="st-txt"></span><span class="st-caret">▍</span></div>
+</div>
 
 <header>
   <div class="brand" id="brandEgg" title="点我"><span class="dot idle" id="dot"></span><span>Nafx</span></div>
@@ -2317,7 +2325,8 @@ function resetStream(){
   stNode = null;
   if (streamHideTimer) { clearTimeout(streamHideTimer); streamHideTimer = null; }
   var el = document.getElementById('streamOut');
-  if (el) el.innerHTML = '';
+  // 只清文字，不清 innerHTML —— 骨架是静态的，删了整个浮窗就散了。
+  if (el) { var t0 = el.querySelector('.st-txt'); if (t0) t0.textContent = ''; }
 }
 
 /* 任务结束后把浮层收掉。
@@ -2331,7 +2340,8 @@ function hideStreamSoon(){
   streamHideTimer = setTimeout(function(){
     streamHideTimer = null;
     var el = document.getElementById('streamOut');
-    if (el) el.innerHTML = '';
+    // 只清文字，不清 innerHTML —— 骨架是静态的，删了整个浮窗就散了。
+  if (el) { var t0 = el.querySelector('.st-txt'); if (t0) t0.textContent = ''; }
     stNode = null;
     streamText = '';
     // 不要把 streamSeq 清成 0：agent 的 seq 在一个任务内连续递增，
@@ -2339,6 +2349,20 @@ function hideStreamSoon(){
     // 只清显示内容，序号留着（新任务开始时 resetStream 统一置零）。
     //streamSeq = 0;
   }, 1200);
+}
+
+function showStreamPanel(text){
+  // 显示浮窗。回合在跑就一直显示，不因为「还没输出」而藏起来 ——
+  // 模型思考几十秒不出字的时候，最需要让用户看到它在干活。
+  var el = document.getElementById('streamOut');
+  if (!el) return;
+  el.classList.remove('hide');
+  var t = el.querySelector('.st-txt');
+  if (t && text !== undefined && t.textContent !== text) t.textContent = text;
+}
+function hideStreamPanel(){
+  var el = document.getElementById('streamOut');
+  if (el) el.classList.add('hide');
 }
 
 function ensureStreamSkeleton(){
@@ -2377,7 +2401,8 @@ function toggleStreamFold(e){
 }
 
 function renderStream(){
-  if (!streamText) return;
+  // 不在这里判断有没有内容 —— 回合在跑浮窗就该亮着，
+  // 哪怕模型还在思考、一个字都没吐。空的时候写一句状态。
   // 有新内容进来就取消「准备收掉浮层」的定时器
   if (streamHideTimer) { clearTimeout(streamHideTimer); streamHideTimer = null; }
   var el = ensureStreamSkeleton();
@@ -3004,6 +3029,11 @@ function tick(){
       if (slow) { loadTools(); loadFiles(); checkAsk(); }
 
       var busy = (st && st.status === 'running');
+      // 回合在跑 → 浮窗一直亮着。
+      // 之前靠 .stream-out:empty 自动隐藏，模型思考的几十秒里一个字都不吐，
+      // 浮窗就消失了 —— 用户以为它挂了。现在只看 status，不看有没有内容。
+      if (busy) { showStreamPanel(streamText ? undefined : '（正在思考…）'); }
+      else { hideStreamPanel(); }
       // 任务在跑才拉流式增量。
       //
       // 新任务开始时必须把上一次的流清掉，否则上次没说完的字会串到这次来。
