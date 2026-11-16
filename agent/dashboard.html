@@ -2638,7 +2638,12 @@ function renderFlow(sess, st){
 
   curSession = sess || [];
   var arr = curSession;
-  var running = (st && st.task && (st.status === 'running' || st.status === 'done' || st.status === 'error' || st.status === 'timeout' || st.status === 'stuck' || st.status === 'interrupted'));
+  // 只认 running / waiting 才算「在跑」。
+  // 原来把 done/error/timeout/stuck/interrupted 也算进来了 ——
+  // 而 interrupted 是 monitor 每轮现算的（找不到 agent 进程就临时标一下），
+  // 两个轮询之间会在 running / interrupted 之间来回跳，sig 跟着跳，
+  // 整块对话区就被反复重建 —— 这就是气泡和浮窗一直消失又出现的根源。
+  var running = (st && st.task && (st.status === 'running' || st.status === 'waiting'));
 
   // 签名决定要不要重建整个消息区。
   //
@@ -2662,9 +2667,13 @@ function renderFlow(sess, st){
   var tailSig = '';
   if (arr.length > 0) {
     var lastM = arr[arr.length - 1];
-    tailSig = String(lastM.role || '') + ':' + String(lastM.content || '').length;
+    // 用「最后一条的角色 + 条数」当指纹，不用内容长度 ——
+    // 播报是把多行合进同一条消息里的，每加一行长度就变，长度当指纹等于每句都重建。
+    // 条数只有真的新增一条消息时才变，那才是该重建的时刻。
+    tailSig = String(lastM.role || '') + ':' + arr.length;
   }
-  var sig = (st ? String(st.status || '') + '|' + String(st.task || '') + '|' + stepsLen : '') + '|' + tailSig;
+  // stepsLen 拿掉了：state.steps 每走一步就长一条，带上它等于每一步都重建整块。
+  var sig = (st ? String(st.status || '') + '|' + String(st.task || '') : '') + '|' + tailSig;
   if (sig === lastSig) {
     // 结构没变，只刷新顶部的用时（轻量，改一个 textContent）
     if (running && st) {
@@ -2675,7 +2684,10 @@ function renderFlow(sess, st){
     // 单独把它的头部文字换掉，不重建整块（整块重建就是闪的根源）。
     var lbHead = thread.querySelector('.live-box .step-sec');
     if (lbHead && st) {
-      var want = esc(st.phase||'') + ' · ' + (st.step||0) + '/' + (st.maxSteps||0) + ' · ' + fmtTime(st.elapsed);
+      // 不能用 esc()：它产出的 &lt; 这类实体塞给 textContent 后，
+      // 下次读回来是原始字符，两者永远不相等 —— 于是每次轮询都重设一次，
+      // 一直重排，页面就一卡一卡的。
+      var want = (st.phase||'') + ' · ' + (st.step||0) + '/' + (st.maxSteps||0) + ' · ' + fmtTime(st.elapsed);
       if (lbHead.textContent !== want) lbHead.textContent = want;
     }
     return;
