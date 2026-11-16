@@ -1861,9 +1861,16 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
     $stepArg = $path
     if ($toolName -eq 'run_cmd' -or $toolName -eq 'syshelp' -or $toolName -eq 'win_doc') { $stepArg = [string]$act.command }
     if (-not $stepArg) { $stepArg = [string]$act.command }
+    # move_path / copy_path 显示成「源 → 目标」。
+    # 以前只显示 path，日志里全是「move_path calc.ps1」，
+    # 看不出它要挪到哪儿 —— 排查时误以为是参数没传。
+    if ($toolName -in @('move_path', 'copy_path') -and $act.command) {
+        $stepArg = $path + ' → ' + [string]$act.command
+    }
 
     $state.steps += @{ n = $step; think = $think; tool = $toolName; arg = $stepArg; ok = $ok
-                       note = (($obs -split "`n")[0]); raw = $res.raw_calls; obs = $obs; sec = $res.seconds; tok = $res.tokens }
+                       note = (($obs -split "`n")[0]); raw = $res.raw_calls; obs = $obs; sec = $res.seconds; tok = $res.tokens
+                       fp2 = [string]$act.command }
 
     if ($ok -and $planList.Count -gt 0) { $planList = Set-PlanStepDone -Plan $planList }
 
@@ -1872,16 +1879,19 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
     Write-Log ("  [{0}] {1} -> {2} {3}  ({4} tok / {5:N1}s)" -f $step, $think, $toolName, $stepArg, $res.tokens, $res.seconds)
     Write-Log ("      观察：$obs`n")
 
-    # ---- 防绕圈（按工具名，不看参数）----
+    # ---- 防绕圈（按工具名 + 目标 + 关键参数）----
     # 原来的判重是 "工具名|参数"，模型换个参数就绕过去了：
     # list_dir . → list_dir ./ → run_cmd dir → find_files . ，repeatCount 一直是 0，
     # 最后跑到 maxsteps 才停（实测「列出当前目录有哪些文件」跑了 311 秒）。
     # 按「工具名 + 目标路径」判重，不是只看工具名。
-    # 起因：local-append 那道题模型连着 write_file x.txt 两次（把 A 覆盖成 B），
-    # 之前按工具名算，要第 3 次才强制收尾，它第 3 步直接 finish 编了个「最终内容 AB」。
-    # 改成同工具 + 同路径才算绕圈，这样「一次建 p/q/r 三个文件」不会被误伤。
+    #
+    # 但只看路径又会误伤：实测「按类型归类」时模型连续调
+    #   find_files . command="*.txt" / "*.ps1" / "*.json"
+    # 三次 arg 都是 "."，被当成绕圈强制收尾 —— 其实每次拿到的是不同类型，
+    # 全是有用的新信息。所以把 command 也算进指纹里。
+    $stepFp = $stepArg + '|' + [string]$Action.command
     $recentSame = @($state.steps | Select-Object -Last 6 | Where-Object {
-        ([string]$_.tool -eq $toolName) -and ([string]$_.arg -eq $stepArg)
+        ([string]$_.tool -eq $toolName) -and (([string]$_.arg + '|' + [string]$_.fp2) -eq $stepFp)
     })
     # steps 里已经包含当前这一步，减掉它才是「之前重复过几次」
     $sameToolCount = [Math]::Max(0, $recentSame.Count - 1)

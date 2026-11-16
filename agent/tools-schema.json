@@ -611,7 +611,7 @@
     "type": "function",
     "function": {
       "name": "move_path",
-      "description": "移动或重命名文件和目录。目标路径填在 command",
+      "description": "移动或重命名文件/目录。path=源，command=目标（如 脚本\\calc.ps1）。归类时把文件挪进目录用这个，不要用 write_file 新建",
       "parameters": {
         "type": "object",
         "properties": {
@@ -621,7 +621,7 @@
           },
           "command": {
             "type": "string",
-            "description": "目标路径，如 b.txt 或 new\\a.txt"
+            "description": "目标路径，如 b.txt 或 脚本\\calc.ps1"
           }
         },
         "required": [

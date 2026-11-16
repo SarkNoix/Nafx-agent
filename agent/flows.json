@@ -522,6 +522,7 @@
       "match": [
         "整理",
         "分类",
+        "归类",
         "归档",
         "批量",
         "重命名",
@@ -557,11 +558,20 @@
       ],
       "goal": "批量操作做对了，而且没有误伤别的文件。没说清操作哪个目录、按什么整理，先 say 问一句再做",
       "suggest_tools": [
-        "skill find_duplicates",
-        "skill batch_rename",
-        "skill archive_by_date",
-        "skill clean_empty_dirs",
-        "list_dir"
+        "list_dir .",
+        "make_dir 脚本",
+        "move_path(src=\"a.ps1\", dst=\"脚本/a.ps1\")",
+        "move_path 一个个挪，别指望一次性挪完"
+      ],
+      "cheatsheet": [
+        "make_dir(path=\"脚本\")",
+        "move_path(src=\"calc.ps1\", dst=\"脚本/calc.ps1\")",
+        "move_path 一次挪一个文件，挪完再挪下一个"
+      ],
+      "forbid": [
+        "只列目录不挪文件就说完成",
+        "同一个 find_files 反复调",
+        "把「目录已存在」当成任务完成"
       ],
       "reject_tools": [
         "write_file"

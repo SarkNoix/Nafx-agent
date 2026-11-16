@@ -485,17 +485,50 @@ function Invoke-AiTool {
                 # 按通配符找文件。比 run_cmd(dir /b *关键词*) 好在：能递归、输出带大小、不用记 cmd 语法
                 $dir = Resolve-AiPath $Action.path
                 if (-not (Test-Path $dir)) { throw "目录不存在：$($Action.path)" }
+                # pattern 可能写在 command / find / filter 任何一个字段里。
+                # 实测模型想找 "*.txt" "*.ps1" 时经常只传 path 不传 pattern，
+                # 于是每次都拿到同一个全量列表，它以为没进展，就反复调 —— 变成绕圈。
                 $pat = [string]$Action.command
+                if ([string]::IsNullOrWhiteSpace($pat)) { $pat = [string]$Action.find }
+                if ([string]::IsNullOrWhiteSpace($pat)) { $pat = [string]$Action.filter }
+                if ([string]::IsNullOrWhiteSpace($pat)) { $pat = [string]$Action.pattern }
                 if ([string]::IsNullOrWhiteSpace($pat)) { $pat = '*' }
+                $pat = $pat.Trim()
+                # 模型有时把通配符写成 "txt"（不带 *.），补上
+                if ($pat -notmatch '[\*\?]' -and $pat -match '^[A-Za-z0-9]+$') { $pat = '*.' + $pat }
+
                 $files = @(Get-ChildItem -LiteralPath $dir -Filter $pat -File -Recurse -ErrorAction SilentlyContinue)
-                if ($files.Count -eq 0) { return "没找到匹配 $pat 的文件" }
-                $sb = New-Object System.Text.StringBuilder
-                [void]$sb.AppendLine("找到 $($files.Count) 个匹配 $pat 的文件：")
-                foreach ($x in ($files | Select-Object -First 30)) {
-                    $sz = if ($x.Length -ge 1MB) { [math]::Round($x.Length/1MB,1).ToString() + ' MB' } elseif ($x.Length -ge 1KB) { [math]::Round($x.Length/1KB,1).ToString() + ' KB' } else { $x.Length.ToString() + ' B' }
-                    [void]$sb.AppendLine(("  " + (Get-RelDisplay $x.FullName) + "  " + $sz))
+                if ($files.Count -eq 0) {
+                    if ($pat -ne '*') {
+                        return ("没找到匹配 $pat 的文件。想看全部的话，把 pattern 留空（或传 `"*`"）。")
+                    }
+                    return "这个目录里没有文件"
                 }
-                if ($files.Count -gt 30) { [void]$sb.AppendLine("  ...还有 $($files.Count - 30) 个") }
+                # 通配符是 * 时，按扩展名分组给个汇总 ——
+                # 模型拿这个汇总就知道该分几类，不用再挨个 find 一遍
+                $sb = New-Object System.Text.StringBuilder
+                if ($pat -eq '*') {
+                    [void]$sb.AppendLine("目录里共 $($files.Count) 个文件，按扩展名：")
+                    $groups = @($files | Group-Object { 
+                        $e = [IO.Path]::GetExtension($_.Name).ToLower()
+                        # 备份文件 like a.txt.bak.20261116_041737 会被 GetExtension 当成
+                        # 扩展名（.20261116_041737），看着像一堆莫名其妙的分组。
+                        # 正常扩展名就 2-6 个字符，超了算「其他」。
+                        if ($e -and $e.Length -le 7) { $e } else { '(其他)' }
+                    } | Sort-Object Name)
+                    foreach ($g in $groups) {
+                        [void]$sb.AppendLine(("  " + $g.Name.PadRight(12) + $g.Count + " 个"))
+                    }
+                    [void]$sb.AppendLine('')
+                    [void]$sb.AppendLine('要看某一类的文件名，传 pattern（例如 "*.txt"）。')
+                } else {
+                    [void]$sb.AppendLine("找到 $($files.Count) 个匹配 $pat 的文件：")
+                    foreach ($x in ($files | Select-Object -First 30)) {
+                        $sz = if ($x.Length -ge 1MB) { [math]::Round($x.Length/1MB,1).ToString() + ' MB' } elseif ($x.Length -ge 1KB) { [math]::Round($x.Length/1KB,1).ToString() + ' KB' } else { $x.Length.ToString() + ' B' }
+                        [void]$sb.AppendLine(("  " + (Get-RelDisplay $x.FullName) + "  " + $sz))
+                    }
+                    if ($files.Count -gt 30) { [void]$sb.AppendLine("  ...还有 $($files.Count - 30) 个") }
+                }
                 return $sb.ToString()
             }
 
@@ -517,12 +550,37 @@ function Invoke-AiTool {
             'move_path' {
                 # 移动 / 重命名。目标路径填在 command 里
                 $src = Resolve-AiPath $Action.path
+                # 目标路径字段名兼容。
+                # schema 里目标叫 command（沿用了通用"命令"字段），
+                # 但模型直觉会写 dst / to / target —— 实测「按类型归类」时
+                # 它想挪文件却不知道目标填哪，干脆改用 write_file 新建了个空文件。
+                # 这里几个常见写法都收。
                 $dstRel = [string]$Action.command
-                if ([string]::IsNullOrWhiteSpace($dstRel)) { throw 'command 里要填目标路径，比如 b.txt 或 new\a.txt' }
-                if (-not (Test-Path $src)) { throw "源不存在：$($Action.path)" }
+                if ([string]::IsNullOrWhiteSpace($dstRel)) { $dstRel = [string]$Action.dst }
+                if ([string]::IsNullOrWhiteSpace($dstRel)) { $dstRel = [string]$Action.to }
+                if ([string]::IsNullOrWhiteSpace($dstRel)) { $dstRel = [string]$Action.dest }
+                if ([string]::IsNullOrWhiteSpace($dstRel)) { $dstRel = [string]$Action.target }
+                if ([string]::IsNullOrWhiteSpace($dstRel)) {
+                    throw ('没说要挪到哪儿。源是 ' + [string]$Action.path + '，' +
+                           '目标路径填在 command 里，比如 command="脚本/calc.ps1"。' +
+                           '别用 write_file 新建 —— 那是造空文件，不是挪。')
+                }
+                if (-not (Test-Path $src)) {
+                    # 源没了但目标在 —— 多半是它自己刚才已经挪过了。
+                    # 实测归类任务：move_path 成功一次，模型没意识到，
+                    # 又对同一个源调了一次，拿到「源不存在」后开始绕圈。
+                    # 这种情况直接说清楚「你要的已经是这个结果了」。
+                    if (Test-Path $dst) {
+                        return ("不用再挪了：" + (Get-RelDisplay $dst) + " 已经存在，" +
+                                (Get-RelDisplay $src) + " 已经不在了 —— 说明之前就挪好了。继续下一个文件。")
+                    }
+                    throw "源不存在：$($Action.path)"
+                }
                 $dst = Resolve-AiPath $dstRel
                 Assert-CanWrite -Full $dst -RelPath $dstRel
-                if (Test-Path $dst) { throw "目标已存在：$dstRel。要覆盖就先 delete_path 删掉它。" }
+                if (Test-Path $dst) {
+                    return ("不用再挪了：" + (Get-RelDisplay $dst) + " 已经有了，这个文件已经归到位。继续下一个。")
+                }
                 $d = Split-Path $dst -Parent
                 if ($d -and -not (Test-Path $d)) { New-Item -ItemType Directory -Force -Path $d | Out-Null }
                 Move-Item -LiteralPath $src -Destination $dst -Force
@@ -1332,7 +1390,10 @@ function Invoke-AiTool {
                         # （"找出重复文件（按哈希判断，不看文件名）"会断成半句）
                         $cut = $d.IndexOf([char]0x3002)
                         if ($cut -gt 6) { $d = $d.Substring(0, $cut) }
-                        if ($d.Length -gt 30) { $d = $d.Substring(0, 30) + [char]0x2026 }
+                        # 长度放宽到 42。原来 30 太紧，把「（-Apply 才真移动）」
+                        # 这种关键提示直接砍掉了 —— 实测模型调 archive_by_type
+                        # 时漏了 -Apply，只跑了预览，以为归档完成，其实一个都没动。
+                        if ($d.Length -gt 42) { $d = $d.Substring(0, 42) + [char]0x2026 }
                         [void]$sb.AppendLine(("{0,-20} {1}" -f $s.name, $d))
                     }
                     return $sb.ToString()
@@ -1938,7 +1999,18 @@ function Invoke-AiTool {
                 if ($wTrim.Length -lt 6 -or $wTrim -match '^(think|true|false|none|null|\d+)$') {
                     return '（你没写想法。把「要做什么、先做哪步、怎么判断做对了」写进 content）'
                 }
-                return '（想法已记下。现在开始动手，别再重复这段推理。）'
+
+                # 把想法原样回显，而不是只说「记下了」。
+                #
+                # 原来这里返回的是「（想法已记下。现在开始动手，别再重复这段推理。）」——
+                # 结果模型的计划根本没留在上下文里。实测「把文件按类型归类」：
+                # 第 1 步 think 明明写了「归类后要 move_path」，
+                # 后面却只调了 make_dir 和 find_files（同一个 find_files 连调 3 次），
+                # 一次 move_path 都没有 —— 它把自己的计划忘了。
+                #
+                # 回显的作用等于给自己留一张待办条：每轮都能看到「当初说要干什么」。
+                return ('（想法已记下。你的计划是：' + $wTrim + "`n" +
+                        '现在照着这个计划往下做，别再写一遍同样的推理。）')
             }
 
             'rethink' {
