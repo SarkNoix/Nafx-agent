@@ -2358,7 +2358,7 @@ function ensureStreamSkeleton(){
   if (stNode && el.contains(stNode)) return el;
   // 骨架只建一次
   el.innerHTML = '<div class="st-label" onclick="toggleStreamFold(event)">' +
-                 '<span>模型正在输出</span>' +
+                 '<span class="st-title">模型输出</span>' +
                  '<span class="st-fold">收起</span></div>' +
                  '<div class="st-body"><span class="st-txt"></span><span class="st-caret">▍</span></div>';
   stNode = el.querySelector('.st-txt');
@@ -3080,11 +3080,12 @@ function tick(){
    模式随任务一起发给 /api/run，之后写进队列项，调度时传给 agent。 */
 var curMode = 'normal';
 var MODE_INFO = {
-  normal: { hint: '日常问答、简单任务', ph: '说点什么，让它去做…' },
-  work:   { hint: '复杂任务：多花点时间想清楚再做', ph: '描述一个复杂的活，它会先列计划…' },
-  auto:   { hint: '无人值守：不会向你提问，卡住自己想办法', ph: '交给它自己搞定，中途不打扰你…' }
+  // hint 说明「它会怎么想」，不是「它能干什么」——
+  // 三种模式真正的区别在思考方式上，用户选之前该知道这个差别。
+  normal: { hint: '快：一步到三步就动手，不复述任务', ph: '说点什么，让它去做…' },
+  work:   { hint: '稳：先拆步骤、排顺序，每步都验证', ph: '描述一个复杂的活，它会先列计划…' },
+  auto:   { hint: '独立：不问你，自己拍板自己兜底', ph: '交给它自己搞定，中途不打扰你…' }
 };
-
 function setMode(m){
   if (!MODE_INFO[m]) m = 'normal';
   curMode = m;
