@@ -28,6 +28,50 @@ $HistFile  = Join-Path $Root 'agent\logs\history.jsonl'
 $CtxFile   = Join-Path $Root 'agent\logs\task-context.jsonl'
 $UiLogDir  = Join-Path $Root 'agent\logs'
 
+# ------------------------------------------------------------
+#  面板自己的日志
+#
+#  以前 monitor 一行日志都不记，只有 8 处 Write-Host。
+#  但它是用 -WindowStyle Hidden 起来的，控制台输出直接进了黑洞 ——
+#  面板出错、请求异常、任务调度失败，事后一点痕迹都查不到。
+#
+#  现在单独一个 logs\panel\ 目录，和 agent 的日志分开：
+#    panel.log      面板自己的事（启动、调度、出错、慢请求）
+#    requests.log   值得留痕的 API 请求（POST 操作、出错响应）
+#
+#  写日志绝不能抛异常：日志写失败把面板搞挂了最蠢。整段套 try/catch。
+# ------------------------------------------------------------
+$script:PanelLogDir = Join-Path $Root 'logs\panel'
+if (-not (Test-Path $script:PanelLogDir)) {
+    try { New-Item -ItemType Directory -Force -Path $script:PanelLogDir | Out-Null } catch { }
+}
+# 每个请求都记 DEBUG 太吵（轮询接口每秒好几条），默认关。
+# 要排查「面板到底在请求什么」时，把 config.json 里的 panelVerbose 设成 true。
+$script:PanelVerbose = $false
+try { if ($Cfg.PSObject.Properties.Name -contains 'panelVerbose') { $script:PanelVerbose = [bool]$Cfg.panelVerbose } } catch { }
+$script:PanelLogFile = Join-Path $script:PanelLogDir 'panel.log'
+$script:ReqLogFile   = Join-Path $script:PanelLogDir 'requests.log'
+
+function Write-PanelLog {
+    param([string]$Text, [string]$Level = 'INFO')
+    if ([string]::IsNullOrWhiteSpace($Text)) { return }
+    try {
+        $line = '[' + (Get-Date -Format 'MM-dd HH:mm:ss') + '] [' + $Level + '] ' + $Text
+        # AppendAllText + 无 BOM：Add-Content -Encoding UTF8 第一次会写 BOM，
+        # 后面不写，混在一起就是一行乱码（这个坑踩过）。
+        [IO.File]::AppendAllText($script:PanelLogFile, $line + "`r`n", (New-Object Text.UTF8Encoding($false)))
+    } catch { }
+}
+
+function Write-ReqLog {
+    param([string]$Path, [string]$Method, [int]$Ms = 0, [string]$Note = '')
+    try {
+        $line = (Get-Date -Format 'MM-dd HH:mm:ss') + '  ' + $Method.PadRight(4) + '  ' +
+                $Path.PadRight(26) + '  ' + $ms.ToString().PadLeft(5) + 'ms  ' + $Note
+        [IO.File]::AppendAllText($script:ReqLogFile, $line + "`r`n", (New-Object Text.UTF8Encoding($false)))
+    } catch { }
+}
+
 $WorkerCount = [int]$Cfg.parallel
 if ($WorkerCount -lt 1) { $WorkerCount = 1 }
 if ($WorkerCount -gt 4) { $WorkerCount = 4 }
@@ -75,6 +119,20 @@ function Send-Bytes {
 
 function Send-Text {
     param($Response, [string]$Text, [int]$Code = 200)
+    # 请求日志在这里记：所有 API 都走 Send-Text，一处就全覆盖。
+    # 轮询接口每秒好几次，记下来只会撑大文件，所以只记值得留痕的。
+    try {
+        if ($script:ReqSw) {
+            $ms = [int]$script:ReqSw.Elapsed.TotalMilliseconds
+            if ($script:LogThisReq -or $Code -ge 400) {
+                $note = ''
+                if ($Code -ge 400) { $note = 'HTTP ' + $Code }
+                Write-ReqLog -Path ([string]$script:ReqPath) -Method ([string]$script:ReqMethod) -Ms $ms -Note $note
+            }
+            if ($ms -gt 1500) { Write-PanelLog ("慢请求 " + $script:ReqPath + " " + $ms + "ms") 'WARN' }
+            $script:ReqSw = $null
+        }
+    } catch { }
     Send-Bytes -Response $Response -Bytes ([Text.Encoding]::UTF8.GetBytes($Text)) -Code $Code
 }
 
@@ -265,8 +323,10 @@ function Invoke-Dispatch {
                 -RedirectStandardOutput $uiLog -WindowStyle Hidden -PassThru
             $Workers[$slot] = $proc
             Write-Host ("  [第{0}路] ({1}) {2}" -f $slot, $nextMode, $next.task) -ForegroundColor Green
+            Write-PanelLog ("第$slot 路启动 [" + $nextMode + "] " + $next.task)
         } catch {
             Write-Host ("  [第{0}路] 启动失败：{1}" -f $slot, $_.Exception.Message) -ForegroundColor Red
+            Write-PanelLog ("第$slot 路启动失败：" + $_.Exception.Message) 'ERROR'
             Set-QueueStatus -Id $next.id -Status 'failed' -Result '进程启动失败'
         }
         $free--
@@ -439,9 +499,12 @@ $listener.Prefixes.Add("http://$($Cfg.host):$Port/")
 try { $listener.Start() }
 catch {
     Write-Host "面板端口 $Port 被占用（可能已经开了一个），本次不重复启动。" -ForegroundColor Yellow
+            Write-PanelLog ("端口 $Port 被占用，不重复启动") 'WARN'
     exit 0
 }
 Write-Host "Nafx 面板：http://$($Cfg.host):$Port/  并行 $WorkerCount 路" -ForegroundColor Cyan
+Write-PanelLog ("面板启动 http://" + $Cfg.host + ":" + $Port + "/  并行 " + $WorkerCount + " 路")
+Write-PanelLog ("进程 PID " + $PID + "  PowerShell " + $PSVersionTable.PSVersion.ToString())
 try { [IO.File]::WriteAllText((Join-Path $Root 'agent\panel.pid'), "$PID", (New-Object Text.UTF8Encoding($false))) } catch { }
 
 # 启动时清理上次残留的 agent 进程
@@ -476,6 +539,15 @@ while ($listener.IsListening) {
             $resp = $ctx.Response
             $method = $ctx.Request.HttpMethod
 
+            # 请求计时。$script:ReqSw 由 Send-Text 消费，
+            # 只有「值得留痕」的请求才写进 requests.log ——
+            # 轮询接口（state/session/stream/queue）每秒好几次，记了只会撑大文件。
+            $script:ReqSw = [Diagnostics.Stopwatch]::StartNew()
+            $script:ReqPath = [string]$path
+            $script:ReqMethod = [string]$method
+            $script:LogThisReq = ($path -like '/api/*') -and ($path -notin @('/api/state', '/api/session', '/api/stream', '/api/queue', '/api/history'))
+            if ($script:PanelVerbose) { Write-PanelLog ("→ " + $method + " " + $path) 'DEBUG' }
+
             switch ($path) {
 
                 '/' {
@@ -499,6 +571,34 @@ while ($listener.IsListening) {
                     Send-Text -Response $resp -Text ($merged | ConvertTo-Json -Depth 10 -Compress)
                 }
 
+
+                '/api/logs' {
+                    # 面板自己的日志，给用户排查用。
+                    #   ?kind=panel     只面板日志（默认）
+                    #   ?kind=req       请求日志
+                    #   ?kind=agent     最近一次任务的运行日志
+                    #   ?tail=N         只取最后 N 行（默认 200）
+                    $kind = 'panel'; $tail = 200
+                    $rawQ2 = [string]$ctx.Request.Url.Query
+                    $mK = [regex]::Match($rawQ2, 'kind=(\w+)'); if ($mK.Success) { $kind = $mK.Groups[1].Value }
+                    $mT = [regex]::Match($rawQ2, 'tail=(\d+)'); if ($mT.Success) { $tail = [Math]::Min(1000, [int]$mT.Groups[1].Value) }
+                    $lf = $script:PanelLogFile
+                    if ($kind -eq 'req') { $lf = $script:ReqLogFile }
+                    if ($kind -eq 'agent') {
+                        $runs = @(Get-ChildItem (Join-Path $Root 'agent\logs\run_*.txt') -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending)
+                        if ($runs.Count -gt 0) { $lf = $runs[0].FullName }
+                    }
+                    $out = New-Object System.Collections.ArrayList
+                    if (Test-Path $lf) {
+                        try {
+                            $all2 = @(Get-Content $lf -Encoding UTF8 | Where-Object { $_.Trim() })
+                            $take2 = @($all2 | Select-Object -Last $tail)
+                            foreach ($l2 in $take2) { [void]$out.Add($l2) }
+                        } catch { }
+                    }
+                    $obj2 = [pscustomobject]@{ kind = $kind; file = $lf; total = @($out).Count; lines = @($out) }
+                    Send-Text -Response $resp -Text ($obj2 | ConvertTo-Json -Depth 4 -Compress)
+                }
                 '/api/system' {
                     Send-Text -Response $resp -Text ((Get-SystemContext) | ConvertTo-Json -Depth 5 -Compress)
                 }
