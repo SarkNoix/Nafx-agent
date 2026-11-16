@@ -84,6 +84,15 @@ $LogDir    = Join-Path $AgentDir 'logs'
 $StateFile = if ($env:NAFX_STATE) { $env:NAFX_STATE } else { Join-Path $AgentDir 'state.json' }
 if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Force -Path $LogDir | Out-Null }
 
+# ---- 实时进度通道 ----
+# 模型吐字很慢（CPU 上约 3.7 tok/s），一步 60-180 秒。
+# Write-LivePhase 在这期间每 1.5 秒覆盖写一次 state，
+# 让面板显示成「正在想… 已 42 字」，而不是一个死掉的「思考中」。
+$script:LiveStateFile = $StateFile
+$script:LiveState     = $null    # 主循环开始后指向当前 state 对象
+$script:LiveClock     = $null    # 指向 $clock，用来算已用时间
+$script:LiveChars     = 0
+
 # ---- 真实上下文长度 ----
 # 问 llama 一次要它实际的 n_ctx，拿 config.json 的值当兜底。
 #
@@ -461,8 +470,17 @@ function Write-State {
         # 改名在同一个卷上是原子操作，读的一方要么看到旧的完整文件，要么看到新的。
         $tmpState = $StateFile + '.tmp'
         [IO.File]::WriteAllText($tmpState, $json, (New-Object Text.UTF8Encoding($false)))
-        if (Test-Path $StateFile) { [IO.File]::Delete($StateFile) }
-        [IO.File]::Move($tmpState, $StateFile)
+        # 真正的原子替换。
+        # 原来是「先 Delete 再 Move」——这两步之间文件是不存在的，
+        # 面板正好在这几毫秒里读就会读到不存在 / 空文件，
+        # 表现就是「气泡突然没了，过一会儿又出现」。
+        # 而 Write-LivePhase 每 1.5 秒也在写同一个文件，撞上的概率比以前高得多。
+        # File.Replace 在 NTFS 上是原子的：要么拿到旧的完整内容，要么拿到新的。
+        if (Test-Path $StateFile) {
+            [IO.File]::Replace($tmpState, $StateFile, $null)
+        } else {
+            [IO.File]::Move($tmpState, $StateFile)
+        }
     } catch {
         # 写不进状态 = 面板收不到任何更新，表现出来的就是「卡在思考中不动」。
         # 以前这里静默吞，用户看到的是假死面板。至少记一笔，能查。
@@ -809,6 +827,42 @@ function Set-PlanStepDone {
 #  模型调用
 # ============================================================
 
+# 把「模型已生成多少字」实时写进 state，面板就不用干等了。
+#
+# 为什么需要：CPU 上 4B 大约 3.7 tok/s，一步 60-180 秒很正常。
+# 这期间 state 里 phase 一直停在「思考中」，面板看着就是假死 ——
+# 用户不知道它是在干活还是挂了。
+# 现在每 1.5 秒更新一次：「正在想… 已 42 字」或者「正在写 write_file…」。
+function Write-LivePhase {
+    param([int]$Chars = 0, [string]$Tool = '')
+    if (-not $script:LiveState) { return }
+    try {
+        # 工具调用和纯文本都显示进度。
+        # 4B 大多数时候走工具调用（think / write_file），只显示「正在想…」
+        # 的话，那 60-180 秒里还是看不到任何动静。
+        $phase = ''
+        if ($Tool) {
+            if ($Chars -gt 0) { $phase = "正在写 $Tool · $Chars 字" }
+            else { $phase = "正在写 $Tool…" }
+        } elseif ($Chars -gt 0) {
+            $phase = "正在想 · $Chars 字"
+        } else {
+            $phase = '正在连接模型…'
+        }
+        $script:LiveState.phase = $phase
+        if ($script:LiveClock) { $script:LiveState.elapsed = [double]$script:LiveClock.Elapsed.TotalSeconds }
+        # 直接覆盖写，不走 Write-State —— 那边还要序列化 steps，每 1.5 秒做一次太重。
+        $json = $script:LiveState | ConvertTo-Json -Depth 6 -Compress
+        $tmp = $script:LiveStateFile + '.tmp'
+        [IO.File]::WriteAllText($tmp, $json, (New-Object Text.UTF8Encoding($false)))
+        if (Test-Path $script:LiveStateFile) {
+            [IO.File]::Replace($tmp, $script:LiveStateFile, $null)
+        } else {
+            [IO.File]::Move($tmp, $script:LiveStateFile)
+        }
+    } catch { }
+}
+
 function Invoke-Model {
     param([array]$Messages, [string]$ToolsJson = '', [switch]$ForceTool, [switch]$ForceFinish, [int]$MaxTokens = 0)
 
@@ -868,6 +922,12 @@ function Invoke-Model {
 
             # 屏幕还没输出过任何字符时，用这个标记判断要不要换行
             $printed = $false
+            # 实时进度：模型吐字很慢（CPU 上约 3.7 tok/s），
+            # 一步要 60-180 秒。这期间 state 里 phase 一直停在「思考中」，
+            # 面板看着就是假死。这里每收到一片就把「已生成多少字」写进 state，
+            # 面板就能显示成会动的「正在想… 已 42 字」。
+            $liveChars = 0
+            $lastLive = Get-Date
             while (-not $reader.EndOfStream) {
                 $line = $reader.ReadLine()
                 if (-not $line) { continue }
@@ -884,6 +944,7 @@ function Invoke-Model {
                 # 纯文本分片
                 if ($d.content) {
                     $piece = [string]$d.content
+                    $liveChars += $piece.Length
                     if (-not $printed) { Write-Host '    ' -NoNewline -ForegroundColor DarkGray; $printed = $true }
                     Write-Host $piece -NoNewline -ForegroundColor Gray
                     $acc += $piece
@@ -901,6 +962,7 @@ function Invoke-Model {
                         if ($tc.function -and $tc.function.name) { $cur.name = [string]$tc.function.name }
                         if ($tc.function -and $null -ne $tc.function.arguments) {
                             $frag = [string]$tc.function.arguments
+                            $liveChars += $frag.Length
                             $prevArgsLen = $cur.args.Length
                             $cur.args += $frag
                             # 参数分片实时显示（这就是「一个字一个字」的效果）
@@ -923,6 +985,16 @@ function Invoke-Model {
                             if ($piece) { StreamPiece -Text $piece -Kind 'tool' }
                         }
                     }
+                }
+
+                # 每 1.5 秒把进度写进 state，面板就能显示成会动的数字。
+                # 不能每片都写：这是磁盘 IO，一片一次会把慢盘拖垮。
+                if (((Get-Date) - $lastLive).TotalSeconds -ge 1.5) {
+                    $lastLive = Get-Date
+                    $script:LiveChars = $liveChars
+                    $curName = ''
+                    foreach ($kc in $dtCalls.Keys) { if ($dtCalls[$kc].name) { $curName = [string]$dtCalls[$kc].name; break } }
+                    Write-LivePhase -Chars $liveChars -Tool $curName
                 }
             }
             if ($printed -or $dtCalls.Count -gt 0) { Write-Host '' }
@@ -995,6 +1067,55 @@ function Invoke-Model {
                 }
                 if ($good -and $parsed.Count -gt 0) { $calls = $parsed }
             } catch { }
+        }
+    }
+
+    # ---- 兼容「工具名(参数)」这种写法 ----
+    # 实测 test2 那题模型输出的是：
+    #   say("任务 test2 没有明确具体操作，请问您希望我如何处理？")
+    # 这不是 JSON 数组，上面那层兜不住，于是被当成「只说话不动手」，
+    # 连空转 2 次就把任务判死了 —— 但它其实是想提问。
+    # 这里再补一层：匹配 `工具名(参数)` 或 `工具名({...})`。
+    if ($calls.Count -eq 0 -and $msg.content) {
+        $txt2 = [string]$msg.content
+        $names = ($script:ToolSchemaMap.Keys | ForEach-Object { [regex]::Escape($_) }) -join '|'
+        $mCall = [regex]::Match($txt2, '(?s)\b(' + $names + ')\s*\(\s*(.*?)\s*\)\s*$')
+        if ($mCall.Success) {
+            $fn = $mCall.Groups[1].Value
+            $rawArg = $mCall.Groups[2].Value.Trim()
+            $argObj = $null
+            # ① 参数本身是 JSON 对象
+            if ($rawArg.StartsWith('{')) {
+                try { $argObj = $rawArg | ConvertFrom-Json } catch { $argObj = $null }
+            }
+            # ② 参数是 key=value 形式：answer="..", path=".."
+            if (-not $argObj -and $rawArg) {
+                $h = [ordered]@{}
+                foreach ($kv in [regex]::Matches($rawArg, '([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:"((?:[^"\\]|\\.)*)"|([^,]+))')) {
+                    $k = $kv.Groups[1].Value
+                    $v = if ($kv.Groups[2].Success) { $kv.Groups[2].Value } else { $kv.Groups[3].Value.Trim() }
+                    $h[$k] = $v
+                }
+                if ($h.Count -gt 0) { $argObj = [pscustomobject]$h }
+            }
+            # ③ 一个参数都没有，但内容是自然语言 → 给对应工具的文本字段
+            if (-not $argObj -and $rawArg -and -not $rawArg.Contains('=') -and -not $rawArg.Contains(':')) {
+                $stripQuotes = $rawArg.Trim('"', "'", ' ')
+                if ($stripQuotes) {
+                    $h2 = [ordered]@{}
+                    if ($fn -in @('say', 'note', 'think')) { $h2['content'] = $stripQuotes }
+                    elseif ($fn -eq 'finish') { $h2['answer'] = $stripQuotes }
+                    elseif ($fn -eq 'run_cmd') { $h2['command'] = $stripQuotes }
+                    if ($h2.Count -gt 0) { $argObj = [pscustomobject]$h2 }
+                }
+            }
+            if ($argObj) {
+                $calls = @([pscustomobject]@{
+                    id        = 'call_' + [Guid]::NewGuid().ToString('N').Substring(0, 8)
+                    name      = $fn
+                    arguments = (ConvertTo-Json -InputObject $argObj -Depth 8 -Compress)
+                })
+            }
         }
     }
 
@@ -1256,6 +1377,9 @@ function Close-WithResult {
         if ($cob.Trim()) { $lastObs = $cob; break }
     }
 
+    # 收尾了，「正在想 · 140 字」这种实时进度必须清掉，
+    # 否则面板拿到 status=done 却还显示「正在准备请求…」，看起来像没结束。
+    $State.phase = ''
     $State.elapsed = $clock.Elapsed.TotalSeconds
     if ($lastObs.Trim()) {
         $final = ($lastObs -split "`n" | Where-Object { $_.Trim() } | Select-Object -First 15) -join "`n"
@@ -1616,6 +1740,14 @@ $state = [pscustomobject]@{
 }
 Write-State $state
 
+# 把 state 和计时器挂到实时通道上。
+# 之后 Write-LivePhase 每 1.5 秒就能覆盖写一次，
+# 面板在模型吐字的那 60-180 秒里能看到「正在想… 已 42 字」，
+# 而不是一个不动的「思考中」。
+$script:LiveState = $state
+$script:LiveClock = $clock
+$script:LiveChars = 0
+
 $finished    = $false
 $noToolCount = 0
 # 模型「还没说完」的那段话。
@@ -1678,7 +1810,10 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
         break
     }
 
-    $state.phase = '思考中'
+    # 这一步的 phase 先给个「准备请求」，别停在「思考中」——
+    # 从这行到模型真正吐字还有 3-5 秒（拼 JSON、建连接、等首字节），
+    # 这段时间面板不动，看着像卡死。
+    $state.phase = '正在准备请求…'
     Write-State $state
 
     # ---- 上下文预算兜底 ----
@@ -1773,36 +1908,54 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
         #   「什么时候必须先查」「怎么说话」「信息不够就问」—— 砍了做得糙一点，但能做完
         # 所以超预算时按优先级从低到高丢，丢到装得下为止。
         $slimSys = $sysFull
-        if ($projPick) { $slimSys = $slimSys.Replace("`n`n" + $projPick, '') }
-        # 可丢的小节，从最不重要的开始
-        $droppable = @('## 怎么说话', '## 信息不够就问', '## 什么时候必须先查', '## 出错怎么办')
         $headTok = Get-CtxTokens $slimSys
+
+        # 目标：slimSys + 工具 + 输出 必须装进 ctxLimit。
+        # ⚠ 这个值可能算成负数：工具 997 + 输出 600 已经吃掉 1597，
+        # 而精简发生在「砍工具之前」，$toolsTokNow 还是砍之前那个大数。
+        # 第一版没防这个，target 算成 -207，于是把 prompt 一路砍到 225 tok、
+        # 连「别用错工具」那张表都从中间截断了 —— 模型拿不到工具格式，
+        # 就开始纯文字输出「think\n任务内容不明确…」，一个工具都不调。
+        # 所以：给一个硬下限，砍到这就停；真装不下交给后面的「裁历史 / 砍工具」去处理。
+        $target = $ctxLimit - $toolsTokNow - $mt0 - 80
+        $floor  = 900          # prompt 至少留 900 tok，再少就没法正常干活了
+        if ($target -lt $floor) { $target = $floor }
+
+        # ① 按 token 从尾部砍，但只在段落边界切 —— 不能把一张表或者一段话截一半。
+        while ($headTok -gt $target) {
+            # 找最后一个完整的 ## 小节，从那里断开
+            $marks = [regex]::Matches($slimSys, '\r?\n## ')
+            if ($marks.Count -le 2) { break }   # 已经只剩两三个小节了，别再砍
+            $cutAt = $marks[$marks.Count - 1].Index
+            $slimSys = $slimSys.Substring(0, $cutAt)
+            $headTok = Get-CtxTokens $slimSys
+        }
+
+        # ② 还超就按小节丢（从最不重要的开始）
+        $droppable = @('## 怎么说话', '## 信息不够就问', '## 什么时候必须先查', '## 出错怎么办')
         foreach ($sec in $droppable) {
-            if (($headTok + $toolsTokNow + $mt0) -le $ctxLimit) { break }
+            if ($headTok -le $target) { break }
             $m2 = [regex]::Match($slimSys, '(?s)' + [regex]::Escape($sec) + '.*?(?=\r?\n## |\z)')
             if ($m2.Success) {
                 $slimSys = $slimSys.Remove($m2.Index, $m2.Length)
                 $headTok = Get-CtxTokens $slimSys
             }
         }
-        # 还超就把 project.md 段也整个去掉（上面可能没匹配上）
-        if (($headTok + $toolsTokNow + $mt0) -gt $ctxLimit -and $projPick) {
-            $slimSys = $slimSys.Replace("`n`n" + $projPick, '')
-            $headTok = Get-CtxTokens $slimSys
-        }
-        # 保留必要的作业要求（模糊任务要先问、个人指令），这两条不能丢
+
+        # ③ 必须保留的作业要求（模糊任务要先问），这条不能丢
         if ($isVague -and $slimSys -notmatch '这个任务没说清楚') {
             $slimSys += "`n`n## 这个任务没说清楚`n`n用户只说了「$TaskText」，没说对什么东西做。**必须先用 say 问一句具体要处理哪个目录、按什么方式。**"
         }
-        if (-not [string]::IsNullOrWhiteSpace($personalPrompt)) {
+        # 个人指令保留（用户自己写的，砍了不合适）
+        if (-not [string]::IsNullOrWhiteSpace($personalPrompt) -and $slimSys -notmatch '我的习惯') {
             $slimSys += "`n`n## 我的习惯`n`n" + $personalPrompt
         }
         $history[0] = @{ role = 'system'; content = $slimSys }
         $sysFull = $slimSys
         $script:SysSlimmed = $true
         $histTok = Get-HistoryTokens -History $history
-        Write-Log ("  [精简 system] 开局就超预算，按重要性丢掉次要章节：" +
-                   "$([Math]::Round((Get-CtxTokens $SystemPrompt))) → $([Math]::Round((Get-CtxTokens $slimSys))) tok")
+        Write-Log ("  [精简 system] " + $([Math]::Round((Get-CtxTokens $SystemPrompt))) + " → " + $([Math]::Round($headTok)) + " tok（目标 $target，下限 $floor）")
+        $histTok = Get-HistoryTokens -History $history
     }
 
     if ($overBudget -and $history.Count -gt 6) {
@@ -1928,6 +2081,16 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
             break
         }
         Write-Log ("  [空转] 第 {0} 次没调工具" -f $noToolCount)
+
+        # 空转时也要让用户看见它在说什么。
+        # 现象：任务「test」这种没意义的输入，模型连着三次只输出文字、一次工具都不调，
+        # steps 一直是 0 —— 面板上除了一张任务卡什么都没有，看着像挂了。
+        # 它其实在说「任务不明确，请说明要做什么」，只是从没进过会话流。
+        if ($noToolCount -eq 1 -and ([string]$res.content).Trim()) {
+            $bcSay = ([string]$res.content -replace '\s+', ' ').Trim()
+            if ($bcSay.Length -gt 100) { $bcSay = $bcSay.Substring(0, 100) + '…' }
+            Add-SessionNote -Text $bcSay
+        }
 
         # 模型这次说的话，先累积到「当前回合」里。
         #

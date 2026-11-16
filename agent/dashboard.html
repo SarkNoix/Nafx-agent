@@ -2371,12 +2371,20 @@ function pullStream(){
       if (j.items && j.items.length){
         for (var i=0;i<j.items.length;i++){
           var it = j.items[i];
+          // 按 seq 去重。
+          // 原来是无条件 streamText += it.text —— 而 streamSeq 是请求「成功之后」才更新的，
+          // 250ms 节流又让多次 tick 可能同时在路上，
+          // 两次请求带着同一个 since 回来，同一段文字就被拼了两遍
+          // （实测看到「hello.txthello.txt」、一段 path 重复显示）。
+          // 现在记一下已经收过的最大 seq，比它小的直接丢。
+          var s = (typeof it.seq === 'number') ? it.seq : 0;
+          if (s && s <= streamSeq) continue;
           streamText += it.text || '';
           streamKind = it.kind || 'text';
         }
         renderStream();
       }
-      if (typeof j.seq === 'number') streamSeq = j.seq;
+      if (typeof j.seq === 'number' && j.seq > streamSeq) streamSeq = j.seq;
     })
     .catch(function(){});
 }
@@ -2971,7 +2979,11 @@ function tick(){
         // 模型两步之间有十几秒停顿，立刻清会一闪一闪。
         window.__lastTask = null;
         window.__lastTaskText = '';
-        hideStreamSoon();
+        // 暂停之后还挂着「模型正在输出」，用户会以为它在动。
+        // 只有正常完成才留 1.2 秒宽限（两步之间模型有十几秒停顿，立刻清会闪）。
+        var hardStop = (st && (st.status === 'paused' || st.status === 'failed' || st.status === 'error' || st.status === 'stuck'));
+        if (hardStop) { resetStream(); }
+        else { hideStreamSoon(); }
       }
       if (pollTimer) clearTimeout(pollTimer);
       pollTimer = setTimeout(tick, busy ? 450 : 1600);

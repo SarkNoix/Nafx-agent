@@ -327,7 +327,22 @@ function Get-MergedState {
             }
         } catch { }
 
-        if (-not $hasAgent -and $staleSec -gt 25) {
+        # 25 秒这个阈值不能太死。
+        # 调度器是「先把 state 写成 running，再 Start-Process」，中间有几秒空窗；
+        # 面板正好在那几秒里轮询，就会看到 running 但找不到进程 ——
+        # 用户看到的就是「明明跑完了，底下却挂着上次被中断」。
+        # 现在：state 的 elapsed 刚归零（新任务）时给足 60 秒宽限，其它情况仍是 25 秒。
+        $freshStart = $false
+        try { if ([double]$main.elapsed -lt 5) { $freshStart = $true } } catch { }
+        $graceSec = if ($freshStart) { 60 } else { 25 }
+        # 第二层保护：已经有答案了就不可能「被中断」。
+        # 实测「把 hello.txt 改成改好了」跑完 finish、文件也改了，
+        # 底下却挂着「上次运行被中断」—— 判定串到了上个任务身上。
+        $hasResult = ([string]$main.answer).Trim().Length -gt 0
+        if (-not $hasResult) {
+            foreach ($ss in @($main.steps)) { if ([string]$ss.tool -eq 'finish') { $hasResult = $true; break } }
+        }
+        if (-not $hasAgent -and -not $hasResult -and $staleSec -gt $graceSec) {
             $main.status = 'interrupted'
             $main.phase = '上次运行被中断（进程已退出），结果可能不完整'
         }
@@ -614,6 +629,14 @@ while ($listener.IsListening) {
                         }
                     }
                     Save-Queue $items
+                    # 流式文件也要清空。
+                    # 只杀进程的话，stream.jsonl 里暂停前那半句还在，
+                    # 面板照样一直读它、一直显示「模型正在输出」——
+                    # 用户看到的是一段冻结的文字和一个不动的光标，很像还活着。
+                    try {
+                        $stf = Join-Path $Root 'agent\stream.jsonl'
+                        if (Test-Path $stf) { [IO.File]::WriteAllText($stf, '', (New-Object Text.UTF8Encoding($false))) }
+                    } catch { }
                     # 关键：状态文件也要改，否则面板还显示"执行中"，看着像没停
                     for ($sl = 1; $sl -le $WorkerCount; $sl++) {
                         $sf2 = Get-SlotStateFile $sl
