@@ -822,8 +822,73 @@ function Get-Summary {
 #  但给 3 分钟（删东西比回答问题更需要想一下）。
 #  拿不到回答一律当「拒绝」—— 安全侧默认拒绝，不是默认放行。
 # ------------------------------------------------------------
-function Confirm-Delete {
-    param([string]$Target, [object]$State, [int]$StepNum)
+# ------------------------------------------------------------
+#  工具出错时的反馈：不只要说"错在哪"，还要说"接下来怎么想"
+#
+#  原来出错只返回一句「出错了：<异常消息>」，模型拿到之后基本只会
+#  原样再试一遍（同一个 move_path 连调 3 次就是这么来的），
+#  或者换个工具瞎试。
+#
+#  这里按错误类型分类，每类都给一句「所以你现在该做什么」：
+#    · 路径不存在   → 先 list_dir 看真实文件名，别猜
+#    · 目标已存在   → 换个目标，或者确认是不是已经做过了
+#    · 权限/被占用  → 换路径，别硬试
+#    · 参数缺失     → 补哪个字段
+#    · 安全拦截     → 这条路走不通，换条路，别绕过
+#  分类靠异常消息里的关键词，简单但不精确——够用，因为消息是我们自己抛的。
+# ------------------------------------------------------------
+function Format-ToolError {
+    param([string]$Tool, [string]$Arg, [string]$Message)
+
+    $m = [string]$Message
+    $head = "出错了：$m"
+    $hint = ''
+
+    if ($m -match '路径越界|这里动不得|不合法') {
+        $hint = ('这个位置不许动（只允许工作区，桌面可以写 Desktop\文件名）。' +
+                 '别试着换个写法绕过，换个目录做。')
+    }
+    elseif ($m -match '被安全策略|不许用|被删除被拒|没有批准') {
+        $hint = ('这个动作被安全策略挡下了，这条路走不通。' +
+                 '别换个写法再试（比如换成 run_cmd 硬来），换个能做到的方式。')
+    }
+    elseif ($m -match '源不存在|路径不存在|不存在：') {
+        $hint = ('先 list_dir 看一眼真实有哪些文件，别猜文件名。' +
+                 '确认名字对得上再动手；确实没有就别再试这个路径了。')
+    }
+    elseif ($m -match '目标.*已经|目标已存在|已存在') {
+        $hint = ('那个位置已经有东西了。要么换个目标路径，要么先确认这件事是不是已经做过了。' +
+                 '别直接删掉对方的文件——那是另一个文件。')
+    }
+    elseif ($m -match '不能为空|没说要挪到哪儿|要填') {
+        $hint = '参数没给全。看上面的工具说明，把缺的字段补上再调一次。'
+    }
+    elseif ($m -match '拒绝访问|无权限|被占用|正在使用|Access') {
+        $hint = '文件被占用或没权限。换个文件/目录做，别反复重试同一个。'
+    }
+    elseif ($m -match '超时|timed out|Timeout') {
+        $hint = '这一步超时了。要么命令本身太慢（换更快的做法），要么服务卡了。别原样重跑第三次。'
+    }
+    elseif ($m -match '语法|Parser|参数错误|CommandNotFound|not recognized') {
+        $hint = '命令或参数写错了。先 syshelp 查这条命令的正确用法，别凭印象改。'
+    }
+    elseif ($m -match '编码|乱码|Unicode') {
+        $hint = '编码问题。读写文件时明确指定 UTF8。'
+    }
+    elseif ($m -match '脚本被安全策略拒绝') {
+        $hint = '脚本里有不允许的操作（删除/关机/改注册表/系统目录）。删掉那段再试，别换别的写法绕过。'
+    }
+
+    if (-not $hint) {
+        $hint = ('看清错误再决定：是路径写错了、还是这工具就不适合干这件事？' +
+                 '同一个调用原样再试一次结果不会变。')
+    }
+
+    # 附一句"已试过几次"的提醒，防止它在同一个坑里连续撞
+    return ($head + "`n`n" + $hint)
+}
+
+function Confirm-Delete {    param([string]$Target, [object]$State, [int]$StepNum)
 
     if ([string]::IsNullOrWhiteSpace($Target)) { return $false }
 
@@ -1249,6 +1314,8 @@ $script:thinkNudge = 0
 $script:fileNudge = 0
 # finish 时「任务是归类/整理但一个文件都没挪」的打回次数。同样限 2 次。
 $script:organizeNudge = 0
+# 连续出错后逼它分析的打回次数。限 3 次，防它拿这个当拖延借口。
+$script:errThinkNudge = 0
 # 时效性问题却没联网搜索的打回次数。同样限 2 次。
 $script:webNudge = 0
 $planList    = @()
@@ -1908,7 +1975,7 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
         if (-not $obs) { $obs = '（没有输出）' }
     } catch {
         $ok = $false
-        $obs = '出错了：' + $_.Exception.Message
+        $obs = Format-ToolError -Tool $toolName -Arg ([string]$act.path) -Message $_.Exception.Message
     }
 
     $stepArg = $path
@@ -1948,6 +2015,34 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
         if ($prevMoves.Count -gt 1) {
             Write-Log ("  [重复挪] " + $srcKey + " 已经被挪过 " + ($prevMoves.Count - 1) + " 次")
         }
+    }
+
+    # ---- 连续出错：逼它停下来分析，别原样重试 ----
+    #
+    # 4B 出错后的默认反应是"再试一次"，而且试的是同一个调用。
+    # 实测归类任务里 move_path 撞「目标已存在」后，它连着改了 4 个目标名，
+    # 一次都没回头看错误说的是什么。
+    #
+    # 所以连续 2 步失败就打回去，要求它先写清三件事：
+    # 错在哪、为什么错、下一步具体怎么做（和刚才不一样的做法）。
+    if (-not $ok) {
+        $failRun = @($state.steps | Select-Object -Last 4 | Where-Object { [string]$_.ok -eq 'False' })
+        if ($failRun.Count -ge 2 -and $script:errThinkNudge -lt 3) {
+            $script:errThinkNudge = [int]$script:errThinkNudge + 1
+            Write-Log ("  [连续出错] 已经连错 " + $failRun.Count + " 次，要求先分析再动手")
+            $recentErr = (($failRun | ForEach-Object { "- " + [string]$_.tool + " " + [string]$_.note }) -join "`n")
+            $history += @{ role = 'user'; content = (
+                "你已经连着出错 " + $failRun.Count + " 次了，别再原样重试。" + "`n" +
+                "先停下来想清楚三件事，写进下一步的 think：" + "`n" +
+                "1. 错在哪？看上面的错误消息，具体是哪一句。" + "`n" +
+                "2. 为什么会错？是我的参数写错了、目标选错了、还是这个工具根本不适合干这件事？" + "`n" +
+                "3. 下一步具体怎么做？要和刚才的做法**不一样**。" + "`n`n" +
+                "最近几次的失败：" + "`n" + $recentErr + "`n`n" +
+                "想不清楚就用 say 问用户，别硬试。") }
+            continue
+        }
+    } else {
+        $script:errThinkNudge = 0
     }
 
     # ---- 防绕圈（按工具名 + 目标 + 关键参数）----
