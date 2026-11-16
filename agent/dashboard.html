@@ -1624,6 +1624,12 @@ var curSession = [];
 // 用来防「读抖了就把界面清空」：上一轮有内容、这一轮读成空，
 // 不当真清空，等下一轮再说。
 var prevSessLen = 0, emptySessStreak = 0;
+// 轮询失败计数。连续失败要退避，成功后清零。
+var failStreak = 0;
+// 上次看到的状态指纹 + 看到它的时间。
+// 模型在跑、但面板这边几十秒一点变化都没有，就说明轮询出了问题，
+// 强制重置一次（清缓存 + 重挂定时器），把面板拉回正常。
+var lastAliveSig = '', lastAliveAt = 0;
 
 var STATUS_TEXT = {
   idle:'空闲', running:'执行中', done:'完成', failed:'出错了',
@@ -2647,9 +2653,21 @@ function renderSystem(sys, st){
 }
 
 function fetchJson(url){
-  return fetch(url + (url.indexOf('?')>=0?'&':'?') + 't=' + Date.now())
+  // 加超时：面板后端是单线程 PowerShell，某个请求卡住时
+  // fetch 会一直等，导致 tick 的 Promise.all 永远不 resolve ——
+  // 整条轮询链挂死，面板就"卡住了"。
+  // 8 秒还没回来就当失败，让下一轮重来。
+  var ctl = null, timer = null;
+  try {
+    ctl = new AbortController();
+    timer = setTimeout(function(){ try { ctl.abort(); } catch(_){} }, 8000);
+  } catch(_) { ctl = null; }
+
+  var opt = ctl ? { signal: ctl.signal, cache: 'no-store' } : { cache: 'no-store' };
+  return fetch(url + (url.indexOf('?')>=0?'&':'?') + 't=' + Date.now(), opt)
     .then(function(r){ return r.ok ? r.json() : null; })
-    .catch(function(){ return null; });
+    .catch(function(){ return null; })
+    .then(function(v){ if (timer) clearTimeout(timer); return v; });
 }
 
 /* ---------- 主轮询 ----------
@@ -2676,6 +2694,7 @@ function tick(){
 
   Promise.all(jobs)
     .then(function(res){
+      failStreak = 0;
       var st = res[0];
       var sys = slow ? res[1] : window.__lastSys;
       var sess = slow ? res[2] : window.__lastSess;
@@ -2716,6 +2735,44 @@ function tick(){
       }
       if (pollTimer) clearTimeout(pollTimer);
       pollTimer = setTimeout(tick, busy ? 450 : 1600);
+      send.disabled = false;
+
+      // 僵死检测。
+      // 模型在跑的时候，step / elapsed 一定会变；如果连着 12 轮
+      // （约 5 秒）指纹一点没动，说明这一侧收到的是旧数据或轮询空转，
+      // 主动清一次缓存并把链重挂，让面板重新对齐。
+      if (st) {
+        var aliveSig = (st.status||'') + '|' + (st.step||0) + '|' + (st.task||'') + '|' +
+                       Math.floor((st.elapsed||0) / 5);
+        var nowMs = Date.now();
+        if (aliveSig !== lastAliveSig) {
+          lastAliveSig = aliveSig;
+          lastAliveAt = nowMs;
+        } else if (busy && lastAliveAt && (nowMs - lastAliveAt) > 9000) {
+          // 超过 9 秒完全没变化：重置
+          lastAliveAt = nowMs;
+          lastSig = '';
+          window.__lastSess = null;
+          try { console.warn('面板数据长时间无变化，强制刷新'); } catch(_){}
+          return tick();
+        }
+      }
+    })
+    .catch(function(e){
+      // 轮询链断掉 = 面板永远停在最后一帧，用户看到的就是「卡死了」，
+      // 但模型其实还在跑。
+      //
+      // 原来这里没有 catch：只要 /api/state 或 /api/system 偶尔超时
+      // （或者返回半截 JSON 解析失败），Promise.all 直接 reject，
+      // 上面的 .then 不执行，setTimeout(tick) 也就没人再挂 ——
+      // 整条轮询链就此断掉，除非手动刷新页面。
+      //
+      // 现在无论成功失败都把下一轮挂上，并且失败时退避（避免一直猛打）。
+      failStreak = (failStreak || 0) + 1;
+      if (failStreak <= 3) { try { console.warn('tick 失败', e); } catch(_){} }
+      var wait = Math.min(5000, 400 * failStreak);
+      if (pollTimer) clearTimeout(pollTimer);
+      pollTimer = setTimeout(tick, wait);
       send.disabled = false;
     });
 }

@@ -1247,6 +1247,8 @@ $noToolCount = 0
 $script:thinkNudge = 0
 # finish 时「任务要文件但一个都没写」的打回次数。同样限 2 次。
 $script:fileNudge = 0
+# finish 时「任务是归类/整理但一个文件都没挪」的打回次数。同样限 2 次。
+$script:organizeNudge = 0
 # 时效性问题却没联网搜索的打回次数。同样限 2 次。
 $script:webNudge = 0
 $planList    = @()
@@ -1600,6 +1602,31 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
                 "任务要的是文件：" + ($wantFiles -join '、') + "。你到现在一个文件都没写，" +
                 "光在 answer 里说「内容为...」不算做完——那文件根本不存在。" +
                 "现在用 write_file 真的把它写出来，写完再 finish。") }
+            continue
+        }
+
+        # ---- 收尾前查：要「归类/整理」的任务有没有真动文件 ----
+        #
+        # 实测场景：用户让「把文件按类型归类」。上一轮建好了 5 个空目录但没挪文件；
+        # 这一轮模型 list_dir 看到目录已存在，直接 finish：
+        #   「目录已存在，无需新建」—— 把"确认目录存在"当成了任务完成，
+        #   14 个文件还散在根目录里，一个都没动。
+        #
+        # 判据：任务含 归类/整理/分类/移动/归档，但整趟没有一次 move_path / copy_path，
+        # 而且它用的工具只有"查看类"（list_dir/read_file/find_files）——
+        # 说明它只是看了看就说完了。打回去让它真的动手。
+        $isOrganizeTask = ($TaskText -match '归类|整理|分类|移动|挪|归档|分门别类')
+        $didMove = (@($state.steps | Where-Object {
+            [string]$_.tool -in @('move_path', 'copy_path', 'write_script', 'run_ps1', 'run_cmd')
+        }).Count -gt 0)
+        if ($isOrganizeTask -and -not $didMove -and $script:organizeNudge -lt 2) {
+            $script:organizeNudge = [int]$script:organizeNudge + 1
+            Write-Log ("  [没归类] 任务是归类/整理，但一趟下来没移动过任何文件，打回重来")
+            $history += @{ role = 'user'; content = (
+                "这个任务是要把文件**真的挪进对应目录**，不是只确认目录存不存在。" +
+                "你到现在一次 move_path / copy_path 都没做过 —— " +
+                "「目录已存在，无需新建」不等于做完了，文件还在原地。" +
+                "现在用 move_path 把文件一个个挪进对应目录；不确定放哪个就问，但别停下来说完了。") }
             continue
         }
 
