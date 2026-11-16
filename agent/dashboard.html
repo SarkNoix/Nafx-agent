@@ -1,3 +1,11 @@
+}
+  if (el) el.innerHTML = '';
+  var el = document.getElementById('streamOut');
+  if (streamHideTimer) { clearTimeout(streamHideTimer); streamHideTimer = null; }
+  stNode = null;
+  streamKind = '';
+  streamText = '';
+  streamSeq = 0;
 <!DOCTYPE html>
 <html lang="zh-CN" data-theme="dark">
 <head>
@@ -1115,15 +1123,20 @@ header button,.side-actions button{
 
 /* ---------- 流式逐字输出（固定底部浮层）---------- */
 .stream-out{
-  /* 内嵌在对话流里，不做浮层。
-     原来是 position:fixed 贴在输入框正上方，结果直接压住输入框，
-     用户打字都被挡住，翻记录也看不清。
-     现在它就是一个普通的块，跟在任务卡后面一起滚——
-     既看得到模型正在吐什么，又不可能遮住任何东西。 */
-  position:static;
-  margin:0 14px 10px;padding:0;
-  width:auto;max-width:100%;
-  z-index:auto;pointer-events:auto;
+  /* 浮层，但钉在「对话区右下」而不是「输入框正上方」。
+     之前用 position:fixed 贴在输入框上面，直接压住输入框；
+     后来改成 static 塞进 #thread，结果每次重建都被冲掉，一直闪。
+     现在：fixed 定位在 body 上（不参与任何重建），
+     右边、贴近对话区底部；宽 420px 不挡中间，挡不住输入框。 */
+  position:fixed;
+  right:calc((100vw - min(900px, 100vw - 36px)) / 2 + 18px);
+  bottom:150px;
+  width:min(430px, 40vw);
+  max-height:150px;
+  z-index:55;
+  pointer-events:auto;
+  box-shadow:0 6px 22px rgba(0,0,0,.28);
+  border-radius:12px;
 }
 .stream-out:empty{display:none;}
 .stream-out > *{pointer-events:auto;}
@@ -2294,7 +2307,6 @@ function taskLabel(task){
    面板按 seq 轮询增量，拼成「模型正在写的东西」。
    工具调用阶段看到的是半截 JSON（"path" → ":" → " \"a.txt"），
    拼起来就是完整参数 —— 这正是模型一个字一个字写出来的样子。 */
-var streamSeq = 0;
 var streamText = '';
 var streamKind = '';
 
@@ -2330,22 +2342,25 @@ function hideStreamSoon(){
     if (el) el.innerHTML = '';
     stNode = null;
     streamText = '';
-    streamSeq = 0;
+    // 不要把 streamSeq 清成 0：agent 的 seq 在一个任务内连续递增，
+    // 清 0 之后新内容的 seq 会落在「已经收过」的区间里被去重丢掉，浮窗就一直空着。
+    // 只清显示内容，序号留着（新任务开始时 resetStream 统一置零）。
+    //streamSeq = 0;
   }, 1200);
 }
 
 function ensureStreamSkeleton(){
   var el = document.getElementById('streamOut');
-  // 元素被 thread 的 innerHTML 重建冲掉了，或者还没建 → 重新造一个。
-  // 这次挂在 #thread 里面（不是 body），它就成了对话流的一部分，
-  // 会跟着一起滚动，不可能浮在输入框上面挡人。
+  // 挂在 body 上，不放进 #thread。
+  // 之前放在 #thread 里（想着「跟着对话一起滚就不挡输入框」），
+  // 但 renderFlow 会执行 thread.innerHTML = html，每次都把它冲掉，
+  // 再靠下一轮 pollStream 重新造出来 —— 浮窗就一直闪。
+  // 现在钉在 body 上，位置由 CSS 定位，既不参与 thread 的重建，也不压住输入框。
   if (!el) {
     el = document.createElement('div');
     el.id = 'streamOut';
     el.className = 'stream-out';
-    var host = document.getElementById('thread');
-    if (host) { host.appendChild(el); }
-    else { document.body.appendChild(el); }
+    document.body.appendChild(el);
     stNode = null;
   }
   if (stNode && el.contains(stNode)) return el;
@@ -2778,10 +2793,8 @@ function renderFlow(sess, st){
   html += askBubble();
   html += liveBox(st);
   thread.innerHTML = html;
-  // 重建会把 streamOut 一起冲掉（它现在是 thread 的子节点）。
-  // 正在输出的话立刻重新挂上，否则流式内容要等下一轮 pollStream 才回来，
-  // 看起来就是「文字断一下又续上」。
-  if (streamText) { stNode = null; ensureStreamSkeleton(); renderStream(); }
+  // streamOut 现在挂在 body 上，不会跟着 thread.innerHTML 被冲掉，
+  // 所以这里不需要重新挂载。挂回 #thread 的那些逻辑正是浮窗一直闪的原因。
   bindMsgOps();
   if (wasAtBottom) thread.scrollTop = thread.scrollHeight;
 }
