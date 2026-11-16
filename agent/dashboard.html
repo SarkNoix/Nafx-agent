@@ -1506,6 +1506,34 @@ header button,.side-actions button{
 [data-theme="glass"] .mode-btn.on{background:var(--accent);color:var(--primary-fg);border-color:transparent}
 [data-theme="glass"] .mode-hint{color:rgba(255,255,255,.66)}
 
+/* ---------- 模型在想 vs 在对你说 ---------- */
+/* think 是模型的内心独白：灰、小、缩进，一眼能看出“这不是在跟我讲话”。
+   say 走普通气泡，不加任何额外样式 —— 用户应该一眼看到它。 */
+.msg.thinking .bubble{
+  background:transparent;
+  border:1px dashed var(--line);
+  color:var(--dim);
+  font-size:12.5px;
+  line-height:1.65;
+  box-shadow:none;
+  opacity:.92;
+}
+.msg.thinking .who{
+  color:var(--faint);
+  font-size:10.5px;
+  letter-spacing:.3px;
+}
+.msg.thinking .bubble::before{
+  content:'💭';
+  margin-right:6px;
+  opacity:.6;
+}
+[data-theme="glass"] .msg.thinking .bubble{
+  background:rgba(255,255,255,.045);
+  border-color:rgba(255,255,255,.18);
+  color:rgba(255,255,255,.72);
+}
+
 </style>
 </head>
 <body>
@@ -2091,8 +2119,14 @@ function emptyHtml(){
 
 function msgBubble(m, idx){
   var role = (m.role === 'user') ? 'user' : 'assistant';
-  var cls = 'msg ' + role + (m.ok === false ? ' fail' : '');
-  var who = (role === 'user') ? '你' : 'Nafx';
+  // 分清「模型脑子里想的」和「要对用户说的」。
+  //   kind=think  —— 推理、计划、自己跟自己确认。灰一点、小一点，不抢眼。
+  //   kind=say    —— 结论、提问、进度。正常气泡，这才是给用户看的。
+  //   没标 kind   —— 当 say（finish 的答案、用户自己的话都走这条）。
+  var kind = String(m.kind || '');
+  var isThink = (role === 'assistant' && kind === 'think');
+  var cls = 'msg ' + role + (m.ok === false ? ' fail' : '') + (isThink ? ' thinking' : '');
+  var who = (role === 'user') ? '你' : (isThink ? 'Nafx 在想' : 'Nafx');
   var files = (m.files && m.files.length) ? ('<div class="files">涉及：' + esc(m.files.join('、')) + '</div>') : '';
   var content = String(m.content || '');
   var ops = '<div class="ops">' +
@@ -3006,8 +3040,15 @@ function tick(){
       // （约 5 秒）指纹一点没动，说明这一侧收到的是旧数据或轮询空转，
       // 主动清一次缓存并把链重挂，让面板重新对齐。
       if (st) {
+        // 活着的证据：状态、步骤、阶段文字、以及流式输出的序号。
+        // 原来用的是 Math.floor(elapsed/5) —— 每 5 秒才变一次，
+        // 而下面判断「9 秒没变就强制刷新」；模型思考时 step 不动、
+        // elapsed 又涨得慢，很容易 9 秒里 aliveSig 没变过一次，
+        // 于是被判成「僵死」，走 lastSig='' + 立即重轮询 ——
+        // 那一次必然全量重建，气泡和浮窗就一起消失又出现。
+        // 现在把 phase（每 1.5 秒被 agent 更新）和 streamSeq（模型吐字就越涨）也算进来。
         var aliveSig = (st.status||'') + '|' + (st.step||0) + '|' + (st.task||'') + '|' +
-                       Math.floor((st.elapsed||0) / 5);
+                       (st.phase||'') + '|' + streamSeq + '|' + Math.floor((st.elapsed||0));
         var nowMs = Date.now();
         if (aliveSig !== lastAliveSig) {
           lastAliveSig = aliveSig;
@@ -3015,7 +3056,9 @@ function tick(){
         } else if (busy && lastAliveAt && (nowMs - lastAliveAt) > 9000) {
           // 超过 9 秒完全没变化：重置
           lastAliveAt = nowMs;
-          lastSig = '';
+          // 不清 lastSig —— 清了下一轮必然全量重建（几百个节点 + 浮窗重挂），
+          // 用户看到的就是闪一下。这里只清缓存，让下一轮拿新数据；
+          // 结构真变了 renderFlow 自己会发现，不用我们替它决定。
           window.__lastSess = null;
           try { console.warn('面板数据长时间无变化，强制刷新'); } catch(_){}
           return tick();

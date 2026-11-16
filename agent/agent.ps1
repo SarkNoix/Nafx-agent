@@ -677,14 +677,27 @@ function Get-SessionHistory {
 #  实现上用「把播报单独放一个文件、面板合并显示」太折腾，
 #  改成：会话里只追加一次占位记录，后续更新时原地改写最后一行的内容。
 #  会话文件很短（agent 自己会截到 60 行），重写的代价可以接受。
-$script:NoteLines = @()
+$script:NoteLinesThink = @()
+$script:NoteLinesSay   = @()
 function Add-SessionNote {
-    param([string]$Text)
+    param([string]$Text, [string]$Kind = 'think')
+    # Kind 只有两种：
+    #   think —— 模型脑子里想的（推理、计划、自己跟自己确认）
+    #   say   —— 要对用户说的话（结论、提问、报进度）
+    # 面板按 Kind 分开画：think 灰一点、小一点；say 正常气泡。
+    # 混在一起的时候，用户分不清哪句是在跟他讲话。
     if ([string]::IsNullOrWhiteSpace($Text)) { return }
+    if ($Kind -ne 'say') { $Kind = 'think' }
     $line = '· ' + $Text.Trim()
-    if (@($script:NoteLines) -contains $line) { return }
-    $script:NoteLines = @(@($script:NoteLines) + @($line))
-    $arr = @($script:NoteLines)
+    if ($Kind -eq 'think') {
+        if (@($script:NoteLinesThink) -contains $line) { return }
+        $script:NoteLinesThink = @(@($script:NoteLinesThink) + @($line))
+        $arr = @($script:NoteLinesThink)
+    } else {
+        if (@($script:NoteLinesSay) -contains $line) { return }
+        $script:NoteLinesSay = @(@($script:NoteLinesSay) + @($line))
+        $arr = @($script:NoteLinesSay)
+    }
     $body = ($arr -join "`n")
     if ($arr.Count -gt 10) {
         $body = ((@($arr | Select-Object -First 5)) -join "`n") + "`n…" + "`n" + ((@($arr | Select-Object -Last 4)) -join "`n")
@@ -697,13 +710,16 @@ function Add-SessionNote {
                 $keep = $true
                 try {
                     $o = $ln | ConvertFrom-Json
-                    # 上一轮的播报记录：role=assistant 且 content 以「· 」开头
-                    if ([string]$o.role -eq 'assistant' -and ([string]$o.content).StartsWith(([char]0x00B7 + ' '))) { $keep = $false }
+                    # 上一轮同类播报：role=assistant、kind 相同、content 以「· 」开头
+                    $oKind = 'think'
+                    if ($o.PSObject.Properties.Name -contains 'kind' -and $o.kind) { $oKind = [string]$o.kind }
+                    if ([string]$o.role -eq 'assistant' -and $oKind -eq $Kind -and
+                        ([string]$o.content).StartsWith(([char]0x00B7 + ' '))) { $keep = $false }
                 } catch { }
                 if ($keep) { $kept += $ln }
             }
         }
-        $rec = '{"role":"assistant","content":' + (To-JsonStr $body) +
+        $rec = '{"role":"assistant","kind":' + (To-JsonStr $Kind) + ',"content":' + (To-JsonStr $body) +
                ',"ts":' + (To-JsonStr (Get-Date -Format 'MM-dd HH:mm:ss')) +
                ',"ok":true,"files":[],"raw":""}'
         $kept += $rec
@@ -712,7 +728,7 @@ function Add-SessionNote {
 }
 
 function Add-SessionTurn {
-    param([string]$Role, [string]$Content, [bool]$Ok = $true, [array]$Files = @(), [string]$Raw = '')
+    param([string]$Role, [string]$Content, [bool]$Ok = $true, [array]$Files = @(), [string]$Raw = '', [string]$Kind = '')
     try {
         $clean = ($Content -replace '\s+', ' ').Trim()
         if ($clean.Length -gt 500) { $clean = $clean.Substring(0, 500) + '…' }
@@ -723,7 +739,8 @@ function Add-SessionTurn {
                 ',"ts":' + (To-JsonStr (Get-Date -Format 'MM-dd HH:mm:ss')) +
                 ',"ok":' + $(if ($Ok) { 'true' } else { 'false' }) +
                 ',"files":[' + $fileJson + ']' +
-                ',"raw":' + (To-JsonStr $Raw) + '}'
+                ',"raw":' + (To-JsonStr $Raw) +
+                $(if ($Kind) { ',"kind":' + (To-JsonStr $Kind) } else { '' }) + '}'
         Add-Content -Path $SessionFile -Value $line -Encoding UTF8
 
         # 截断只在偶尔做一次。
@@ -2095,7 +2112,7 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
         if ($noToolCount -eq 1 -and ([string]$res.content).Trim()) {
             $bcSay = ([string]$res.content -replace '\s+', ' ').Trim()
             if ($bcSay.Length -gt 100) { $bcSay = $bcSay.Substring(0, 100) + '…' }
-            Add-SessionNote -Text $bcSay
+Add-SessionNote -Text $bcSay -Kind 'say'
         }
 
         # 模型这次说的话，先累积到「当前回合」里。
@@ -2237,7 +2254,7 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
     if ($toolName -eq 'think' -and $think.Trim().Length -ge 8) {
         $bc = $think.Trim()
         if ($bc.Length -gt 160) { $bc = $bc.Substring(0, 160) + '…' }
-        Add-SessionNote -Text $bc
+        Add-SessionNote -Text $bc -Kind 'think'
         Write-Log ("  [播报] " + $bc)
     }
     $path  = [string]$act.path
@@ -2377,7 +2394,7 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
             $obs = '（没写要说什么。把要对用户讲的进度写进 content）'
         } else {
             if ($msg.Length -gt 300) { $msg = $msg.Substring(0, 300) + '…' }
-            try { Add-SessionTurn -Role 'assistant' -Content $msg -Ok $true } catch { }
+            try { Add-SessionTurn -Role 'assistant' -Content $msg -Ok $true -Kind 'say' } catch { }
             $state.steps += @{ n = $step; think = $think; tool = 'note'; arg = ''; ok = $true
                                note = $msg; raw = $res.raw_calls; obs = ''; sec = $res.seconds; tok = $res.tokens }
             $state.phase = $msg
@@ -2722,7 +2739,7 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
             $bcLine = '删掉了 ' + [string]$act.path
         }
         if ($bcLine) {
-            Add-SessionNote -Text $bcLine
+            Add-SessionNote -Text $bcLine -Kind 'say'
         }
     }
 
