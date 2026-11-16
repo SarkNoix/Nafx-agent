@@ -181,10 +181,22 @@ function Ask-WhatToDo {
 function Invoke-Task {
     param([string]$TaskText)
     $agent = Join-Path $AgentDir 'agent.ps1'
+
+    # 给自主派出的任务打标记。
+    # 面板看到开头的 [自主] 就知道这不是用户发的，
+    # 会渲染成醒目标签，避免和手动任务混淆 ——
+    # 用户看着看着冒出个任务，得能一眼分清是不是自己发的。
+    $marked = '[自主] ' + $TaskText
+
     AutoLog ('→ 派出任务：' + $TaskText)
     $sw = [Diagnostics.Stopwatch]::StartNew()
     try {
-        $out = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $agent -Task $TaskText 2>&1 | Out-String
+        # 任务文本走环境变量传，别拼进 -Task 参数 ——
+        # 中文 + 空格的组合会被 PowerShell 误当参数名（实测「删掉 victim.txt」
+        # 被解析成 -MaxSteps 的值，直接报类型转换错）。
+        $env:NAFX_TASK = $marked
+        $out = & powershell.exe -NoProfile -ExecutionPolicy Bypass `
+            -Command "& '$agent' -Task `$env:NAFX_TASK" 2>&1 | Out-String
     } catch {
         $out = 'agent 启动失败：' + $_.Exception.Message
     }

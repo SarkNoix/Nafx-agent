@@ -1313,6 +1313,21 @@ header button,.side-actions button{
 }
 .auto-stop:hover{color:var(--err);border-color:var(--err-bd)}
 
+
+/* ---------- 自主任务标签 ---------- */
+.auto-badge{
+  display:inline-flex;align-items:center;
+  padding:1px 8px;border-radius:20px;
+  font-size:10px;font-weight:700;letter-spacing:.6px;
+  color:#fff;flex-shrink:0;margin-right:2px;
+  background:linear-gradient(135deg,#8b5cf6,#6d3ce0);
+  box-shadow:0 1px 5px rgba(109,60,224,.36);
+}
+[data-theme="glass"] .auto-badge{
+  background:linear-gradient(135deg,rgba(190,150,255,.95),rgba(140,90,240,.95));
+  box-shadow:0 1px 6px rgba(120,70,220,.5);
+}
+
 </style>
 </head>
 <body>
@@ -2000,7 +2015,7 @@ function liveBox(st){
   if (!active){
     return '<div class="live-box done">' +
       '<div class="live-head foldable" onclick="toggleLive(this)">' + icon +
-      '<span class="tt">' + esc(st.task) + '</span>' +
+      taskLabel(st.task) +
       '<span class="step-sec">' + (STATUS_TEXT[st.status]||st.status) + ' · ' +
       (st.step||0) + ' 步 · ' + fmtTime(st.elapsed) + '</span>' +
       '<span class="fold-arrow">▸</span></div>' +
@@ -2009,11 +2024,24 @@ function liveBox(st){
 
   return '<div class="live-box">' +
     '<div class="live-head">' + icon +
-    '<span class="tt">' + esc(st.task) + '</span>' +
+    taskLabel(st.task) +
     '<span class="step-sec">' + esc(st.phase||'') + ' · ' + (st.step||0) + '/' + (st.maxSteps||0) +
     ' · ' + fmtTime(st.elapsed) + '</span></div>' +
     body +
     '</div>';
+}
+
+/* 任务标题。自主模式派出来的任务带 [自主] 前缀，
+   渲染成醒目的紫色标签，和用户自己发的一眼分清 ——
+   否则看着看着冒出一个任务，用户会以为是自己的。 */
+function taskLabel(task){
+  var s = String(task || '');
+  var m = s.match(/^\[自主\]\s*(.*)$/);
+  if (m){
+    return '<span class="auto-badge">自主</span>' +
+           '<span class="tt">' + esc(m[1]) + '</span>';
+  }
+  return '<span class="tt">' + esc(s) + '</span>';
 }
 
 /* ---------- 流式逐字输出 ----------
