@@ -641,6 +641,54 @@ function Get-SessionHistory {
     return $out
 }
 
+# ------------------------------------------------------------
+#  播报：一次任务只占一条气泡
+#
+#  原来每一句播报都 Add-SessionTurn 一次，于是「要统计 data…」
+#  「建好了 text」「check.txt → text/…」各占一个独立气泡，
+#  一屏冒出七八个短气泡，看着特别碎。
+#
+#  现在：同一次任务的所有播报合并成一条消息（换行分开），
+#  每加一句就重写那一条。面板读到的永远是「一条 assistant 消息」，
+#  视觉上是一个气泡在慢慢填字，而不是不断冒新气泡。
+#
+#  实现上用「把播报单独放一个文件、面板合并显示」太折腾，
+#  改成：会话里只追加一次占位记录，后续更新时原地改写最后一行的内容。
+#  会话文件很短（agent 自己会截到 60 行），重写的代价可以接受。
+$script:NoteLines = @()
+function Add-SessionNote {
+    param([string]$Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return }
+    $line = '· ' + $Text.Trim()
+    if (@($script:NoteLines) -contains $line) { return }
+    $script:NoteLines = @(@($script:NoteLines) + @($line))
+    $arr = @($script:NoteLines)
+    $body = ($arr -join "`n")
+    if ($arr.Count -gt 10) {
+        $body = ((@($arr | Select-Object -First 5)) -join "`n") + "`n…" + "`n" + ((@($arr | Select-Object -Last 4)) -join "`n")
+    }
+    try {
+        $sf = $SessionFile
+        $kept = @()
+        if (Test-Path $sf) {
+            foreach ($ln in @(Get-Content $sf -Encoding UTF8 | Where-Object { $_.Trim() })) {
+                $keep = $true
+                try {
+                    $o = $ln | ConvertFrom-Json
+                    # 上一轮的播报记录：role=assistant 且 content 以「· 」开头
+                    if ([string]$o.role -eq 'assistant' -and ([string]$o.content).StartsWith(([char]0x00B7 + ' '))) { $keep = $false }
+                } catch { }
+                if ($keep) { $kept += $ln }
+            }
+        }
+        $rec = '{"role":"assistant","content":' + (To-JsonStr $body) +
+               ',"ts":' + (To-JsonStr (Get-Date -Format 'MM-dd HH:mm:ss')) +
+               ',"ok":true,"files":[],"raw":""}'
+        $kept += $rec
+        [IO.File]::WriteAllLines($sf, $kept, (New-Object Text.UTF8Encoding($false)))
+    } catch { }
+}
+
 function Add-SessionTurn {
     param([string]$Role, [string]$Content, [bool]$Ok = $true, [array]$Files = @(), [string]$Raw = '')
     try {
@@ -2020,7 +2068,7 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
     if ($toolName -eq 'think' -and $think.Trim().Length -ge 8) {
         $bc = $think.Trim()
         if ($bc.Length -gt 160) { $bc = $bc.Substring(0, 160) + '…' }
-        try { Add-SessionTurn -Role 'assistant' -Content ('· ' + $bc) -Ok $true } catch { }
+        Add-SessionNote -Text $bc
         Write-Log ("  [播报] " + $bc)
     }
     $path  = [string]$act.path
@@ -2471,7 +2519,7 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
             $bcLine = '删掉了 ' + [string]$act.path
         }
         if ($bcLine) {
-            try { Add-SessionTurn -Role 'assistant' -Content ('· ' + $bcLine) -Ok $true } catch { }
+            Add-SessionNote -Text $bcLine
         }
     }
 
@@ -2670,6 +2718,25 @@ try {
     $sessText = [string]$state.answer
     if ([string]::IsNullOrWhiteSpace($sessText)) { $sessText = [string]$state.summary }
     if ([string]::IsNullOrWhiteSpace($sessText)) { $sessText = '（没有输出）' }
+
+    # ---- 别把工具输出当成对话气泡 ----
+    #
+    # $state.answer 在「模型没调 finish、被强制收尾」的情况下，
+    # 装的是最后一步工具返回的原文，比如
+    #   「文件 data/ps1 的内容： # 模拟实时订单数据流…」
+    # 这是工具输出，不是模型说的话，直接当气泡显示又长又乱
+    # （实测截图里整段 ps1 源码糊在对话流中间）。
+    #
+    # 判断：以这些开头的基本都是工具返回，不是自然语言回答。
+    $looksLikeToolOut = ($sessText -match '^\s*(文件\s*\S+\s*的内容|目录\s*\S+\s*的内容|找到\s*\d+\s*个|已写入|已创建|已移动|已删除|已覆盖|（想法已记下|出错了：|错误：)')
+    if ($looksLikeToolOut -or $sessText.Length -gt 400) {
+        $short = ($sessText -replace '\s+', ' ').Trim()
+        if ($short.Length -gt 120) { $short = $short.Substring(0, 120) + '…' }
+        $sessText = $short
+        # 太长或明显是工具输出，只在会话里留一句摘要，
+        # 完整内容在「原输出」抽屉里能看（下面 $sessRaw 仍然记全）。
+    }
+
     $sessOk = ([string]$state.status -eq 'done')
     $sessRaw = ''
     foreach ($st1 in @($state.steps)) {
