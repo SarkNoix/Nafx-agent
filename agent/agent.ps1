@@ -220,6 +220,7 @@ if ($script:ActiveMods -and $script:ActiveMods.Count -gt 0) {
 }
 
 $SessionFile = Join-Path $LogDir 'session.jsonl'
+$script:sessWrites = 0   # 写了几条会话，每 20 条才检查一次截断
 $HistFile    = Join-Path $LogDir 'history.jsonl'
 
 # ============================================================
@@ -460,9 +461,17 @@ function Add-SessionTurn {
                 ',"raw":' + (To-JsonStr $Raw) + '}'
         Add-Content -Path $SessionFile -Value $line -Encoding UTF8
 
-        $all = @(Get-Content $SessionFile -Encoding UTF8 | Where-Object { $_.Trim() -ne '' })
-        if ($all.Count -gt 60) {
-            [IO.File]::WriteAllLines($SessionFile, @($all | Select-Object -Last 60), (New-Object Text.UTF8Encoding($false)))
+        # 截断只在偶尔做一次。
+        # 原来每写一条都要读整个文件、数行数、超了再整个重写 ——
+        # 而 think 自动播报让写入频率翻了几倍（每一步至少一条），
+        # 会话长到几百行时每写一行就要读一次几百行的文件。
+        # 改成每 20 次才检查，其余 19 次就是一次纯追加。
+        $script:sessWrites = [int]$script:sessWrites + 1
+        if ($script:sessWrites % 20 -eq 0) {
+            $all = @(Get-Content $SessionFile -Encoding UTF8 | Where-Object { $_.Trim() -ne '' })
+            if ($all.Count -gt 60) {
+                [IO.File]::WriteAllLines($SessionFile, @($all | Select-Object -Last 60), (New-Object Text.UTF8Encoding($false)))
+            }
         }
     } catch { }
 }

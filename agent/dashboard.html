@@ -1740,7 +1740,10 @@ var lastAliveSig = '', lastAliveAt = 0;
 var STATUS_TEXT = {
   idle:'空闲', running:'执行中', done:'完成', failed:'出错了',
   error:'出错了', maxsteps:'步数用尽', need_input:'等你确认',
-  timeout:'超时', paused:'已暂停', cancelled:'已取消', stuck:'会话卡死', waiting:'等你回答'
+  timeout:'超时', paused:'已暂停', cancelled:'已取消', stuck:'会话卡死', waiting:'等你回答',
+  // monitor.ps1 会写 interrupted（state 说 running 但 agent 进程没了），
+  // 这里不补的话面板会直接吐出英文 "interrupted"，其它状态都是中文，很突兀。
+  interrupted:'已中断', noop:'没产出'
 };
 var INTENT_TEXT = {chat:'闲聊', query:'查资料', build:'写东西', analyze:'算数据', operate:'操作'};
 

@@ -273,6 +273,7 @@ $done = 0
 # 这里落一个文件，重启后也能读到，模型每轮都能看见「这些已经做过了」。
 $HistoryFile = Join-Path $AgentDir 'autopilot-history.jsonl'
 $script:History = @()
+$script:HistWrites = 0
 try {
     if (Test-Path $HistoryFile) {
         $hl = @(Get-Content $HistoryFile -Encoding UTF8 | Where-Object { $_.Trim() })
@@ -283,11 +284,21 @@ if ($script:History.Count -gt 0) { AutoLog ('接过往记录 ' + $script:History
 
 function Add-AutoHistory {
     param([string]$Line)
-    try {
-        [IO.File]::AppendAllText($HistoryFile, ($Line -replace '\s+', ' ') + "`r`n", (New-Object Text.UTF8Encoding($false)))
-    } catch { }
     $script:History = @(@($script:History) + @($Line))
     if ($script:History.Count -gt 40) { $script:History = @($script:History | Select-Object -Last 40) }
+    # 文件也要跟着截断。
+    # 只截内存数组的话 autopilot-history.jsonl 会无限追加 ——
+    # 每次自主模式跑几轮就多几行，开几个月就是几千行，
+    # 下次启动全读进来既慢又占内存。
+    # 每 10 次重写一次（不是每次都写，避免每次都读全文再写回）。
+    $script:HistWrites = [int]$script:HistWrites + 1
+    try {
+        if ($script:HistWrites % 10 -eq 0) {
+            [IO.File]::WriteAllLines($HistoryFile, $script:History, (New-Object Text.UTF8Encoding($false)))
+        } else {
+            [IO.File]::AppendAllText($HistoryFile, ($Line -replace '\s+', ' ') + "`r`n", (New-Object Text.UTF8Encoding($false)))
+        }
+    } catch { }
 }
 
 Save-AutoState @{ running = $true; started = (Get-Date -Format 'HH:mm:ss'); until = $endAt.ToString('HH:mm'); rounds = 0; done = 0 }
