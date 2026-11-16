@@ -1106,9 +1106,12 @@ header button,.side-actions button{
 
 /* ---------- 流式逐字输出（固定底部浮层）---------- */
 .stream-out{
+  /* 位置：贴在输入区正上方、宽度和输入框对齐（900px）。
+     原来 bottom:100px + 760px 宽，既比输入框窄一截，又压着输入区下沿，
+     看着像浮在空中。现在跟 composer-inner 同宽同中线，视觉上是一条连续的信息流。 */
   position:fixed;left:50%;transform:translateX(-50%);
-  bottom:calc(100px + env(safe-area-inset-bottom, 0px));
-  width:min(760px, calc(100vw - 48px));
+  bottom:calc(112px + env(safe-area-inset-bottom, 0px));
+  width:min(900px, calc(100vw - 36px));
   z-index:60;pointer-events:none;
 }
 .stream-out:empty{display:none;}
@@ -1117,10 +1120,14 @@ header button,.side-actions button{
 .st-body{
   font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
   font-size:var(--fs-base);line-height:1.65;
-  background:var(--code-bg);border:1px solid var(--code-bd);
-  border-radius:var(--radius);padding:10px 12px;
-  max-height:220px;overflow-y:auto;
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-left:3px solid var(--accent);
+  border-radius:10px;padding:11px 13px;
+  /* 限高 180px：再高就把对话顶没了。超出自动滚到底（renderStream 里做的） */
+  max-height:180px;overflow-y:auto;
   white-space:pre-wrap;word-break:break-word;
+  box-shadow:0 -2px 16px rgba(0,0,0,.08);
 }
 .st-body.st-tool{color:#d9a441;}
 .st-body.st-text{color:var(--code-fg);}
@@ -1924,8 +1931,27 @@ function resetStream(){
   streamText = '';
   streamKind = '';
   stNode = null;
+  if (streamHideTimer) { clearTimeout(streamHideTimer); streamHideTimer = null; }
   var el = document.getElementById('streamOut');
   if (el) el.innerHTML = '';
+}
+
+/* 任务结束后把浮层收掉。
+   两点讲究：
+   ① 延时 1.2 秒 —— 模型两步之间有十几秒停顿，立刻清会一闪一闪；
+      期间要是有新内容进来（renderStream 里会清掉这个定时器），就接着显示。
+   ② 收之前先把光标停掉，避免「文字没了光标还在闪」的感觉。 */
+var streamHideTimer = null;
+function hideStreamSoon(){
+  if (streamHideTimer) clearTimeout(streamHideTimer);
+  streamHideTimer = setTimeout(function(){
+    streamHideTimer = null;
+    var el = document.getElementById('streamOut');
+    if (el) el.innerHTML = '';
+    stNode = null;
+    streamText = '';
+    streamSeq = 0;
+  }, 1200);
 }
 
 function ensureStreamSkeleton(){
@@ -1950,6 +1976,8 @@ function ensureStreamSkeleton(){
 
 function renderStream(){
   if (!streamText) return;
+  // 有新内容进来就取消「准备收掉浮层」的定时器
+  if (streamHideTimer) { clearTimeout(streamHideTimer); streamHideTimer = null; }
   var el = ensureStreamSkeleton();
   if (!el || !stNode) return;
   // 直接替换文本节点的内容，不走 innerHTML 解析
@@ -1960,6 +1988,10 @@ function renderStream(){
   if (body) {
     var want = (streamKind === 'tool') ? 'st-tool' : 'st-text';
     if (body.className.indexOf(want) < 0) body.className = 'st-body ' + want;
+  }
+  // 自动滚到底，长输出时能看到最新的字
+  if (body && body.scrollHeight > body.clientHeight) {
+    body.scrollTop = body.scrollHeight;
   }
 }
 
@@ -2370,7 +2402,12 @@ function tick(){
         }
         pullStream();
       } else if (window.__lastTask) {
+        // 任务结束了，浮层必须收掉。
+        // 原来只把 __lastTask 置空，浮层里最后那段文字和闪烁光标就一直挂在那儿，
+        // 看起来像「模型还在输出」。但也不能立刻清 —— 两步之间模型有十几秒停顿，
+        // 每停一次就闪一下更难受。所以给 1.2 秒宽限：期间要是有新内容再续上。
         window.__lastTask = null;
+        hideStreamSoon();
       }
       if (pollTimer) clearTimeout(pollTimer);
       pollTimer = setTimeout(tick, busy ? 450 : 1600);
