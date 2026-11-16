@@ -2640,37 +2640,42 @@ function renderFlow(sess, st){
   // 带上它们等于每轮都重建 thread.innerHTML（几百个节点）：
   // 一来面板卡，二来只要那一轮 session 恰好读到半行或缺记录，
   // 界面就被清空重画 —— 用户看到的就是「任务突然消失，过一会儿又出现」。
-  // 只把「结构真的变了」算进去：会话条数、状态、步数、任务名。
+  // 只把「结构真的变了」算进去。
   //
-  // ⚠ 会话条数不能只看 arr.length。
-  // note 播报让 session.jsonl 变得很热闹：每一步至少追加一条
-  // （「建好了 text」「check.txt → text/check.txt」…），
-  // arr.length 每变一次整个 thread.innerHTML 就重建一遍 ——
-  // 用户看到的就是所有气泡一起闪、消失又出现。
+  // ⚠ 签名里绝对不能带 step / arr.length 这种「每步都变」的东西：
+  //   · note 播报让每一步往 session.jsonl 追加一条 → arr.length 变
+  //   · 每走一步 st.step 也变
+  // 带上它们等于每轮都重建整个 thread.innerHTML，所有气泡一起闪。
   //
-  // 现在改成「只追加，不重排」：
-  //   条数只增不减、而且前 N 条内容没变 → 走增量追加，不动已有的 DOM
-  //   其它情况（条数变少 / 中间内容改了 / 状态变了）才全量重建
+  // 现在签名只由「真正影响 DOM 结构」的东西决定：
+  //   状态（running/done 决定要不要画 liveBox）+ 任务名 + 尾巴那条消息的内容
+  // 步数变化只影响 liveBox 里的步骤列表，那一块单独按需更新就行。
   var stepsLen = (st && st.steps) ? st.steps.length : 0;
   var tailSig = '';
   if (arr.length > 0) {
     var lastM = arr[arr.length - 1];
     tailSig = String(lastM.role || '') + ':' + String(lastM.content || '').length;
   }
-  var sig = (st ? (st.intent||'') + '|' + (st.status||'') : '') + '|' +
-            (running ? (st.task + '|' + st.step + '|' + stepsLen) : 'idle') + '|' + tailSig;
+  var sig = (st ? String(st.status || '') + '|' + String(st.task || '') + '|' + stepsLen : '') + '|' + tailSig;
   if (sig === lastSig) {
     // 结构没变，只刷新顶部的用时（轻量，改一个 textContent）
     if (running && st) {
       var q = document.getElementById('hQueue');
       if (q) q.innerHTML = '用时 <b>' + fmtTime(st.elapsed) + '</b>';
     }
+    // 签名不变时，liveBox 里「第几步 / 当前阶段」还是会变，
+    // 单独把它的头部文字换掉，不重建整块（整块重建就是闪的根源）。
+    var lbHead = thread.querySelector('.live-box .step-sec');
+    if (lbHead && st) {
+      var want = esc(st.phase||'') + ' · ' + (st.step||0) + '/' + (st.maxSteps||0) + ' · ' + fmtTime(st.elapsed);
+      if (lbHead.textContent !== want) lbHead.textContent = want;
+    }
     return;
   }
 
   // 纯追加：条数变多了，而且前缀部分没动 → 只把新增的那几条插进去
   var wasAtBottom = (thread.scrollHeight - thread.scrollTop - thread.clientHeight) < 140;
-  if (arr.length > prevSessLen && prevSessLen > 0 && lastSig !== '') {
+  if (arr.length > prevSessLen && prevSessLen > 0) {
     var canAppend = true;
     for (var ai = 0; ai < prevSessLen; ai++) {
       if (String(arr[ai].content || '') !== String((window.__sessSnap || [])[ai] || '')) { canAppend = false; break; }
@@ -2940,19 +2945,32 @@ function tick(){
       if (slow) { loadTools(); loadFiles(); checkAsk(); }
 
       var busy = (st && st.status === 'running');
-      // 任务在跑才拉流式增量；新任务开始时把上一次的流清掉
+      // 任务在跑才拉流式增量。
+      //
+      // 新任务开始时必须把上一次的流清掉，否则上次没说完的字会串到这次来。
+      // 原来靠「任务名变了」判断 —— 名字一样就永远不清：连着问两次同样的活，
+      // 第二次开头会先冒出第一次的残字（实测是这样）。
+      // 现在用「任务名 + 步数 + 用时」做会话指纹：只要用了不同的任务、
+      // 或者同一个任务重开（步数回到 1、用时归零），都能认出来。
       if (busy) {
-        if (window.__lastTask !== (st && st.task)) {
-          window.__lastTask = (st && st.task);
+        var taskFp = String(st.task || '') + '|' + (st.step || 0) + '|';
+        var restarted = !!window.__lastTask &&
+                        (String(st.task || '') !== String(window.__lastTaskText || '') ||
+                         (st.step || 0) <= 1 ||
+                         (st.elapsed || 0) < 3);
+        if (!window.__lastTask || restarted) {
           resetStream();
+          window.__lastTaskText = String(st.task || '');
         }
+        window.__lastTask = true;
         pullStream();
       } else if (window.__lastTask) {
-        // 任务结束了，浮层必须收掉。
-        // 原来只把 __lastTask 置空，浮层里最后那段文字和闪烁光标就一直挂在那儿，
-        // 看起来像「模型还在输出」。但也不能立刻清 —— 两步之间模型有十几秒停顿，
-        // 每停一次就闪一下更难受。所以给 1.2 秒宽限：期间要是有新内容再续上。
+        // 任务结束了，把流收掉。
+        // 原来只把标记置空，浮层里最后那段文字和闪烁光标就一直挂着，
+        // 看起来像「模型还在输出」。这里给 1.2 秒宽限 ——
+        // 模型两步之间有十几秒停顿，立刻清会一闪一闪。
         window.__lastTask = null;
+        window.__lastTaskText = '';
         hideStreamSoon();
       }
       if (pollTimer) clearTimeout(pollTimer);

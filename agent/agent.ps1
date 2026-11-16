@@ -246,6 +246,15 @@ function Reset-Stream {
         $script:lastArgLen  = -1
     } catch { }
 }
+
+# 进程一启动就清一次流。
+#
+# 原来只在「拼完 prompt、准备发第一个请求」时清（那已经过了好几秒）。
+# 面板每 700ms 拉一次，这几秒里拉到的全是【上一条任务】的残字 ——
+# 用户看到的就是「上次的正在输入串到了新对话里」。
+# 现在启动第一件事就清，把这个窗口压到 0。
+Reset-Stream
+
 function StreamPiece {
     param([string]$Text, [string]$Kind = 'text')
     if (-not $Text) { return }
@@ -280,11 +289,31 @@ function Get-ReadableArgPiece {
     param([string]$Tool, [string]$Raw, [int]$PrevLen = 0)
 
     if ([string]::IsNullOrWhiteSpace($Raw)) { return '' }
+
+    # think / note / finish / say / plan 这几个，参数本身就是一段纯文本。
+    # 不用等 JSON 完整 —— 直接把 content 后面引号里的内容抠出来，
+    # 边生成边显示，用户看到的就是模型在「想」的过程。
+    # 原来一律走「JSON 没写完就吐原文」，于是屏幕上全是
+    #   → think {"content": "要统计 data 目录文件数量，
+    # 引号冒号一大串，没用。
+    if ($Tool -in @('think', 'note', 'finish', 'say', 'plan')) {
+        $mm = [regex]::Match($Raw, '"(?:content|message|answer|steps|reason)"\s*:\s*"((?:[^"\\]|\\.)*)')
+        if ($mm.Success) {
+            $txt = $mm.Groups[1].Value
+            # 还原转义
+            $txt = $txt -replace '\\n', "`n" -replace '\\t', "`t" -replace '\\"', '"' -replace '\\\\', '\'
+            if ($PrevLen -ge 0 -and $PrevLen -lt $txt.Length) { return $txt.Substring($PrevLen) }
+            return ''
+        }
+        # 还没出到引号内容，什么都不显示（别吐 {"content": 这半截）
+        return ''
+    }
+
     $obj = $null
     try { $obj = $Raw | ConvertFrom-Json } catch { $obj = $null }
 
     if (-not $obj) {
-        # JSON 还没写完：吐新增的原始分片（保持逐字效果）
+        # 其它工具的 JSON 还没写完：吐新增的原始分片（保持逐字效果）
         if ($PrevLen -ge 0 -and $PrevLen -lt $Raw.Length) { return $Raw.Substring($PrevLen) }
         return ''
     }
