@@ -1842,6 +1842,15 @@ $lastToolKey = ''
 $repeatCount = 0
 
 for ($step = 1; $step -le $MaxSteps; $step++) {
+    # 每步开头先记一次「还活着」—— 时间 + 状态。
+    # 之前只有模型真正开始吐字时心跳才更新，
+    # 模型服务挂掉、卡在重试阶段的那几十秒里，面板上时间是 0、状态还是「准备」，
+    # 看起来就是「任务在跑但没动静」。
+    try {
+        $state.elapsed = [double]$clock.Elapsed.TotalSeconds
+        if ([string]$state.phase -eq '准备' -or [string]$state.phase -eq '') { $state.phase = '第 ' + $step + ' 步' }
+        Write-State $state
+    } catch { }
     # 任务级超时。config 里的 taskTimeoutSeconds 原来只在面板做字段校验，
     # 没有任何地方真正执行 —— 直接跑 agent.ps1 时任务能无限跑下去。
     # 每步开头检查一次：超了就用已有结果收尾，不留半截状态。
@@ -1868,7 +1877,8 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
     $alive = $false
     for ($ping = 1; $ping -le 3; $ping++) {
         if (Test-ModelAlive) { $alive = $true; break }
-        $state.phase = "模型无响应，等 $ping/3"
+        $state.elapsed = [double]$clock.Elapsed.TotalSeconds
+        $state.phase = "模型无响应，等 $ping/3（已等 " + [int]$clock.Elapsed.TotalSeconds + " 秒）"
         Write-State $state
         Write-Log ("  [ping] 模型服务没响应，等 5 秒重试（$ping/3）")
         if ($ping -lt 3) { Start-Sleep -Seconds 5 }
@@ -3106,3 +3116,22 @@ if ($MemoryLoaded) {
 }
 
 $clock.Stop()
+
+# ---------- 兜底：保证退出时 state 不再是 running ----------
+#
+# 实测：lla-server 挂掉时 agent 会抛异常退出，此时 state.json 还停在
+#   status=running  phase=准备  elapsed=0
+# 面板照实显示 —— 用户看到的就是「任务在跑，但时间不走、状态还是准备」。
+#
+# 这里不管前面怎么结束的，只要 state 还是 running，就补一个终态进去。
+try {
+    if ($state -and [string]$state.status -eq 'running') {
+        $state.status  = 'failed'
+        $state.phase   = '没跑完就退出了'
+        $state.answer  = '出错了：任务没有正常结束（进程异常退出）。'
+        $state.summary = $state.answer
+        $state.elapsed = [double]$clock.Elapsed.TotalSeconds
+        Write-State $state
+        Write-Log '  [兜底] 退出时状态还是 running，已补成 failed'
+    }
+} catch { }
