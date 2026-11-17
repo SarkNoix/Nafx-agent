@@ -230,7 +230,63 @@ function Test-ScriptSafety {
         @{ p = '(?i)(C:\\Windows|%SystemRoot%|%windir%|C:\\Program Files|%ProgramFiles%)';
            r = '脚本引用了系统目录或程序目录，不允许。' },
         @{ p = '(?i)Start-Process\s+[^\r\n]*-Verb\s+RunAs';
-           r = '脚本要提权运行，不允许。' }
+           r = '脚本要提权运行，不允许。' },
+        # ---- 补：format 单独一条（原来只匹配 format-volume，漏了 format C: /y）----
+        @{ p = '(?i)(^|[&|;\s])format\s+[A-Za-z]:';
+           r = '脚本要格式化磁盘，不允许。' },
+        # ---- 补：别名删除（ri / rm / erase 都是 Remove-Item 的马甲）----
+        @{ p = '(?i)(^|[&|;\r\n])\s*(ri|rm|erase|deltree)\s+[^\r\n]*[A-Za-z0-9_\\/:]';
+           r = '脚本里有删除命令（别名形式）。要删文件请用 delete_path 工具（会先问你）。' },
+        # ---- 补：.NET 目录 API 直接删/移 ----
+        @{ p = '(?i)\[System\.IO\.(File|Directory)\]\s*::\s*(Delete|Move|Replace)';
+           r = '脚本用 .NET API 直接删/移文件，绕过保护，不允许。' },
+        # ---- 补：cmd /c 后面的危险命令 ----
+        @{ p = '(?i)cmd(\.exe)?\s*/c\s+[^\r\n]*\b(rd|rmdir|del|erase|format)\b';
+           r = '脚本通过 cmd 调用删除/格式化命令，不允许。' },
+        # ---- 补：Base64 编码执行（powershell -enc / -EncodedCommand）----
+        @{ p = '(?i)(-enc|-encodedcommand|-e)\s+[A-Za-z0-9+/=]{20,}';
+           r = '脚本用 Base64 编码命令执行，这是在藏意图，不允许。' },
+        # ---- 补：关闭杀毒 / 安全防护 ----
+        @{ p = '(?i)(Set-MpPreference|Add-MpPreference)[^\r\n]*(Disable|ExclusionPath)';
+           r = '脚本要关闭或绕过杀毒软件，不允许。' },
+        @{ p = '(?i)\b(DisableRealtimeMonitoring|DisableIOAVProtection|DisableBehaviorMonitoring)\b';
+           r = '脚本要关杀毒实时防护，不允许。' },
+        @{ p = '(?i)(netsh\s+advfirewall\s+set[^\r\n]*off|Set-NetFirewallProfile[^\r\n]*Enabled\s+False)';
+           r = '脚本要关防火墙，不允许。' },
+        # ---- 补：键盘记录 / 屏幕抓取 / 输入捕获 ----
+        @{ p = '(?i)(Keylogger|GetAsyncKeyState|SetWindowsHookEx|KeyboardHook|WH_KEYBOARD|RegisterHotKey)';
+           r = '脚本在抓键盘输入（键盘记录器），不允许。' },
+        @{ p = '(?i)(CopyFromScreen|Graphics::CopyFromScreen)';
+           r = '脚本在截屏，不允许。' },
+        # ---- 补：凭据窃取 ----
+        @{ p = '(?i)(Login\s*Data|logins\.json|cookies\.sqlite|Web\s*Data|key[34]\.db)';
+           r = '脚本在动浏览器保存的密码/Cookie，不允许。' },
+        @{ p = '(?i)(id_rsa|id_ed25519|\.ssh\\|\.aws\\credentials|\.npmrc|\.git-credentials|wallet\.dat)';
+           r = '脚本在动 SSH 密钥 / 云凭据 / 钱包文件，不允许。' },
+        @{ p = '(?i)(Get-Credential|ConvertTo-SecureString[^\r\n]*-AsPlainText)';
+           r = '脚本在处理明文密码，不允许。' },
+        # ---- 补：挖矿 ----
+        @{ p = '(?i)(xmrig|--donate-level|stratum\+tcp|miner\.exe|cpuminer)';
+           r = '脚本要挖矿，不允许。' },
+        # ---- 补：反弹连接 / 远程控制 ----
+        @{ p = '(?i)(New-Object\s+Net\.Sockets\.(TCP|UDP)Client|Test-NetConnection[^\r\n]*-Port[^\r\n]*4444|\.GetStream\(\)\s*\|)';
+           r = '脚本要建立反弹连接（远程控制后门），不允许。' },
+        @{ p = '(?i)(Invoke-Command[^\r\n]*-ComputerName|Enter-PSSession|New-PSSession)';
+           r = '脚本要远程连别的机器，不允许。' },
+        # ---- 补：勒索特征：批量加密 ----
+        @{ p = '(?i)(\.Encrypt\(\)|AesManaged|RijndaelManaged)[^\r\n]*';
+           r = '脚本要做加密操作，可能是勒索，不允许。' },
+        # ---- 补：隐藏窗口 / 无界面常驻 ----
+        @{ p = '(?i)Start-Process[^\r\n]*-WindowStyle\s+Hidden';
+           r = '脚本要在后台隐藏运行，不允许。' },
+        # ---- 补：篡改系统安全组件 ----
+        @{ p = '(?i)(Add-MpPreference|Set-MpPreference)[^\r\n]*ExclusionPath';
+           r = '脚本要给杀毒加白名单，不允许。' },
+        @{ p = '(?i)(vssadmin[^\r\n]*delete|wbadmin[^\r\n]*delete|bcdedit)';
+           r = '脚本要删系统备份/改启动配置，不允许。' },
+        # ---- 补：用户账号操作 ----
+        @{ p = '(?i)\b(net\s+user|net\s+localgroup|New-LocalUser|Add-LocalGroupMember)\b';
+           r = '脚本在改用户账号，不允许。' }
     )
 
     foreach ($rule in $rules) {
