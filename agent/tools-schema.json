@@ -976,7 +976,7 @@
         "type":  "function",
         "function":  {
                          "name":  "plan",
-                         "description":  "列任务清单",
+                         "description":  "列计划：把要做的事拆成几步，每步写清用什么工具、产出什么。复杂任务的第一步就该调它，之后每完成一步在 think 里对照着走。",
                          "parameters":  {
                                             "type":  "object",
                                             "properties":  {

@@ -1746,7 +1746,10 @@ if ($Mode -eq 'auto') {
         "② 排：哪步必须先做（后一步要读前一步的产出）？能并的先并。" + "`n" +
         "③ 做：一次只做一步，做完马上验证 —— 写文件就回读，跑命令就看输出。" + "`n" +
         "验证不过就回头改，不要在错的基础上继续往下堆。" + "`n" +
-        "**第一步先用 ``plan`` 把上面①②的结果列出来**，之后每做完一步，在 ``think`` 里写一句「刚才这步成没成、下一步做什么」。" + "`n" +
+        "**第一步必须是 ``plan``，不是 ``think``。** 把①②的结果写进 plan 的 steps，然后才开始动手。" + "`n" +
+        "注意：``plan`` 是一个工具调用，和 ``think`` 一样在 tool_calls 里调，不是在文字里写计划。" + "`n" +
+        "漏了 ``plan`` 直接动手，就等于没计划 —— 做到一半才发现步骤不对，只能推倒重来。" + "`n" +
+        "之后每做完一步，在 ``think`` 里写一句「刚才这步成没成、下一步做什么」。" + "`n" +
         "有现成技能（``skill list``）能用的优先用技能，别自己造轮子。"
     Write-Log '  模式：工作（要求先列计划）'
 } else {
@@ -1852,6 +1855,8 @@ $script:SpeechIdx = -1
 # 已经问过的问题（防止同一个问题反复问）
 $script:AskedQuestions = @()
 # 第一步「必须先 think」的打回次数。限 2 次，防止模型死活不肯 think 时把上下文撑爆。
+# 工作模式下「必须先 plan」的打回次数。同样限 2 次。
+$script:planNudge = 0
 $script:thinkNudge = 0
 # finish 时「任务要文件但一个都没写」的打回次数。同样限 2 次。
 $script:fileNudge = 0
@@ -2286,6 +2291,32 @@ Add-SessionNote -Text $bcSay -Kind 'say'
     $callId = [string]$call.id
     $toolName = [string]$call.name
 
+    # ---- 工作模式：第一步必须是 plan ----
+    #
+    # 提示词里已经写了「第一步必须是 plan，不是 think」，
+    # 但实测 4B 模型根本不听：把 plan 塞进工具列表、system 里写死要求，
+    # 它照样第一下就调 list_dir。
+    # （直接拿模型试过：10 个工具里含 plan，明确要求「第一步必须 plan」，
+    #   它返回的仍然是 list_dir。这不是提示词能解决的，只能硬拦。）
+    #
+    # 所以这里和「必须先 think」一样的套路：没 plan 过就打回去。
+    # 限 2 次，还不听话就放行 —— 宁可没计划，不能把任务卡死。
+    $anyStepPlan = ($state.steps.Count -gt 0)
+    $hasPlan = ($state.plan -and ([string]$state.plan).Trim())
+    if ($Mode -eq 'work' -and -not $anyStepPlan -and -not $hasPlan -and
+        $toolName -notin @('plan', 'think', 'finish', 'web_search')) {
+        $script:planNudge = [int]$script:planNudge + 1
+        if ($script:planNudge -le 2) {
+            Write-Log ("  [要求先计划] 第 $($script:planNudge) 次打回：" + $toolName + " → 先 plan")
+            $history += @{ role = 'user'; content = (
+                "这是工作模式，第一步要调 plan 工具（不是 think，也不是直接动手）。" +
+                "把任务拆成几步写进 steps 参数，每步说清用什么工具、产出什么。" +
+                "列完计划之后才开始调 $toolName。") }
+            continue
+        }
+        Write-Log ("  [要求先计划] 已经打回 2 次还不肯 plan，放行 " + $toolName)
+    }
+
     # ---- 新任务的第一步必须是 think ----
     # Qwen3-4B-Instruct 没有内置 thinking（reasoning 关着，也没有 reasoning_content），
     # 模型容易一上来就瞎动手：实测写计算器时没想清楚就写脚本，
@@ -2307,7 +2338,8 @@ Add-SessionNote -Text $bcSay -Kind 'say'
     # 它反而被「未来事件查不到」这个念头带偏，改成 say 问用户了。
     # 直接查比先纠结强，不拦。
     $anyStep = ($state.steps.Count -gt 0)
-    if (-not $anyStep -and $toolName -notin @('think', 'finish', 'web_search')) {
+    # plan 也豁免：工作模式下第一步就该是 plan，不是 think。
+    if (-not $anyStep -and $toolName -notin @('think', 'finish', 'web_search', 'plan')) {
         $script:thinkNudge = [int]$script:thinkNudge + 1
         if ($script:thinkNudge -le 2) {
             Write-Log ("  [要求先想] 第 $($script:thinkNudge) 次打回：" + $toolName + " → 先 think")
