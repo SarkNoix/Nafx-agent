@@ -1443,6 +1443,26 @@ function Close-WithResult {
 
 function Write-Closing {
     param($State, [string]$Status, [string]$Summary, [int]$StepCount)
+    # 所有收尾路径都会走到这里（finish / 空转 / 超时 / 卡死 / 步数用尽），
+    # 所以在这里统一把「活的痕迹」清掉：
+    #   phase   —— 否则 status=done 了还挂着「正在准备请求…」
+    #   elapsed —— 固定成最终用时
+    #
+    # 之前只在 Close-WithResult 里清，而 finish 走的是另一条路径
+    # （直接 $state.status = 'done' 然后 Write-Closing），所以没清到，
+    # 实测任务完成后右上角还写着「正在准备请求…」。
+    try {
+        # 只清「正在*」这类临时进度；「会话卡死」这种结论性文案要留着。
+        if ([string]$State.phase -like '正在*') { $State.phase = '' }
+        if ($clock) { $State.elapsed = [double]$clock.Elapsed.TotalSeconds }
+        Write-State $State
+        # 心跳文件也删掉：它里面是最后那一次的 running 状态，
+        # 面板合并时会把 running 混进来，看起来像「还在跑」。
+        try {
+            $hb = $script:LiveStateFile -replace '\.json$', '.hb.json'
+            if (Test-Path $hb) { Remove-Item $hb -Force -ErrorAction SilentlyContinue }
+        } catch { }
+    } catch { }
     $color = if ($Status -eq 'done') { 'Green' } else { 'Red' }
     $mark  = if ($Status -eq 'done') { '√ 完成' } else { '× 出错了' }
     Write-Host ''
