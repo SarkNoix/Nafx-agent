@@ -6,6 +6,7 @@
     {
       "id": "count",
       "tools": [
+        "plan",
         "think",
         "run_cmd",
         "read_file",
@@ -90,6 +91,7 @@
     {
       "id": "lookup",
       "tools": [
+        "plan",
         "think",
         "read_file",
         "grep_file",
@@ -174,6 +176,7 @@
     {
       "id": "create",
       "tools": [
+        "plan",
         "think",
         "write_file",
         "make_dir",
@@ -236,6 +239,7 @@
     {
       "id": "modify",
       "tools": [
+        "plan",
         "think",
         "read_file",
         "grep_file",
@@ -309,6 +313,7 @@
     {
       "id": "convert",
       "tools": [
+        "plan",
         "think",
         "json_format",
         "csv_preview",
@@ -371,6 +376,7 @@
     {
       "id": "search",
       "tools": [
+        "plan",
         "think",
         "web_search",
         "web_fetch",
@@ -446,6 +452,7 @@
     {
       "id": "build",
       "tools": [
+        "plan",
         "think",
         "write_script",
         "write_file",
@@ -513,6 +520,7 @@
     {
       "id": "organize",
       "tools": [
+        "plan",
         "think",
         "find_files",
         "move_path",
@@ -682,6 +690,7 @@
         "命令是"
       ],
       "tools": [
+        "plan",
         "think",
         "sys_info",
         "now",
@@ -703,6 +712,7 @@
     {
       "id": "append",
       "tools": [
+        "plan",
         "think",
         "read_file",
         "append_file",
