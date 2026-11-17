@@ -342,6 +342,30 @@ function Get-MergedState {
     for ($slot = 1; $slot -le $WorkerCount; $slot++) {
         $sf = Get-SlotStateFile $slot
         $st = Read-JsonFile $sf
+        # 合并心跳。
+        #
+        # agent 主进程写 state.json，心跳（Runspace）写 state.hb.json ——
+        # 两者分开是为了不抢同一个文件（原来都去 Replace(state.json)，
+        # 必然有一边失败，实测就是 state.json 永远停在「第1路 准备」，
+        # 而 agent 写好的内容卡在 state.json.tmp 里）。
+        #
+        # 这里：心跳文件比 state 新，就用它的 elapsed / phase 覆盖。
+        if ($st) {
+            $hbFile = $sf -replace '\.json$', '.hb.json'
+            if (Test-Path $hbFile) {
+                try {
+                    $stTime = (Get-Item $sf).LastWriteTime
+                    $hbTime = (Get-Item $hbFile).LastWriteTime
+                    if ($hbTime -gt $stTime) {
+                        $hb = Read-JsonFile $hbFile
+                        if ($hb) {
+                            if ($hb.elapsed) { $st.elapsed = $hb.elapsed }
+                            if ($hb.phase) { $st.phase = $hb.phase }
+                        }
+                    }
+                } catch { }
+            }
+        }
         if ($st) { $list += $st }
     }
     if ($list.Count -eq 0) {

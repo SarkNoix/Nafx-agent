@@ -89,6 +89,7 @@ if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Force -Path $LogDi
 # Write-LivePhase 在这期间每 1.5 秒覆盖写一次 state，
 # 让面板显示成「正在想… 已 42 字」，而不是一个死掉的「思考中」。
 $script:LiveStateFile = $StateFile
+$script:LiveHbFile    = $StateFile.Replace('.json', '.hb.json')   # 心跳专用，不跟主 state 抢
 $script:LiveState     = $null    # 主循环开始后指向当前 state 对象
 $script:LiveClock     = $null    # 指向 $clock，用来算已用时间
 $script:LiveChars     = 0
@@ -2098,7 +2099,7 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
         $hbRunspace = $null; $hbPs = $null; $hbHandle = $null
         try {
             $hbScript = {
-                param($StateFile, $Clock)
+                param($StateFile, $Clock, $HbFile)
                 while ($true) {
                     Start-Sleep -Milliseconds 1500
                     try {
@@ -2109,9 +2110,7 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
                         if ([string]$o.phase -notlike '正在*') { $o.phase = '正在请求模型…' }
                         $o.elapsed = [double]$Clock.Elapsed.TotalSeconds
                         $j = $o | ConvertTo-Json -Depth 6 -Compress
-                        $tmp = $StateFile + '.hb'
-                        [IO.File]::WriteAllText($tmp, $j, (New-Object Text.UTF8Encoding($false)))
-                        if (Test-Path $StateFile) { [IO.File]::Replace($tmp, $StateFile, $null) } else { [IO.File]::Move($tmp, $StateFile) }
+                        [IO.File]::WriteAllText($HbFile, $j, (New-Object Text.UTF8Encoding($false)))
                     } catch { }
                 }
             }
@@ -2119,7 +2118,7 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
             $hbRunspace.Open()
             $hbPs = [powershell]::Create()
             $hbPs.Runspace = $hbRunspace
-            [void]$hbPs.AddScript($hbScript.ToString()).AddArgument($script:LiveStateFile).AddArgument($script:LiveClock)
+            [void]$hbPs.AddScript($hbScript.ToString()).AddArgument($script:LiveStateFile).AddArgument($script:LiveClock).AddArgument($script:LiveHbFile)
             $hbHandle = $hbPs.BeginInvoke()
         } catch { $hbRunspace = $null }
 
