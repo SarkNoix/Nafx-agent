@@ -1569,6 +1569,38 @@ header button,.side-actions button{
   color:rgba(255,255,255,.82);
 }
 
+/* ---------- 进度播报（note）：比答案轻，比想法重 ---------- */
+/* 三种内容的视觉层级：
+     think  虚线框、灰、最小     —— 它在想
+     note   左侧色条、稍小       —— 它在报进度
+     finish 正常气泡、最醒目     —— 这是结论
+   这样一眼能分出哪句是要看的答案。 */
+.msg.noteb .bubble{
+  background:transparent;
+  border:none;
+  border-left:3px solid var(--accent);
+  border-radius:4px;
+  padding-left:11px;
+  font-size:13px;
+  line-height:1.6;
+  color:var(--dim);
+  box-shadow:none;
+  opacity:.95;
+}
+.msg.noteb .who{
+  color:var(--faint);
+  font-size:10.5px;
+  letter-spacing:.3px;
+}
+[data-theme="glass"] .msg.noteb .bubble{
+  background:rgba(255,255,255,.06);
+  border-left-color:var(--accent);
+  color:rgba(255,255,255,.9);
+}
+[data-theme="glass"] .msg.noteb .who{
+  color:rgba(255,255,255,.75);
+}
+
 </style>
 </head>
 <body>
@@ -2158,14 +2190,18 @@ function emptyHtml(){
 
 function msgBubble(m, idx){
   var role = (m.role === 'user') ? 'user' : 'assistant';
-  // 分清「模型脑子里想的」和「要对用户说的」。
-  //   kind=think  —— 推理、计划、自己跟自己确认。灰一点、小一点，不抢眼。
-  //   kind=say    —— 结论、提问、进度。正常气泡，这才是给用户看的。
-  //   没标 kind   —— 当 say（finish 的答案、用户自己的话都走这条）。
+  // 分清三种内容的视觉分量：
+  //   kind=think  —— 推理、计划、自己跟自己确认。灰、小、虚线框，最弱。
+  //   kind=say    —— 进度播报（note 工具）。中等：左边一道彩色竖条，
+  //                  一眼看出「这是过程，不是结论」。
+  //   没标 kind   —— 最终答案（finish）。正常气泡，最强。
   var kind = String(m.kind || '');
   var isThink = (role === 'assistant' && kind === 'think');
-  var cls = 'msg ' + role + (m.ok === false ? ' fail' : '') + (isThink ? ' thinking' : '');
-  var who = (role === 'user') ? '你' : (isThink ? 'Nafx 在想' : 'Nafx');
+  var isNote  = (role === 'assistant' && kind === 'say');
+  var cls = 'msg ' + role + (m.ok === false ? ' fail' : '') +
+            (isThink ? ' thinking' : '') + (isNote ? ' noteb' : '');
+  var who = (role === 'user') ? '你'
+          : (isThink ? 'Nafx 在想' : (isNote ? 'Nafx · 进度' : 'Nafx'));
   var files = (m.files && m.files.length) ? ('<div class="files">涉及：' + esc(m.files.join('、')) + '</div>') : '';
   var content = String(m.content || '');
   var ops = '<div class="ops">' +

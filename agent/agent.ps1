@@ -3062,9 +3062,16 @@ try {
                     if ([string]$o2.role -eq 'assistant') {
                         $c2 = [string]$o2.content
                         $c2n = & $norm $c2
-                        if ($c2n -and $ansNorm -and ($c2n -eq $ansNorm -or $ansNorm.StartsWith($c2n) -or $c2n.StartsWith($ansNorm))) {
-                            $dropIdx = $li
-                        }
+                        # 判定「同一句话」：
+                        # 原来只比「完全相等 / 互为前缀」，太严。
+                        # 实测 note 说「data 目录下共有 3 个文件: jsonl、ps1、smoke-test.txt」
+                        # 而 finish 答「data 目录下共有 3 个文件」——
+                        # 中间隔了个冒号，前缀判定不成立，两条都留下了。
+                        # 现在改成：取较短的那条前 12 个字来比，完全相同就算重复。
+                        $cmp = [Math]::Min([Math]::Min($c2n.Length, $ansNorm.Length), 12)
+                        $same = $false
+                        if ($cmp -ge 5 -and $c2n.Substring(0, $cmp) -eq $ansNorm.Substring(0, $cmp)) { $same = $true }
+                        if ($same) { $dropIdx = $li }
                         break
                     }
                 } catch { break }
