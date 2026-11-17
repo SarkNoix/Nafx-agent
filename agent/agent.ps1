@@ -3041,6 +3041,42 @@ try {
     if ([string]::IsNullOrWhiteSpace($sessText)) { $sessText = [string]$state.summary }
     if ([string]::IsNullOrWhiteSpace($sessText)) { $sessText = '（没有输出）' }
 
+    # ---- 去掉和答案重复的上一条播报 ----
+    #
+    # 实测：「data 目录下共有 3 个文件」在面板上出现了两遍。
+    # 模型先调 note 讲了一遍结论，紧接着又调 finish 把同样的话当答案交了。
+    # 两条内容几乎一样，看着像复读。
+    #
+    # 处理：如果会话里最后一条 assistant（kind=say）和这次答案高度重合，
+    # 就把它删掉 —— 反正 finish 的答案马上就写进去了。
+    try {
+        if (Test-Path $SessionFile) {
+            $allL = @(Get-Content $SessionFile -Encoding UTF8 | Where-Object { $_.Trim() })
+            $norm = { param($s) ($s -replace '\s+', '').Trim() }
+            $ansNorm = & $norm $sessText
+            $keptL = @()
+            $dropIdx = -1
+            for ($li = $allL.Count - 1; $li -ge 0; $li--) {
+                try {
+                    $o2 = $allL[$li] | ConvertFrom-Json
+                    if ([string]$o2.role -eq 'assistant') {
+                        $c2 = [string]$o2.content
+                        $c2n = & $norm $c2
+                        if ($c2n -and $ansNorm -and ($c2n -eq $ansNorm -or $ansNorm.StartsWith($c2n) -or $c2n.StartsWith($ansNorm))) {
+                            $dropIdx = $li
+                        }
+                        break
+                    }
+                } catch { break }
+            }
+            if ($dropIdx -ge 0) {
+                for ($li = 0; $li -lt $allL.Count; $li++) { if ($li -ne $dropIdx) { $keptL += $allL[$li] } }
+                [IO.File]::WriteAllLines($SessionFile, $keptL, (New-Object Text.UTF8Encoding($false)))
+                Write-Log '  [去重] 上一条播报和答案是同一句，已合并'
+            }
+        }
+    } catch { }
+
     # ---- 别把工具输出当成对话气泡 ----
     #
     # $state.answer 在「模型没调 finish、被强制收尾」的情况下，

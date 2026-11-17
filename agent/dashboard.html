@@ -1115,14 +1115,15 @@ header button,.side-actions button{
 
 /* ---------- 流式逐字输出（固定底部浮层）---------- */
 .stream-out{
-  /* 浮窗：钉在对话区右下角。
-     宽度按对话区宽度走（不再死板 430px），最窄 560px、最宽 720px；
-     高度最多 210px，够看七八行。
-     它挂在 body 上、不参与 thread 重建，所以不会闪。 */
+  /* 浮窗：钉在对话区「左下角」。
+     之前放右下角，正好压在 NAFX 气泡上（气泡靠左对齐、越往下越长），
+     模型一 say 就被挡住。左下角是空的（用户消息在右侧），不会打架。
+     挂在 body 上、不参与 thread 重建，所以不会闪。 */
   position:fixed;
-  right:calc((100vw - min(1100px, 100vw - 40px)) / 2 + 20px);
+  left:calc((100vw - min(1100px, 100vw - 40px)) / 2 + 20px);
   bottom:132px;
-  width:clamp(560px, 46vw, 720px);
+  width:clamp(420px, 34vw, 560px);
+  max-height:190px;
   z-index:55;
   pointer-events:auto;
   /* 毛玻璃卡片，和面板整体质感统一 */
@@ -2481,7 +2482,7 @@ function pullStream(){
   // 模型每吐一个 token，浏览器就要解析一遍 innerHTML 并重排，
   // 一个任务几百个 token 就是几百次重排，整机都被拖慢。
   var now = Date.now();
-  if (now - lastPull < 250) return;
+if (now - lastPull < 150) return;
   lastPull = now;
   fetchJson('/api/stream?since=' + streamSeq)
     .then(function(j){
@@ -3143,7 +3144,7 @@ function tick(){
         else { hideStreamSoon(); }
       }
       if (pollTimer) clearTimeout(pollTimer);
-      pollTimer = setTimeout(tick, busy ? 450 : 1600);
+pollTimer = setTimeout(tick, busy ? 350 : 1600);
       send.disabled = false;
 
       // 这里原来有个「僵死检测」：9 秒没变化就 lastSig='' + 立即重轮询。
