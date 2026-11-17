@@ -1592,6 +1592,32 @@ try {
         if ($flowTools.Count -gt 0) {
             $script:ActiveFlowToolCount = $flowTools.Count
             $script:ActiveFlowTools = $flowTools
+            # ---- 关键词兜底：任务里明确说了要干某件事，就把那个工具塞进来 ----
+            #
+            # 实测：「从 data.zip 解压到 workspace\data 并检查里面的 log.txt」
+            # 匹配到的是 organize 流程，而它的工具表里只有 zip_list（看内容），
+            # 没有 unzip（解压）—— 模型想说「我解压不了」，只能去叫 say 问人。
+            # 工具明明存在，就是没发给它。
+            #
+            # 这里按任务文本里的关键词硬塞，不管走哪个流程都不会漏。
+            $needTools = @()
+            if ($TaskText -match '解压|解开|提取出来|unzip|extract') { $needTools += 'unzip' }
+            if ($TaskText -match '压缩|打包|zip 起来|生成.*\.zip' -and $TaskText -notmatch '解压') { $needTools += 'zip_list' }
+            if ($TaskText -match 'zip|压缩包|归档包') { $needTools += 'zip_list' }
+            if ($TaskText -match '下载') { $needTools += 'download_file' }
+            if ($TaskText -match '搜网页|上网|联网|百度|谷歌') { $needTools += 'web_search' }
+            $added = @()
+            foreach ($nt in $needTools) {
+                if ($nt -and $flowTools -notcontains $nt -and $script:ToolSchemaMap.ContainsKey($nt)) {
+                    $flowTools = @($flowTools) + @($nt)
+                    $added += $nt
+                }
+            }
+            if ($added.Count -gt 0) {
+                Write-Log ("  按任务关键词补了工具：" + ($added -join ','))
+                $script:ActiveFlowToolCount = $flowTools.Count
+                $script:ActiveFlowTools = $flowTools
+            }
             $filtered = Get-ToolsJsonWithFinish -Names $flowTools
             if ($filtered -and $filtered.Length -gt 100) {
                 $toolsJson = $filtered

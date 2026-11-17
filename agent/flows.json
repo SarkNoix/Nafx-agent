@@ -522,6 +522,7 @@
         "list_dir",
         "write_file",
         "zip_list",
+        "unzip",
         "skill",
         "note",
         "finish"
