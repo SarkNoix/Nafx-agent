@@ -476,9 +476,12 @@ function Write-State {
         # 面板正好在这几毫秒里读就会读到不存在 / 空文件，
         # 表现就是「气泡突然没了，过一会儿又出现」。
         # 而 Write-LivePhase 每 1.5 秒也在写同一个文件，撞上的概率比以前高得多。
-        # File.Replace 在 NTFS 上是原子的：要么拿到旧的完整内容，要么拿到新的。
+        # ⚠ 不能用 [IO.File]::Replace —— 这台机器上它直接抛「路径的形式不合法」，
+        # 于是每次写状态都失败，state.json 永远停在最初那个初始值。
+        # 实测：「任务跑完了，面板还是第1路 准备 / 0s」就是这个原因。
+        # 改用 Move-Item -Force：同卷覆盖是原子的，而且这里能用。
         if (Test-Path $StateFile) {
-            [IO.File]::Replace($tmpState, $StateFile, $null)
+            Move-Item -LiteralPath $tmpState -Destination $StateFile -Force -ErrorAction SilentlyContinue
         } else {
             [IO.File]::Move($tmpState, $StateFile)
         }
@@ -881,7 +884,7 @@ function Write-LivePhase {
         $tmp = $script:LiveStateFile + '.tmp'
         [IO.File]::WriteAllText($tmp, $json, (New-Object Text.UTF8Encoding($false)))
         if (Test-Path $script:LiveStateFile) {
-            [IO.File]::Replace($tmp, $script:LiveStateFile, $null)
+            Move-Item -LiteralPath $tmp -Destination $script:LiveStateFile -Force -ErrorAction SilentlyContinue
         } else {
             [IO.File]::Move($tmp, $script:LiveStateFile)
         }
