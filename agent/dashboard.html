@@ -1123,7 +1123,13 @@ header button,.side-actions button{
   left:calc((100vw - min(1100px, 100vw - 40px)) / 2 + 20px);
   bottom:132px;
   width:clamp(420px, 34vw, 560px);
-  max-height:190px;
+  /* 固定高度，内容再多也只占这么高，多的在框里滚。
+     原来用 max-height 自动长高 —— 模型一串长输出就把浮窗撑到半屏，
+     底下的 say 气泡和输入框全被盖住。现在写死高度，绝不外扩。 */
+  height:156px;
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
   z-index:55;
   pointer-events:auto;
   /* 毛玻璃卡片，和面板整体质感统一 */
@@ -1173,8 +1179,9 @@ header button,.side-actions button{
   border:1px solid var(--line);
   border-left:3px solid var(--accent);
   border-radius:9px;padding:9px 12px;
-  /* 比之前高：210px 约 8 行，够看出它在写什么 */
-  max-height:210px;overflow-y:auto;
+  /* 撑满浮窗剩下的高度，内容多了在自己这里滚。
+     浮窗本身是固定 156px，所以这块永远只占 156 减去标题那一行的空间。 */
+  flex:1;min-height:0;overflow-y:auto;
   white-space:pre-wrap;word-break:break-word;
 }
 .st-body.st-tool{color:#d9a441;}
@@ -1601,6 +1608,73 @@ header button,.side-actions button{
   color:rgba(255,255,255,.75);
 }
 
+
+/* ============================================================
+   模型状态抽屉
+   ============================================================ */
+.drawer-wide{width:min(560px,94vw)}
+
+.mdrawer-body{
+  flex:1;min-height:0;display:flex;flex-direction:column;
+  gap:10px;padding:12px 14px;
+}
+.mbox{
+  flex:1;min-height:0;display:flex;flex-direction:column;
+  border:1px solid var(--line);border-radius:10px;
+  background:var(--panel2);overflow:hidden;
+}
+.mbox-head{
+  display:flex;align-items:center;gap:8px;
+  padding:7px 11px;font-size:11.5px;color:var(--dim);
+  border-bottom:1px solid var(--line);flex-shrink:0;
+  letter-spacing:.3px;
+}
+.mbox-head > span:first-child{font-weight:600;color:var(--fg)}
+.mbox-hint{margin-left:auto;color:var(--faint);font-size:10.5px}
+
+.mbox-pre{
+  flex:1;min-height:0;overflow-y:auto;
+  margin:0;padding:10px 12px;
+  font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
+  font-size:12px;line-height:1.62;
+  white-space:pre-wrap;word-break:break-word;
+  color:var(--fg);
+}
+.mbox-pre::-webkit-scrollbar{width:8px}
+.mbox-pre::-webkit-scrollbar-thumb{background:var(--line2);border-radius:8px}
+
+/* 翻译框用正文字体，读起来比等宽舒服 */
+.mtrans{
+  font-family:inherit;font-size:12.8px;line-height:1.72;
+}
+.mtrans .tl{padding:2px 0}
+.mtrans .tl-key{color:var(--dim)}
+.mtrans .tl-val{color:var(--fg)}
+.mtrans .tl-tool{
+  display:inline-block;padding:1px 7px;border-radius:5px;
+  background:rgba(90,150,255,.16);color:var(--accent);
+  font-family:ui-monospace,Consolas,monospace;font-size:11.5px;
+  border:1px solid rgba(90,150,255,.3);
+}
+.mtrans .tl-name{color:var(--accent);font-weight:600}
+.mtrans .tl-ok{color:#3fb950}
+.mtrans .tl-bad{color:#f85149}
+.mtrans .tl-empty{color:var(--faint);font-style:italic}
+.mtrans .tl-step{
+  color:var(--faint);font-size:11px;margin-top:9px;
+  border-top:1px dashed var(--line);padding-top:7px;
+}
+.mdot{
+  width:8px;height:8px;border-radius:50%;background:var(--faint);
+  flex-shrink:0;
+}
+.mdot.on{background:#3fb950;animation:pulse 1.4s infinite}
+.dot-idle{background:var(--faint)}
+
+[data-theme="glass"] .mbox{background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.16)}
+[data-theme="glass"] .mbox-head{border-bottom-color:rgba(255,255,255,.14)}
+[data-theme="glass"] .mtrans .tl-tool{background:rgba(120,180,255,.22)}
+
 </style>
 </head>
 <body>
@@ -1634,6 +1708,7 @@ header button,.side-actions button{
     <button data-theme-btn="dark">深色</button>
     <button data-theme-btn="glass">液态玻璃</button>
   </div>
+  <button id="btnModel" class="ghost">模型</button>
   <button id="btnQueue" class="ghost">队列</button>
   <button id="btnHist" class="ghost">历史</button>
   <button id="btnSettings" class="ghost">设置</button>
@@ -1803,6 +1878,42 @@ header button,.side-actions button{
 <div class="drawer" id="settingsDrawer">
   <div class="drawer-head"><h2>设置</h2><button class="ghost sm" onclick="closeDrawers()">关闭</button></div>
   <div class="drawer-body" id="settingsBody"></div>
+</div>
+
+<!-- ============================================================
+     模型状态抽屉
+     
+     为什么要有这个：
+     浮窗只能显示一小段，而且会挡住内容。想看「模型到底在干什么」
+     需要一个不遮挡、能看全的地方。
+     
+     上下两个框：
+       上 —— 模型原始输出（流式的 JSON / tool_calls 原文，一字不改）
+       下 —— 实时翻译（把上面那堆 JSON 说成人话：调了什么工具、
+             参数是什么、这一步结果如何）
+     ============================================================ -->
+<div class="drawer drawer-wide" id="modelDrawer">
+  <div class="drawer-head">
+    <h2>模型在干什么</h2>
+    <span class="mdot" id="mDot"></span>
+    <button class="ghost sm" onclick="toggleModelDrawer()">关闭</button>
+  </div>
+  <div class="mdrawer-body">
+    <div class="mbox">
+      <div class="mbox-head">
+        <span>原始输出</span>
+        <span class="mbox-hint" id="mRawHint">模型吐什么就显示什么</span>
+      </div>
+      <pre class="mbox-pre" id="mRaw"></pre>
+    </div>
+    <div class="mbox">
+      <div class="mbox-head">
+        <span>翻译</span>
+        <span class="mbox-hint" id="mTrHint">翻译成白话</span>
+      </div>
+      <div class="mbox-pre mtrans" id="mTr"></div>
+    </div>
+  </div>
 </div>
 
 <div id="sysBtn" title="系统信息 / 插件">∑</div>
@@ -3140,6 +3251,9 @@ function tick(){
       // 之前靠 .stream-out:empty 自动隐藏，模型思考的几十秒里一个字都不吐，
       // 浮窗就消失了 —— 用户以为它挂了。现在只看 status，不看有没有内容。
       if (busy) { showStreamPanel(); renderStream(); }
+      // 模型抽屉开着的话，跟着刷新（原始输出 + 翻译）
+      var md = $('modelDrawer');
+      if (md && md.className.indexOf('on') >= 0) { renderModelDrawer(); }
       else { hideStreamPanel(); }
       // 任务在跑才拉流式增量。
       //
@@ -3387,8 +3501,193 @@ function openDrawer(id){
   $(id).className = 'drawer on';
   $('mask').className = 'mask on';
 }
+/* ============================================================
+   妯″瀷鐘舵€佹娊灞?   
+   涓婃锛氭ā鍨嬪師濮嬭緭鍑?鈥斺€?娴佸紡鍐呭涓€瀛椾笉鏀癸紝灏辨槸妯″瀷鍚愮殑閭ｄ覆 JSON
+   涓嬫锛氱炕璇?鈥斺€?鎶婇偅涓?JSON 璇存垚浜鸿瘽
+   
+   涓轰粈涔堣鍗曠嫭鍋氱炕璇戯細
+   妯″瀷杈撳嚭鏄?tool_calls 鐨?JSON锛岄暱杩欐牱锛?     {"name":"write_file","arguments":{"path":"a.txt","content":"浣犲ソ"}}
+   涓€鑸汉鐪嬩笉鍑鸿繖鏄骞插槢銆傜炕璇戞垚
+     銆屽啓鍏ユ枃浠?a.txt锛屽唴瀹规槸銆屼綘濂姐€嶃€嶅氨娓呮浜嗐€?   ============================================================ */
+
+function toggleModelDrawer(){
+  var d = $('modelDrawer');
+  if (d && d.className.indexOf('on') >= 0) { closeDrawers(); }
+  else { openDrawer('modelDrawer'); renderModelDrawer(); }
+}
+
+var TOOL_LABEL = {
+  think: "\u60f3\u4e00\u60f3", plan: "\u5217\u8ba1\u5212",
+  read_file: "\u8bfb\u6587\u4ef6", write_file: "\u5199\u6587\u4ef6", append_file: "\u8ffd\u52a0\u5185\u5bb9",
+  replace_in_file: "\u6539\u6587\u4ef6\u5185\u5bb9", set_line: "\u6539\u67d0\u4e00\u884c",
+  list_dir: "\u770b\u76ee\u5f55", find_files: "\u627e\u6587\u4ef6", grep_file: "\u641c\u5185\u5bb9",
+  make_dir: "\u5efa\u76ee\u5f55", delete_path: "\u5220\u9664", move_path: "\u79fb\u52a8", copy_path: "\u590d\u5236",
+  run_cmd: "\u8dd1\u547d\u4ee4", run_ps1: "\u8dd1\u811a\u672c", write_script: "\u5199\u811a\u672c",
+  zip_list: "\u770b\u538b\u7f29\u5305", unzip: "\u89e3\u538b",
+  web_search: "\u4e0a\u7f51\u641c", web_fetch: "\u6253\u5f00\u7f51\u9875", download_file: "\u4e0b\u8f7d",
+  sys_info: "\u67e5\u7cfb\u7edf\u4fe1\u606f", now: "\u67e5\u65f6\u95f4", syshelp: "\u67e5\u7cfb\u7edf\u7528\u6cd5",
+  help: "\u67e5\u5de5\u5177\u7528\u6cd5", win_doc: "\u67e5 Windows \u6587\u6863",
+  skill: "\u7528\u6280\u80fd", note: "\u62a5\u8fdb\u5ea6",
+  say: "\u63d0\u95ee", finish: "\u4ea4\u7ed3\u679c", check: "\u68c0\u67e5"
+};
+
+function toolLabel(n){ return TOOL_LABEL[n] || n; }
+
+/* \u53c2\u6570\u503c\u8bf4\u4eba\u8bdd */
+function argText(k, v){
+  if (v === null || v === undefined || v === "") { return "\uff08\u7a7a\uff09"; }
+  var s = (typeof v === "string") ? v : JSON.stringify(v);
+  if (s.length > 220) { s = s.substring(0, 220) + "\u2026"; }
+  return s;
+}
+
+function tryParseJson(s){
+  if (!s) { return null; }
+  s = String(s).trim();
+  if (!s) { return null; }
+  try { return JSON.parse(s); } catch(e){ return null; }
+}
+
+/* ============================================================
+   \u628a\u6a21\u578b\u539f\u59cb\u8f93\u51fa\u7ffb\u8bd1\u6210\u767d\u8bdd
+   \u8f93\u5165\u662f\u6d41\u5f0f\u539f\u6587\uff08\u53ef\u80fd\u662f\u534a\u622a JSON\uff09
+   ============================================================ */
+function translateModelOutput(raw){
+  if (!raw || !raw.trim()){
+    return '<div class="tl tl-empty">\u8fd8\u6ca1\u6709\u8f93\u51fa\u3002\u6a21\u578b\u4e00\u5f00\u59cb\u8bf4\u8bdd\uff0c\u8fd9\u91cc\u5c31\u4f1a\u8ddf\u7740\u53d8\u3002</div>';
+  }
+  var txt = String(raw);
+  var out = [];
+
+  var obj = tryParseJson(txt);
+  if (!obj){
+    var lb = txt.lastIndexOf("}");
+    if (lb > 0){ obj = tryParseJson(txt.substring(0, lb + 1)); }
+  }
+  if (obj){ return translateObject(obj); }
+
+  var looksJson = /[{}]/.test(txt) && /\"/.test(txt);
+  if (looksJson){
+    var partial = translatePartialJson(txt);
+    if (partial){ return partial; }
+    out.push('<div class="tl tl-empty">\u6a21\u578b\u6b63\u5728\u8f93\u51fa\uff08\u8fd8\u6ca1\u6210\u578b\uff09\uff1a</div>');
+    out.push('<div class="tl"><span class="tl-val">' + esc(txt.substring(0, 300)) + '</span></div>');
+    return out.join("");
+  }
+
+  out.push('<div class="tl"><span class="tl-key">\u6a21\u578b\u5728\u8bf4\uff1a</span></div>');
+  out.push('<div class="tl"><span class="tl-val">' + esc(txt.substring(0, 600)) + '</span></div>');
+  return out.join("");
+}
+
+/* \u4ece\u534a\u622a JSON \u91cc\u62a0\u5b57\u6bb5 */
+function translatePartialJson(txt){
+  var mName = txt.match(/"name"\s*:\s*"([^"]+)"/);
+  if (!mName){ return ""; }
+  var name = mName[1];
+  var out = [];
+  out.push('<div class="tl"><span class="tl-tool">' + esc(name) + '</span> ' +
+           '<span class="tl-name">' + esc(toolLabel(name)) + '</span></div>');
+  var mArgs = txt.match(/"arguments"\s*:\s*\{([\s\S]*)$/);
+  if (mArgs){
+    var body = mArgs[1];
+    var re = /"([A-Za-z_][A-Za-z0-9_]*)"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
+    var mm, n = 0;
+    while ((mm = re.exec(body)) !== null && n < 8){
+      var k = mm[1], v = mm[2];
+      try { v = JSON.parse('"' + v + '"'); } catch(e){ }
+      out.push('<div class="tl"><span class="tl-key">  ' + esc(k) + '\uff1a</span>' +
+               '<span class="tl-val">' + esc(argText(k, v)) + '</span></div>');
+      n++;
+    }
+  }
+  out.push('<div class="tl tl-step">\uff08\u6a21\u578b\u8fd8\u5728\u8f93\u51fa\uff0c\u8fd9\u6bb5\u8bdd\u8fd8\u6ca1\u8bf4\u5b8c\uff09</div>');
+  return out.join("");
+}
+
+function translateObject(obj){
+  var out = [];
+  var calls = null;
+  if (obj.tool_calls && obj.tool_calls.length) { calls = obj.tool_calls; }
+  else if (obj.function && obj.function.name) { calls = [obj]; }
+
+  if (calls){
+    for (var i=0;i<calls.length && i<6;i++){
+      var c = calls[i];
+      var fn = c.function || c;
+      var nm = fn.name || "?";
+      var args = fn.arguments;
+      if (typeof args === "string"){ args = tryParseJson(args); }
+      out.push('<div class="tl"><span class="tl-tool">' + esc(nm) + '</span> ' +
+               '<span class="tl-name">' + esc(toolLabel(nm)) + '</span></div>');
+      if (args && typeof args === "object"){
+        var keys = Object.keys(args);
+        for (var j=0;j<keys.length && j<8;j++){
+          var k = keys[j];
+          out.push('<div class="tl"><span class="tl-key">  ' + esc(k) + '\uff1a</span>' +
+                   '<span class="tl-val">' + esc(argText(k, args[k])) + '</span></div>');
+        }
+      } else if (args){
+        out.push('<div class="tl"><span class="tl-val">  ' + esc(argText("", args)) + '</span></div>');
+      }
+    }
+    return out.join("");
+  }
+
+  var ks = Object.keys(obj);
+  if (ks.length === 0){ return '<div class="tl tl-empty">\u7a7a\u5bf9\u8c61</div>'; }
+  for (var a=0;a<ks.length && a<12;a++){
+    var key = ks[a], val = obj[key];
+    var shown;
+    if (val && typeof val === "object"){ shown = JSON.stringify(val); }
+    else { shown = String(val); }
+    out.push('<div class="tl"><span class="tl-key">' + esc(key) + '\uff1a</span>' +
+             '<span class="tl-val">' + esc(argText(key, shown)) + '</span></div>');
+  }
+  return out.join("");
+}
+
+var lastModelRaw = "";
+
+function renderModelDrawer(){
+  var rawEl = $('mRaw');
+  var trEl  = $('mTr');
+  var dot   = $('mDot');
+  if (!rawEl || !trEl){ return; }
+
+  var raw = streamText || "";
+  var st = curState || {};
+  var running = (st.status === "running" || st.status === "waiting");
+
+  if (rawEl.textContent !== raw){ rawEl.textContent = raw; }
+  if (raw){
+    var nearBottom = (rawEl.scrollHeight - rawEl.scrollTop - rawEl.clientHeight) < 60;
+    if (nearBottom){ rawEl.scrollTop = rawEl.scrollHeight; }
+  }
+
+  var html = translateModelOutput(raw);
+  if (trEl.getAttribute("data-h") !== html){
+    trEl.innerHTML = html;
+    trEl.setAttribute("data-h", html);
+  }
+
+  if (dot){ dot.className = "mdot" + (running ? " on" : ""); }
+
+  var rawHint = $('mRawHint');
+  if (rawHint){
+    rawHint.textContent = running
+      ? (raw.length ? ("\u6b63\u5728\u8f93\u51fa \u00b7 " + raw.length + " \u5b57") : "\u7b49\u6a21\u578b\u5f00\u53e3\u2026")
+      : (st.status && st.status !== "idle" ? (STATUS_TEXT[st.status] || st.status) : "\u7a7a\u95f2");
+  }
+  var trHint = $('mTrHint');
+  if (trHint){ trHint.textContent = raw ? "\u767d\u8bdd\u7ffb\u8bd1" : "\u6682\u65e0\u5185\u5bb9"; }
+}
+
 $('mask').onclick = closeDrawers;
 document.onkeydown = function(e){ if (e && e.key === 'Escape') closeDrawers(); };
+
+$('btnModel').onclick = toggleModelDrawer;
 
 $('btnQueue').onclick = function(){
   openDrawer('queueDrawer');

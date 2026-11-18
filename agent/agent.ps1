@@ -710,25 +710,41 @@ function Add-SessionNote {
     }
     try {
         $sf = $SessionFile
+        # ---- 就地更新，不要「删了再追加」----
+        #
+        # 原来是：把所有同类记录从会话里删掉，再把新的追加到末尾。
+        # 后果是这类记录会在会话里「漂」——
+        # 第1步 think 在第2位，第3步 note 进来后 think 还在第2位，
+        # 第4步又 think，它被删掉再追加，于是跑到了 note 后面。
+        # 面板上看起来就是「想法莫名其妙出现在进度下面」，顺序全乱了。
+        #
+        # 现在改成：找到第一条同类记录就原地替换，位置永远不变。
+        $rec = '{"role":"assistant","kind":' + (To-JsonStr $Kind) + '","content":' + (To-JsonStr $body) +
+               ',"ts":' + (To-JsonStr (Get-Date -Format 'MM-dd HH:mm:ss')) +
+               ',"ok":true,"files":[],"raw":""}'
         $kept = @()
+        $placed = $false
         if (Test-Path $sf) {
             foreach ($ln in @(Get-Content $sf -Encoding UTF8 | Where-Object { $_.Trim() })) {
-                $keep = $true
+                $isSame = $false
                 try {
                     $o = $ln | ConvertFrom-Json
-                    # 上一轮同类播报：role=assistant、kind 相同、content 以「· 」开头
                     $oKind = 'think'
                     if ($o.PSObject.Properties.Name -contains 'kind' -and $o.kind) { $oKind = [string]$o.kind }
                     if ([string]$o.role -eq 'assistant' -and $oKind -eq $Kind -and
-                        ([string]$o.content).StartsWith(([char]0x00B7 + ' '))) { $keep = $false }
+                        ([string]$o.content).StartsWith(([char]0x00B7 + ' '))) { $isSame = $true }
                 } catch { }
-                if ($keep) { $kept += $ln }
+                if ($isSame) {
+                    # 同类记录：在原位置换上最新内容（只换第一次遇到的）
+                    if (-not $placed) { $kept += $rec; $placed = $true }
+                    # 多余的同类记录直接丢掉
+                } else {
+                    $kept += $ln
+                }
             }
         }
-        $rec = '{"role":"assistant","kind":' + (To-JsonStr $Kind) + ',"content":' + (To-JsonStr $body) +
-               ',"ts":' + (To-JsonStr (Get-Date -Format 'MM-dd HH:mm:ss')) +
-               ',"ok":true,"files":[],"raw":""}'
-        $kept += $rec
+        if (-not $placed) { $kept += $rec }
+        [IO.File]::WriteAllLines($sf, $kept, (New-Object Text.UTF8Encoding($false)))
         [IO.File]::WriteAllLines($sf, $kept, (New-Object Text.UTF8Encoding($false)))
     } catch { }
 }
