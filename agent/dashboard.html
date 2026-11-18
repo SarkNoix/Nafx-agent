@@ -3250,7 +3250,12 @@ function tick(){
       // 回合在跑 → 浮窗一直亮着。
       // 之前靠 .stream-out:empty 自动隐藏，模型思考的几十秒里一个字都不吐，
       // 浮窗就消失了 —— 用户以为它挂了。现在只看 status，不看有没有内容。
-      if (busy) { showStreamPanel(); renderStream(); }
+      // 模型抽屉开着的时候不显示浮窗 —— 抽屉里看得更全，浮窗只会挡住内容
+      var mdo = $('modelDrawer');
+      var drawerOn = !!(mdo && mdo.className.indexOf('on') >= 0);
+      if (busy && !drawerOn) { showStreamPanel(); renderStream(); }
+      else { hideStreamPanel(); }
+      if (mdo && drawerOn) { renderModelDrawer(); }
       // 模型抽屉开着的话，跟着刷新（原始输出 + 翻译）
       var md = $('modelDrawer');
       if (md && md.className.indexOf('on') >= 0) { renderModelDrawer(); }
@@ -3513,8 +3518,18 @@ function openDrawer(id){
 
 function toggleModelDrawer(){
   var d = $('modelDrawer');
-  if (d && d.className.indexOf('on') >= 0) { closeDrawers(); }
-  else { openDrawer('modelDrawer'); renderModelDrawer(); }
+  if (d && d.className.indexOf('on') >= 0) {
+    closeDrawers();
+    // 关抽屉回到主界面：立刻拉一次完整数据并重画。
+    // 不然要等下一轮 slow（每 8 轮一次，约 2.8 秒）才更新，
+    // 看起来就是「退出来消息没渲染，得刷新」。
+    lastSig = '';
+    if (pollTimer) { clearTimeout(pollTimer); }
+    pollTimer = setTimeout(tick, 60);
+  } else {
+    openDrawer('modelDrawer');
+    renderModelDrawer();
+  }
 }
 
 var TOOL_LABEL = {
@@ -3553,101 +3568,86 @@ function tryParseJson(s){
    \u628a\u6a21\u578b\u539f\u59cb\u8f93\u51fa\u7ffb\u8bd1\u6210\u767d\u8bdd
    \u8f93\u5165\u662f\u6d41\u5f0f\u539f\u6587\uff08\u53ef\u80fd\u662f\u534a\u622a JSON\uff09
    ============================================================ */
+/* ============================================================
+   翻译主函数
+
+   模型的流长这样（一整条里包含多次调用）：
+     → think {"content": "..."}→ write_file {"path":"a.txt",...}→ finish {...}
+   所以不能整串 JSON.parse，得先按「→ 工具名 」切成好几段，
+   每段单独解析。
+   ============================================================ */
 function translateModelOutput(raw){
   if (!raw || !raw.trim()){
-    return '<div class="tl tl-empty">\u8fd8\u6ca1\u6709\u8f93\u51fa\u3002\u6a21\u578b\u4e00\u5f00\u59cb\u8bf4\u8bdd\uff0c\u8fd9\u91cc\u5c31\u4f1a\u8ddf\u7740\u53d8\u3002</div>';
+    return '<div class="tl tl-empty">还没有输出。模型一开始说话，这里就会跟着变。</div>';
   }
   var txt = String(raw);
+
+  // 没有「→」就是没调工具，可能是模型在说人话
+  if (txt.indexOf('\u2192') < 0){
+    return '<div class="tl"><span class="tl-key">模型在说：</span></div>' +
+           '<div class="tl"><span class="tl-val">' + esc(txt.replace(/\s+/g, ' ').substring(0, 800)) + '</span></div>';
+  }
+
+  // 按「→ 工具名 」切段。工具名是字母数字下划线
+  var re = /\u2192\s*([A-Za-z_][A-Za-z0-9_]*)\s*/g;
+  var marks = [];
+  var m;
+  while ((m = re.exec(txt)) !== null){
+    marks.push({ name: m[1], start: m.index, bodyStart: m.index + m[0].length });
+  }
+  if (marks.length === 0){ return '<div class="tl tl-empty">读不出模型在干什么</div>'; }
+
   var out = [];
-
-  var obj = tryParseJson(txt);
-  if (!obj){
-    var lb = txt.lastIndexOf("}");
-    if (lb > 0){ obj = tryParseJson(txt.substring(0, lb + 1)); }
+  for (var i=0;i<marks.length;i++){
+    var cur = marks[i];
+    var bodyEnd = (i + 1 < marks.length) ? marks[i + 1].start : txt.length;
+    var body = txt.substring(cur.bodyStart, bodyEnd).trim();
+    out.push(oneCallHtml(cur.name, body, i + 1, marks.length));
   }
-  if (obj){ return translateObject(obj); }
-
-  var looksJson = /[{}]/.test(txt) && /\"/.test(txt);
-  if (looksJson){
-    var partial = translatePartialJson(txt);
-    if (partial){ return partial; }
-    out.push('<div class="tl tl-empty">\u6a21\u578b\u6b63\u5728\u8f93\u51fa\uff08\u8fd8\u6ca1\u6210\u578b\uff09\uff1a</div>');
-    out.push('<div class="tl"><span class="tl-val">' + esc(txt.substring(0, 300)) + '</span></div>');
-    return out.join("");
-  }
-
-  out.push('<div class="tl"><span class="tl-key">\u6a21\u578b\u5728\u8bf4\uff1a</span></div>');
-  out.push('<div class="tl"><span class="tl-val">' + esc(txt.substring(0, 600)) + '</span></div>');
-  return out.join("");
+  return out.join('');
 }
 
-/* \u4ece\u534a\u622a JSON \u91cc\u62a0\u5b57\u6bb5 */
-function translatePartialJson(txt){
-  var mName = txt.match(/"name"\s*:\s*"([^"]+)"/);
-  if (!mName){ return ""; }
-  var name = mName[1];
+/* 单个工具调用 -> HTML */
+function oneCallHtml(name, body, idx, total){
   var out = [];
-  out.push('<div class="tl"><span class="tl-tool">' + esc(name) + '</span> ' +
+  out.push('<div class="tl-call">');
+  out.push('<div class="tl-call-head"><span class="tl-idx">' + idx + '</span>' +
+           '<span class="tl-tool">' + esc(name) + '</span>' +
            '<span class="tl-name">' + esc(toolLabel(name)) + '</span></div>');
-  var mArgs = txt.match(/"arguments"\s*:\s*\{([\s\S]*)$/);
-  if (mArgs){
-    var body = mArgs[1];
-    var re = /"([A-Za-z_][A-Za-z0-9_]*)"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
-    var mm, n = 0;
-    while ((mm = re.exec(body)) !== null && n < 8){
-      var k = mm[1], v = mm[2];
-      try { v = JSON.parse('"' + v + '"'); } catch(e){ }
-      out.push('<div class="tl"><span class="tl-key">  ' + esc(k) + '\uff1a</span>' +
-               '<span class="tl-val">' + esc(argText(k, v)) + '</span></div>');
-      n++;
+
+  // 把 body 当 JSON 解析；解不了就当没说完了
+  var obj = tryParseJson(body);
+  if (!obj){
+    var lb = body.lastIndexOf('}');
+    if (lb > 0){ obj = tryParseJson(body.substring(0, lb + 1)); }
+  }
+
+  if (obj && typeof obj === 'object'){
+    var keys = Object.keys(obj);
+    if (keys.length === 0){
+      out.push('<div class="tl-row"><span class="tl-key">（没有参数）</span></div>');
     }
-  }
-  out.push('<div class="tl tl-step">\uff08\u6a21\u578b\u8fd8\u5728\u8f93\u51fa\uff0c\u8fd9\u6bb5\u8bdd\u8fd8\u6ca1\u8bf4\u5b8c\uff09</div>');
-  return out.join("");
-}
-
-function translateObject(obj){
-  var out = [];
-  var calls = null;
-  if (obj.tool_calls && obj.tool_calls.length) { calls = obj.tool_calls; }
-  else if (obj.function && obj.function.name) { calls = [obj]; }
-
-  if (calls){
-    for (var i=0;i<calls.length && i<6;i++){
-      var c = calls[i];
-      var fn = c.function || c;
-      var nm = fn.name || "?";
-      var args = fn.arguments;
-      if (typeof args === "string"){ args = tryParseJson(args); }
-      out.push('<div class="tl"><span class="tl-tool">' + esc(nm) + '</span> ' +
-               '<span class="tl-name">' + esc(toolLabel(nm)) + '</span></div>');
-      if (args && typeof args === "object"){
-        var keys = Object.keys(args);
-        for (var j=0;j<keys.length && j<8;j++){
-          var k = keys[j];
-          out.push('<div class="tl"><span class="tl-key">  ' + esc(k) + '\uff1a</span>' +
-                   '<span class="tl-val">' + esc(argText(k, args[k])) + '</span></div>');
-        }
-      } else if (args){
-        out.push('<div class="tl"><span class="tl-val">  ' + esc(argText("", args)) + '</span></div>');
-      }
+    for (var j=0;j<keys.length && j<10;j++){
+      var k = keys[j];
+      var v = obj[k];
+      var shown = (v && typeof v === 'object') ? JSON.stringify(v) : String(v);
+      if (shown.length > 300){ shown = shown.substring(0, 300) + '\u2026'; }
+      out.push('<div class="tl-row"><span class="tl-key">' + esc(k) + '</span>' +
+               '<span class="tl-val">' + esc(shown) + '</span></div>');
     }
-    return out.join("");
+  } else if (body){
+    // 没解析出来，但有内容 —— 可能正在吐
+    var peek = body.replace(/\s+/g, ' ');
+    if (peek.length > 200){ peek = peek.substring(0, 200) + '\u2026'; }
+    out.push('<div class="tl-row"><span class="tl-key">正在输出</span>' +
+             '<span class="tl-val">' + esc(peek) + '</span></div>');
+  } else {
+    out.push('<div class="tl-row"><span class="tl-key">（还没写参数）</span></div>');
   }
 
-  var ks = Object.keys(obj);
-  if (ks.length === 0){ return '<div class="tl tl-empty">\u7a7a\u5bf9\u8c61</div>'; }
-  for (var a=0;a<ks.length && a<12;a++){
-    var key = ks[a], val = obj[key];
-    var shown;
-    if (val && typeof val === "object"){ shown = JSON.stringify(val); }
-    else { shown = String(val); }
-    out.push('<div class="tl"><span class="tl-key">' + esc(key) + '\uff1a</span>' +
-             '<span class="tl-val">' + esc(argText(key, shown)) + '</span></div>');
-  }
-  return out.join("");
+  out.push('</div>');
+  return out.join('');
 }
-
 var lastModelRaw = "";
 
 function renderModelDrawer(){
