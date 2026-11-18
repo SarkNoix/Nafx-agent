@@ -185,11 +185,20 @@ function Save-Queue {
         if (-not ($it.PSObject.Properties.Name -contains 'id')) { continue }
         if (-not $first) { [void]$sb.Append(',') }
         $first = $false
+        # 老队列项没有 mode 字段，补成 normal，别让 ConvertTo-Json 输出 null
+        if (-not ($it.PSObject.Properties.Name -contains 'mode') -or -not $it.mode) {
+            try { $it | Add-Member -NotePropertyName mode -NotePropertyValue 'normal' -Force } catch { }
+        }
         $o = [ordered]@{
             id = [string]$it.id; task = [string]$it.task; status = [string]$it.status
             priority = [int]$it.priority; addedAt = [string]$it.addedAt
             startedAt = [string]$it.startedAt; doneAt = [string]$it.doneAt
             result = [string]$it.result; slot = [string]$it.slot
+            # mode 必须写进去。
+            # 漏了它，Add-QueueItem 设好的模式一存盘就没了 ——
+            # 实测工作模式提交后，派发器读回来是空，一律按常规跑，
+            # 面板上「常规 / 工作」两个按钮看起来完全没区别。
+            mode = [string]$it.mode
         }
         [void]$sb.Append(($o | ConvertTo-Json -Compress))
     }

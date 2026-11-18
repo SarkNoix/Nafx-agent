@@ -2317,9 +2317,12 @@ Add-SessionNote -Text $bcSay -Kind 'say'
     #
     # 所以这里和「必须先 think」一样的套路：没 plan 过就打回去。
     # 限 2 次，还不听话就放行 —— 宁可没计划，不能把任务卡死。
-    $anyStepPlan = ($state.steps.Count -gt 0)
+    # 不能只看「是不是第一步」——
+    # 实测工作模式的第 1 步往往是 think，等第 2 步 list_dir 时
+    # steps 已经不为空了，拦截条件直接失效，plan 永远等不到。
+    # 正确的判据：这个任务到现在为止，有没有真的 plan 过。
     $hasPlan = ($state.plan -and ([string]$state.plan).Trim())
-    if ($Mode -eq 'work' -and -not $anyStepPlan -and -not $hasPlan -and
+    if ($Mode -eq 'work' -and -not $hasPlan -and
         $toolName -notin @('plan', 'think', 'finish', 'web_search')) {
         $script:planNudge = [int]$script:planNudge + 1
         if ($script:planNudge -le 2) {
@@ -2332,7 +2335,6 @@ Add-SessionNote -Text $bcSay -Kind 'say'
         }
         Write-Log ("  [要求先计划] 已经打回 2 次还不肯 plan，放行 " + $toolName)
     }
-
     # ---- 新任务的第一步必须是 think ----
     # Qwen3-4B-Instruct 没有内置 thinking（reasoning 关着，也没有 reasoning_content），
     # 模型容易一上来就瞎动手：实测写计算器时没想清楚就写脚本，
