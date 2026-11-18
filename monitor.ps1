@@ -485,6 +485,20 @@ if ($script:agentMissStreak -ge 2 -and -not $hasAgent -and -not $hasResult -and 
         # 这两个是 agent 算好的"实际发出去的"工具规模，面板用它算剩余上下文
         toolTokens = [int]$main.toolTokens
         flowTools  = [int]$main.flowTools
+        # ---- 上下文占用 ----
+        # 这 6 个是 agent 每轮算好写进 state 的：
+        #   ctxReal    llama 实际 n_ctx
+        #   ctxLimit   这轮真正能用的输入预算
+        #   ctxUsed    已经塞了多少（提示词+历史+工具）
+        # 上面这段 return 是手工拼字段的，漏掉什么面板就拿不到什么 ——
+        # 之前漏了这 6 个，面板「上下文占用」里对话历史和剩余可用
+        # 一直显示「等任务开始后算」，任务明明在跑也一样。
+        ctxReal    = $(if ($main.PSObject.Properties.Name -contains 'ctxReal') { [int]$main.ctxReal } else { 0 })
+        ctxLimit   = $(if ($main.PSObject.Properties.Name -contains 'ctxLimit') { [int]$main.ctxLimit } else { 0 })
+        ctxPrompt  = $(if ($main.PSObject.Properties.Name -contains 'ctxPrompt') { [int]$main.ctxPrompt } else { 0 })
+        ctxHistory = $(if ($main.PSObject.Properties.Name -contains 'ctxHistory') { [int]$main.ctxHistory } else { 0 })
+        ctxTools   = $(if ($main.PSObject.Properties.Name -contains 'ctxTools') { [int]$main.ctxTools } else { 0 })
+        ctxUsed    = $(if ($main.PSObject.Properties.Name -contains 'ctxUsed') { [int]$main.ctxUsed } else { 0 })
         phase     = [string]$main.phase
         workers   = $summary
     }
