@@ -225,8 +225,6 @@ main{position:relative;z-index:1;flex:1;display:flex;min-height:0}
   background:var(--panel);overflow-y:auto;padding:14px;
   display:flex;flex-direction:column;gap:18px;
   backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur)}
-.side::-webkit-scrollbar{width:8px}
-.side::-webkit-scrollbar-thumb{background:var(--line2);border-radius:8px}
 /* 侧边栏每个区块一张卡片 */
 .side-block{
   background:var(--panel2);border:1px solid var(--line);
@@ -289,8 +287,6 @@ main{position:relative;z-index:1;flex:1;display:flex;min-height:0}
 /* ---------- 会话区 ---------- */
 .center{flex:1;display:flex;flex-direction:column;min-width:0}
 .thread{flex:1;overflow-y:auto;padding:18px 22px 10px}
-.thread::-webkit-scrollbar{width:9px}
-.thread::-webkit-scrollbar-thumb{background:var(--line2);border-radius:9px}
 
 .empty{max-width:540px;margin:9vh auto;text-align:center;color:var(--dim)}
 .empty h1{font-size:24px;color:var(--fg);margin:0 0 10px;font-weight:600;letter-spacing:.5px}
@@ -407,8 +403,6 @@ textarea::placeholder{color:var(--faint)}
   border-bottom:1px solid var(--line);flex-shrink:0}
 .drawer-head h2{margin:0;font-size:15px;font-weight:600;flex:1}
 .drawer-body{flex:1;overflow-y:auto;padding:16px 18px}
-.drawer-body::-webkit-scrollbar{width:9px}
-.drawer-body::-webkit-scrollbar-thumb{background:var(--line2);border-radius:9px}
 
 .field{margin-bottom:15px}
 .field label{display:block;font-size:12px;color:var(--dim);margin-bottom:5px}
@@ -479,8 +473,6 @@ textarea::placeholder{color:var(--faint)}
   background:var(--panel2);border:1px solid var(--line);color:var(--dim);
 }
 .sys-body{flex:1;overflow-y:auto;padding:12px 14px}
-.sys-body::-webkit-scrollbar{width:7px}
-.sys-body::-webkit-scrollbar-thumb{background:var(--line2);border-radius:7px}
 
 .sys-tit{
   font-size:10.5px;color:var(--faint);letter-spacing:1px;
@@ -721,17 +713,6 @@ textarea::placeholder{color:var(--faint)}
 @keyframes msgIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 .msg{animation:msgIn .22s ease-out}
 
-/* 5) 滚动条统一细一点 */
-.side::-webkit-scrollbar{width:6px}
-.thread::-webkit-scrollbar{width:7px}
-.side::-webkit-scrollbar-thumb,.thread::-webkit-scrollbar-thumb{
-  background:var(--line2);border-radius:6px;
-}
-.side::-webkit-scrollbar-thumb:hover,.thread::-webkit-scrollbar-thumb:hover{
-  background:var(--faint);
-}
-/* 隐藏滚动条两头的小箭头 */
-.side::-webkit-scrollbar-button,.thread::-webkit-scrollbar-button{display:none}
 
 /* 6) 步骤框：圆角统一、悬停微亮 */
 .step-obs-wrap{border-bottom-left-radius:var(--radius-lg);border-bottom-right-radius:var(--radius-lg)}
@@ -773,15 +754,6 @@ textarea::placeholder{color:var(--faint)}
    UI 优化（追加覆盖，不改上面任何原有规则）
    ============================================================ */
 
-/* ---------- 滚动条统一 ---------- */
-*{scrollbar-width:thin;scrollbar-color:var(--line2) transparent}
-*::-webkit-scrollbar{width:10px;height:10px}
-*::-webkit-scrollbar-track{background:transparent}
-*::-webkit-scrollbar-thumb{
-  background:var(--line2);border-radius:10px;
-  border:2px solid transparent;background-clip:content-box;
-}
-*::-webkit-scrollbar-thumb:hover{background:var(--faint);background-clip:content-box}
 
 /* ---------- 焦点可见 ---------- */
 button:focus-visible,
@@ -1050,11 +1022,6 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,.tool-chip:focus
   outline:2px solid var(--accent);outline-offset:2px;
 }
 
-/* 滚动条统一，避免侧栏/主区/抽屉三种粗细 */
-::-webkit-scrollbar{width:9px;height:9px}
-::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:var(--line2);border-radius:6px;border:2px solid transparent;background-clip:content-box}
-::-webkit-scrollbar-thumb:hover{background:var(--faint);background-clip:content-box}
 
 /* 减少动效偏好：系统设了「减少动画」就别硬动 */
 @media(prefers-reduced-motion:reduce){
@@ -1475,23 +1442,6 @@ header button,.side-actions button{
 .step:hover{background:rgba(128,148,190,.045)}
 [data-theme="glass"] .step:hover{background:rgba(255,255,255,.055)}
 
-/* 滚动条：细一点，颜色跟主题走 */
-.thread::-webkit-scrollbar,.side::-webkit-scrollbar,.step-obs::-webkit-scrollbar,
-.st-body::-webkit-scrollbar{width:7px;height:7px}
-.thread::-webkit-scrollbar-thumb,.side::-webkit-scrollbar-thumb,
-.step-obs::-webkit-scrollbar-thumb,.st-body::-webkit-scrollbar-thumb{
-  background:rgba(128,148,190,.30);border-radius:4px;
-}
-.thread::-webkit-scrollbar-thumb:hover,.side::-webkit-scrollbar-thumb:hover,
-.step-obs::-webkit-scrollbar-thumb:hover,.st-body::-webkit-scrollbar-thumb:hover{
-  background:rgba(128,148,190,.52);
-}
-[data-theme="glass"] .thread::-webkit-scrollbar-thumb,
-[data-theme="glass"] .side::-webkit-scrollbar-thumb,
-[data-theme="glass"] .step-obs::-webkit-scrollbar-thumb,
-[data-theme="glass"] .st-body::-webkit-scrollbar-thumb{
-  background:rgba(255,255,255,.34);
-}
 
 /* 主按钮：和 auto-go 一致的按压手感 */
 .composer button.primary{
@@ -1640,8 +1590,6 @@ header button,.side-actions button{
   white-space:pre-wrap;word-break:break-word;
   color:var(--fg);
 }
-.mbox-pre::-webkit-scrollbar{width:8px}
-.mbox-pre::-webkit-scrollbar-thumb{background:var(--line2);border-radius:8px}
 
 /* 翻译框用正文字体，读起来比等宽舒服 */
 .mtrans{
@@ -1675,6 +1623,116 @@ header button,.side-actions button{
 [data-theme="glass"] .mbox-head{border-bottom-color:rgba(255,255,255,.14)}
 [data-theme="glass"] .mtrans .tl-tool{background:rgba(120,180,255,.22)}
 
+
+/* ============================================================
+   UI 优化 2026-11：收敛去重 + 视觉精修 + 移动端侧栏
+   ============================================================ */
+
+/* 此前 .think-more:hover / .del-deny:hover 引用的 --hover 从未定义过，
+   悬停时没有任何效果 —— 这里补上 */
+:root,[data-theme="light"],[data-theme="dark"],[data-theme="glass"]{
+  --hover:rgba(128,148,190,.13);
+}
+
+/* ---------- 滚动条：全站只此一处（cmdbar 的 3px 横条是特意的，保留） ---------- */
+*{scrollbar-width:thin;scrollbar-color:rgba(128,148,190,.32) transparent}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(128,148,190,.32);border-radius:8px}
+::-webkit-scrollbar-thumb:hover{background:rgba(128,148,190,.55)}
+::-webkit-scrollbar-button{display:none}
+[data-theme="light"]::-webkit-scrollbar-thumb{background:rgba(122,138,166,.35)}
+[data-theme="light"]::-webkit-scrollbar-thumb:hover{background:rgba(122,138,166,.55)}
+[data-theme="glass"]::-webkit-scrollbar-thumb{background:rgba(255,255,255,.38)}
+[data-theme="glass"]::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.60)}
+
+/* ---------- 步骤卡：参数不再拖出一条空黑带 ----------
+   原来 .step-arg 有代码底色，参数一短，后面就拖出一条空黑带。
+   改成左侧一道竖线：参数长就省略，参数短就干净。 */
+.step-arg{
+  background:transparent;
+  border-left:2px solid var(--line2);
+  border-radius:0;
+  padding:2px 8px 2px 9px;
+}
+.step-arg:empty{display:none}
+
+/* ---------- 空状态：标题用品牌渐变，示例按钮「拿得起」 ---------- */
+.empty h1{
+  background:linear-gradient(115deg,var(--accent),var(--accent2));
+  -webkit-background-clip:text;background-clip:text;
+  -webkit-text-fill-color:transparent;color:transparent;
+}
+[data-theme="glass"] .empty h1{
+  background:none;-webkit-text-fill-color:#ffffff;color:#ffffff;
+  text-shadow:0 2px 16px rgba(38,8,58,.55);
+}
+.chip{transition:transform .16s,box-shadow .16s,background .16s,border-color .16s,color .16s}
+.chip:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(0,0,0,.14)}
+[data-theme="glass"] .chip:hover{box-shadow:0 6px 16px rgba(38,8,58,.32)}
+@media(prefers-reduced-motion:reduce){.chip:hover{transform:none}}
+
+/* ---------- 玻璃主题：两处对比度修复 ----------
+   1) 用户气泡原是白字 + 30% 白底，压在粉紫渐变上糊成一团；
+      改成 44% 白底 + 深紫字。
+   2) 进度播报气泡（say）原来只有 6% 白底，几乎看不见；
+      改成深紫底 + 左侧亮边，和「想法」分得开。 */
+[data-theme="glass"] .msg.user .bubble{
+  background:rgba(255,255,255,.44);
+  color:#38165a;
+  text-shadow:none;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.6),0 4px 14px rgba(38,8,58,.25);
+}
+[data-theme="glass"] .msg.user .bubble .inline-code{
+  background:rgba(90,40,130,.10);border-color:rgba(90,40,130,.25);
+  color:#4a1e70;text-shadow:none;
+}
+/* 气泡里的「你 · 时间」标签：全局规则给了白色，白底上会糊 */
+[data-theme="glass"] .msg.user .bubble .who{
+  color:rgba(56,22,90,.72);text-shadow:none;
+}
+[data-theme="glass"] .msg.noteb .bubble{
+  background:rgba(30,10,48,.55);
+  color:rgba(255,255,255,.95);
+  border-left:3px solid rgba(255,255,255,.8);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+}
+
+/* ---------- 顶栏 ---------- */
+header button.ghost{border-color:transparent}
+header button.ghost:hover{background:var(--panel3);border-color:var(--line2)}
+[data-theme="glass"] header button.ghost:hover{background:rgba(255,255,255,.22);border-color:rgba(255,255,255,.4)}
+
+/* 发送按钮常驻一层轻阴影，和输入框拉开层次 */
+.composer button.primary{box-shadow:0 2px 10px rgba(30,40,80,.22)}
+[data-theme="glass"] .composer button.primary{box-shadow:0 4px 14px rgba(38,8,58,.30)}
+
+/* ---------- 移动端：侧栏改抽屉 ----------
+   原来 <900px 直接 .side{display:none}，手机上侧栏功能全丢。
+   现在变成从左滑出的抽屉，顶栏「面板」按钮开关，点遮罩关闭。 */
+.side-toggle{display:none}
+@media(max-width:900px){
+  .side-toggle{display:inline-block}
+  .side{
+    display:flex;position:fixed;left:0;top:0;bottom:0;z-index:80;
+    width:min(86vw,340px);
+    transform:translateX(-102%);
+    transition:transform .26s cubic-bezier(.4,0,.2,1);
+    box-shadow:var(--shadow);
+  }
+  body.side-open .side{transform:translateX(0)}
+  .stream-out{left:14px;right:14px;width:auto;max-width:none}
+}
+@media(max-width:760px){
+  .hbar{display:none}
+  header{gap:8px;padding:0 12px}
+  header button.ghost{padding:5px 8px;font-size:11.5px}
+  .theme-switch button{padding:4px 7px;font-size:10.5px}
+}
+@media(max-width:480px){
+  #btnHist{display:none}
+}
+
 </style>
 </head>
 <body>
@@ -1703,6 +1761,7 @@ header button,.side-actions button{
     <span id="hQueue">—</span>
   </div>
   <div class="spacer"></div>
+  <button id="btnSide" class="ghost side-toggle">面板</button>
   <div class="theme-switch">
     <button data-theme-btn="light">浅色</button>
     <button data-theme-btn="dark">深色</button>
@@ -2024,7 +2083,9 @@ function fmtMsg(s){
       var code = parts[i].replace(/^[a-zA-Z0-9]+\r?\n/, '');
       out += '<pre class="code-block">' + esc(code.replace(/\s+$/, '')) + '</pre>';
     } else {
-      out += esc(parts[i]).replace(/`([^`\n]+)`/g, '<code class="inline-code">$1</code>');
+      out += esc(parts[i])
+        .replace(/`([^`\n]+)`/g, '<code class="inline-code">$1</code>')
+        .replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
     }
   }
   return out;
@@ -3500,6 +3561,7 @@ function closeDrawers(){
   var ds = document.querySelectorAll('.drawer');
   for (var i=0;i<ds.length;i++) ds[i].className = 'drawer';
   $('mask').className = 'mask';
+  document.body.classList.remove('side-open');
 }
 function openDrawer(id){
   closeDrawers();
@@ -4249,6 +4311,16 @@ function bindChips(){
     })(cs[i]);
   }
 }
+
+/* ---------- 侧栏（移动端抽屉） ---------- */
+function toggleSide(){
+  var open = document.body.classList.toggle('side-open');
+  $('mask').className = open ? 'mask on' : 'mask';
+}
+(function(){
+  var b = $('btnSide');
+  if (b) b.onclick = toggleSide;
+})();
 
 /* ---------- 启动 ---------- */
 loadTools();

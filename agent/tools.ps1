@@ -1137,7 +1137,23 @@ function Invoke-AiTool {
                 if ($out.Length -gt 2500) { $out = $out.Substring(0,2500) + "`n…（太长，只显示前 2500 字符）" }
                 $relDisp = Get-RelDisplay $full
                 if ([string]::IsNullOrWhiteSpace($out)) { return "已写 $relDisp 并运行，没有输出（退出码 $LASTEXITCODE，耗时 $([math]::Round($sw.Elapsed.TotalSeconds,1)) 秒）" }
-                return "已写 $relDisp 并运行（退出码 $LASTEXITCODE，耗时 $([math]::Round($sw.Elapsed.TotalSeconds,1)) 秒）：`n--- 输出 ---`n$out"
+                # ---- 输出看着就不对：别让模型自以为成功了 ----
+                #
+                # 实测「写计算器跑 12+3」：模型写的脚本声明了 param([int]$a,[int]$b)
+                # 但没填 command，结果 12 + 3 = 0，退出码却是 0。
+                # 工具原样返回「退出码 0」，模型以为成了，接着 finish。
+                #
+                # 这里加一句提醒：脚本有 param 但没传 command，
+                # 或者输出里有 x + y = 0 这种一眼假的算式，都明确告诉它。
+                $warns = @()
+                if ($content -match '(?im)^\s*param\s*\(' -and [string]::IsNullOrWhiteSpace($runArgs)) {
+                    $warns += '脚本声明了 param(...) 但你没填 command 传参数，所以参数全是 null。要测就把参数写进 command，例如 command="12 + 3"。'
+                }
+                if ($out -match '=\s*0\s*$' -and $out -match '[0-9]\s*[+\-*/]\s*[0-9]') {
+                    $warns += '输出里的算式结果是 0，但你传的操作数不是 0 —— 多半是参数没传进去，别当成功。'
+                }
+                $warnText = if ($warns.Count -gt 0) { "`n--- 注意 ---`n" + (($warns | ForEach-Object { "- " + $_ }) -join "`n") } else { '' }
+                return "已写 $relDisp 并运行（退出码 $LASTEXITCODE，耗时 $([math]::Round($sw.Elapsed.TotalSeconds,1)) 秒）：`n--- 输出 ---`n$out$warnText"
             }
             'write_skill' {
                 # 把一套做法写成技能说明（md），以后可以查。path 填技能名

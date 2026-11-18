@@ -1984,13 +1984,13 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
     # 把这一轮真实的上下文用量写进 state，面板直接读，不用自己猜。
     # 注意是在裁历史之前算的「进来时」的量，这才是用户关心的
     # 「这一轮差点撑爆没有」。
-    $ctxPromptNow = [int](Get-CtxTokens ([string]$history[0].content))
+    # ⚠ 这里只记「真实上限」，具体用量等精简完再算。
+    # 原来在这一步就把 ctxPrompt/ctxUsed 定死了 —— 那时 system 还是未精简的，
+    # 实测记下 2707 / 3797，而这一轮实际发出去的是 1513 / 2603。
+    # 面板据此算出「已用 3.8k > 上限 3.4k，剩余 0」，红线拉满、看着像卡死。
+    # 而 agent 自己又拿 3797 去比 3436，判定超预算，于是反复精简、永远进不去下一步。
     $state.ctxReal    = [int]$script:RealCtx
     $state.ctxLimit   = [int]$ctxLimit
-    $state.ctxPrompt  = $ctxPromptNow
-    $state.ctxTools   = [int]$toolsTokNow
-    $state.ctxHistory = [int][Math]::Max(0, $histTok - $ctxPromptNow)
-    $state.ctxUsed    = [int]($histTok + $toolsTokNow)
     $state.toolTokens = [int]$toolsTokNow
 
     # ① 历史太长先裁历史。
@@ -2041,8 +2041,30 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
         # 连「别用错工具」那张表都从中间截断了 —— 模型拿不到工具格式，
         # 就开始纯文字输出「think\n任务内容不明确…」，一个工具都不调。
         # 所以：给一个硬下限，砍到这就停；真装不下交给后面的「裁历史 / 砍工具」去处理。
-        $target = $ctxLimit - $toolsTokNow - $mt0 - 80
-        $floor  = 900          # prompt 至少留 900 tok，再少就没法正常干活了
+        # ⚠ 这里不能把「全部余量」都让给 system。
+        #
+        # 原来的算法：target = ctxLimit - 工具 - 输出 - 80，
+        # 意思是「system 可以占用剩下的全部空间」。
+        # 但工具后面还会再砍一次（[省上下文] 工具 10 → 9），
+        # system 先把余量吃满，结果就是：
+        #   ctxLimit 3436 时 target=1581 → system 1513，还剩空间
+        #   ctxLimit 4460 时 target=2605 → system 2517，把余量吃光，
+        #   4096 时「可用」有 1200 多 tok，5120 反而只剩 500 多。
+        #
+        # 现在给 system 一个「合理占比」：最多占 ctxLimit 的 45%，
+        # 而且不超过 1600 tok。剩下的留给历史对话和工具 ——
+        # 那些才是真正随任务变化、需要空间的东西。
+        $targetByBudget = $ctxLimit - $toolsTokNow - $mt0 - 80
+        $targetByShare  = [int]($ctxLimit * 0.45)
+$target = [Math]::Min($targetByBudget, [Math]::Max($targetByShare, 1400))
+        # 再加一条硬上限 1600：system 本来就不该吃掉这么多。
+        # 2960 tok 的全部 prompt 里，「别用错工具」那张表（747）和
+        # 「两个嘴」（547）合计就占一半以上，其余小节砍掉也不心疼。
+        if ($target -gt 1600) { $target = 1600 }
+        # 下限 900：prompt 再少就没法正常干活了（实测砍到 1000 以下，
+        # 模型拿不到工具格式，开始纯文字输出、一个工具都不调）。
+        # 之前这行被我改丢了，$floor 变成 null —— 日志里打出「下限 」后面是空的。
+        $floor = 900
         if ($target -lt $floor) { $target = $floor }
 
         # ① 按 token 从尾部砍，但只在段落边界切 —— 不能把一张表或者一段话截一半。
@@ -2075,8 +2097,20 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
             $slimSys += "`n`n## 我的习惯`n`n" + $personalPrompt
         }
         $history[0] = @{ role = 'system'; content = $slimSys }
+        # 写回之后重算 —— 上面那两段是「加回来」的，必须计入，
+        # 否则日志里的数字和实际发出去的对不上（以前报的就是加回之前的）。
+        $headTok = Get-CtxTokens $slimSys
         $sysFull = $slimSys
-        $script:SysSlimmed = $true
+        # ---- 精简完必须复核，别以为自己成了 ----
+        #
+        # 实测「写计算器」那次：日志写着 [精简 system] 1899 → 2517，
+        # 精简后反而变大了 618 tok。原因就在上面 ——
+        # 砍完又加回「这个任务没说清楚」「我的习惯」两段，加回来的比砍掉的多。
+        # 而 $script:SysSlimmed 就在这儿锁死，之后永远不再精简，
+        # 于是 2517 + 历史 + 工具 一直超预算，再也进不去下一步。
+        #
+        # 现在：只有真的降到目标以下才锁死；还超就下一轮继续精。
+        $script:SysSlimmed = ($headTok -le $target)
         $histTok = Get-HistoryTokens -History $history
         Write-Log ("  [精简 system] " + $([Math]::Round((Get-CtxTokens $SystemPrompt))) + " → " + $([Math]::Round($headTok)) + " tok（目标 $target，下限 $floor）")
         $histTok = Get-HistoryTokens -History $history
@@ -2127,6 +2161,25 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
                        "工具 $before → " + @($trimmed).Count + " 个")
         }
     }
+
+    # ---- 精简/裁剪都做完了，现在才写真实用量 ----
+    #
+    # 顺序很重要：ctxPrompt / ctxUsed 必须在 system 精简、历史裁剪、
+    # 工具降档「全部做完之后」再算，测的才是真正发出去的那一份。
+    # 之前放在最前面算，记下的是未精简的 2707 / 3797 ——
+    # 面板据此把进度条拉满到 100%、剩余显示 0，看着像卡死；
+    # agent 自己也拿这个数去比上限，误判「一直超预算」，反复精简不进下一步。
+    try {
+        $ctxPromptNow = [int](Get-CtxTokens ([string]$history[0].content))
+        $histTok = Get-HistoryTokens -History $history
+        $toolsTokNow = Get-CtxTokens $toolsJson
+        $state.ctxPrompt  = $ctxPromptNow
+        $state.ctxTools   = [int]$toolsTokNow
+        $state.ctxHistory = [int][Math]::Max(0, $histTok - $ctxPromptNow)
+        $state.ctxUsed    = [int]($histTok + $toolsTokNow)
+        $state.toolTokens = [int]$toolsTokNow
+        Write-State $state
+    } catch { }
 
     try {
         # 输出额度 $mt0 在上面已经按任务类型算好了（和 ctxLimit 用的是同一个值），
@@ -2971,6 +3024,36 @@ Add-SessionNote -Text $bcSay -Kind 'say'
     #   find_files . command="*.txt" / "*.ps1" / "*.json"
     # 三次 arg 都是 "."，被当成绕圈强制收尾 —— 其实每次拿到的是不同类型，
     # 全是有用的新信息。所以把 command 也算进指纹里。
+    # ---- 第二重：同一批写操作反复砸同一个文件 ----
+    #
+    # 实测「写计算器跑 12+3」：模型 write_script 写 2 次（每次内容略不同，
+    # 指纹对不上），又换成 write_file 写 2 次 —— 换了工具名，$repeatCount 清零重来。
+    # 4 次全是同一份 74 字符的错脚本，白白烧掉一半步数。
+    #
+    # 这里按「写类工具 + 同一路径」单独计一次数，不看 command、不区分是
+    # write_script 还是 write_file —— 反正都是在反复覆盖同一个文件。
+    $writeTools = @('write_file', 'write_script', 'append_file', 'replace_in_file', 'set_line')
+    if ($toolName -in $writeTools -and $stepArg) {
+        $prevWrites = @($state.steps | Select-Object -Last 8 | Where-Object {
+            ([string]$_.tool -in $writeTools) -and ([string]$_.arg -eq $stepArg)
+        })
+        $writeCount = $prevWrites.Count
+        if ($writeCount -ge 3) {
+            Write-Log ("  [绕圈] $stepArg 已经被写过 " + ($writeCount + 1) + " 次，强制收尾")
+            $state.status = 'failed'
+            $state.answer = "同一个文件改了 " + ($writeCount + 1) + " 次还是没搞定，先停下。最后一次的输出在上面的步骤里。"
+            $state.elapsed = $clock.Elapsed.TotalSeconds
+            $state.summary = $state.answer
+            Write-State $state
+            Write-Closing -State $state -Status 'failed' -Summary $state.summary -StepCount $step
+            $finished = $true
+            break
+        } elseif ($writeCount -ge 2) {
+            $history += @{ role = 'user'; content = ("你已经改过 $stepArg " + $writeCount + " 次了，每次结果都一样。别再用同样的写法重试 —— 先看清上次输出的错误在哪，或者直接 finish 说明卡在哪。") }
+            Write-Log ("  [绕圈] $stepArg 第 " + ($writeCount + 1) + " 次写，已提醒")
+        }
+    }
+
     $stepFp = $stepArg + '|' + [string]$Action.command
     $recentSame = @($state.steps | Select-Object -Last 6 | Where-Object {
         ([string]$_.tool -eq $toolName) -and (([string]$_.arg + '|' + [string]$_.fp2) -eq $stepFp)
