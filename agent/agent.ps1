@@ -2149,17 +2149,35 @@ $target = [Math]::Min($targetByBudget, [Math]::Max($targetByShare, 1400))
         Write-Log ("  [裁历史] 上下文吃紧，历史裁到 " + $history.Count + " 条（$histTok tok）")
     }
 
-    # ② 裁完历史还不够，才动工具，但保底 minKeep 个（think/finish/say + 基础读写）
+    # ② 裁完历史还不够，才动工具。但这里必须先算「值不值」。
+    #
+    # 工具表在提示词最前面。它一变，llama 的 KV 缓存就整段作废，
+    # 下一步得从头 prefill 一遍 —— 4096 上下文上这大约是 80-100 秒。
+    #
+    # 实测「统计 data 目录下有多少个文件」：第 3 步只超了 57 tok，
+    # 砍掉 1 个工具省 60 tok，结果 finish 重算 2400 token 花了 96.7 秒。
+    # 省 60 tok，赔 96 秒，完全是亏的。
+    #
+    # 所以：小超（≤150 tok）不动工具，带着跑；真要砍，砍完至少得腾出 200 tok。
     $roomForTools = $ctxLimit - $histTok - $mt0
-    if ($toolsTokNow -gt $roomForTools -and @($script:ActiveFlowTools).Count -gt 6) {
+    $overflowTok = $toolsTokNow - $roomForTools
+    if ($overflowTok -gt 150 -and @($script:ActiveFlowTools).Count -gt 6) {
         $before = @($script:ActiveFlowTools).Count
         $trimmed = Trim-ToolsToBudget -Names $script:ActiveFlowTools -Budget $roomForTools
         if (@($trimmed).Count -lt $before) {
-            $script:ActiveFlowTools = $trimmed
-            $toolsJson = Get-ToolsJsonWithFinish -Names $trimmed
-            Write-Log ("  [省上下文] 历史 $histTok + 工具 $toolsTokNow 要超 $ctxLimit，" +
-                       "工具 $before → " + @($trimmed).Count + " 个")
+            $trimJson = Get-ToolsJsonWithFinish -Names $trimmed
+            $gainTok  = $toolsTokNow - (Get-CtxTokens $trimJson)
+            if ($gainTok -ge 200) {
+                $script:ActiveFlowTools = $trimmed
+                $toolsJson = $trimJson
+                Write-Log ("  [省上下文] 历史 $histTok + 工具 $toolsTokNow 要超 $ctxLimit，" +
+                           "工具 $before → " + @($trimmed).Count + " 个（腾出 $([int]$gainTok) tok）")
+            } else {
+                Write-Log ("  [省上下文] 砍工具只省 $([int]$gainTok) tok，不值得毁掉 KV 缓存，保持 $before 个")
+            }
         }
+    } elseif ($overflowTok -gt 0) {
+        Write-Log ("  [省上下文] 小超 $([int]$overflowTok) tok（≤150），不砍工具，保护 KV 缓存")
     }
 
     # ---- 精简/裁剪都做完了，现在才写真实用量 ----

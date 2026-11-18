@@ -389,6 +389,25 @@ textarea:focus{border-color:var(--accent)}
 textarea::placeholder{color:var(--faint)}
 .hint{max-width:900px;margin:8px auto 0;font-size:11.5px;color:var(--faint);display:flex;gap:16px}
 
+/* ---------- 模型没启动时的提示条 ---------- */
+/* 平时 .hide，不占位。只在 8080 不通时出现，点一下直接从面板拉起服务，
+   不用再去找 Nafx.bat。 */
+.model-warn{
+  max-width:900px;margin:0 auto 8px;display:flex;align-items:center;gap:10px;
+  padding:9px 12px;border-radius:10px;font-size:12.5px;
+  background:rgba(210,120,40,.10);border:1px solid rgba(210,120,40,.32);
+  color:var(--warn);line-height:1.45;
+}
+.model-warn.hide{display:none}
+.model-warn .mw-txt{flex:1}
+.model-warn button{
+  flex-shrink:0;padding:5px 12px;font-size:12px;border-radius:8px;font-family:inherit;
+  border:1px solid rgba(210,120,40,.5);background:transparent;color:var(--warn);
+  cursor:pointer;transition:.15s;
+}
+.model-warn button:hover{background:rgba(210,120,40,.16)}
+.model-warn button:disabled{opacity:.55;cursor:default}
+
 /* ---------- 抽屉 ---------- */
 .mask{position:fixed;inset:0;background:var(--mask);opacity:0;pointer-events:none;
   transition:.2s;z-index:40;backdrop-filter:blur(2px)}
@@ -1896,6 +1915,11 @@ header button.ghost:hover{background:var(--panel3);border-color:var(--line2)}
         <button class="del-deny" id="delDeny">拒绝</button>
       </div>
     </div>
+    <!-- 模型服务没起来时才显示。点「启动模型」直接从面板拉起，不用再双击 bat -->
+    <div class="model-warn hide" id="modelWarn">
+      <span class="mw-txt" id="mwTxt">模型服务没在跑，现在发任务会失败。</span>
+      <button id="mwBtn">启动模型</button>
+    </div>
     <div class="cmdbar" id="cmdBar"></div>
       <!-- 模式选择。两档，切换一次记住，下次打开还是上次选的。
            常规 = 日常问答，一步到三步就动手；工作 = 复杂任务，先拆再排再做。
@@ -2995,10 +3019,15 @@ function renderFlow(sess, st){
   var tailSig = '';
   if (arr.length > 0) {
     var lastM = arr[arr.length - 1];
-    // 用「最后一条的角色 + 条数」当指纹，不用内容长度 ——
-    // 播报是把多行合进同一条消息里的，每加一行长度就变，长度当指纹等于每句都重建。
-    // 条数只有真的新增一条消息时才变，那才是该重建的时刻。
-    tailSig = String(lastM.role || '') + ':' + arr.length;
+    // 指纹 = 角色 + 条数 + 尾巴消息的长度。
+    //
+    // 之前只用「角色 + 条数」，理由是「播报把多行合进同一条消息，长度每句都变」。
+    // 代价是：note 追加了新内容，条数没变 → 签名没变 → 面板一直显示旧内容。
+    // 交接报告里把它记成了「note 的后续内容不刷新」。
+    //
+    // 长度变化只发生在「note 真的加了一行」那一刻（几十秒一次），
+    // 不是每轮轮询都变，所以不会引起闪动；加进来正好换来内容及时刷新。
+    tailSig = String(lastM.role || '') + ':' + arr.length + ':' + String(lastM.content || '').length;
   }
   // stepsLen 拿掉了：state.steps 每走一步就长一条，带上它等于每一步都重建整块。
   var sig = (st ? String(st.status || '') + '|' + String(st.task || '') : '') + '|' + tailSig;
@@ -3168,7 +3197,15 @@ function renderSystem(sys, st){
   if (!sys) return;
   if (!st) { st = window.curState || null; }
   $('cModel').textContent = sys.model || '—';
-  $('cCtx').textContent = sys.context || '—';
+  var cv = $('cCtx');
+  if (cv){
+    var want = sys.contextWant;
+    var differ = !!(want && want !== sys.context);
+    cv.textContent = (sys.context || '—') + (differ ? '*' : '');
+    cv.title = differ
+      ? ('配置里写的是 ' + want + '，llama 实际只给了 ' + sys.context + '（启动时会按当时可用内存重算）')
+      : '';
+  }
   $('cPer').textContent = (sys.contextPerSlot||0) + ' tok';
   $('cTools').textContent = (sys.toolCount||0) + ' 个';
   $('cSteps').textContent = sys.maxSteps || '—';
@@ -3242,7 +3279,55 @@ function renderSystem(sys, st){
   }
 }
 
-function fetchJson(url){
+/* 模型服务状态横幅。
+   以前 8080 没起来时面板什么都不说：用户输入任务 → 等 30 秒 → 收到
+   一句「连接失败」。现在直接把状态摆在输入框上方，并给一个启动按钮。 */
+function renderModelWarn(sys){
+  var box = $('modelWarn'), b = $('mwBtn'), t = $('mwTxt');
+  if (!box) return;
+  if (!sys || sys.modelUp !== false){
+    box.classList.add('hide');
+    if (b) { b.disabled = false; b.textContent = '启动模型'; b.dataset.busy = ''; }
+    return;
+  }
+  box.classList.remove('hide');
+  var busy = !!(b && b.dataset.busy);
+  if (t) t.textContent = busy
+    ? '模型在加载，第一次要十几秒，加载完这条提示会自己消失…'
+    : ('模型服务没在跑（' + (sys.model || '模型') + '），现在发任务会失败。');
+}
+
+function bindModelWarn(){
+  var b = $('mwBtn');
+  if (!b) return;
+  b.onclick = function(){
+    if (b.disabled) return;
+    b.disabled = true;
+    b.dataset.busy = '1';
+    b.textContent = '正在启动…';
+    renderModelWarn(window.__lastSys || { modelUp: false });
+    fetchJson('/api/model/start', 'POST').then(function(j){
+      if (!j || !j.ok) {
+        toast((j && j.msg) || '启动失败', true);
+        b.disabled = false; b.dataset.busy = ''; b.textContent = '启动模型';
+        return;
+      }
+      toast(j.already ? '模型本来就在跑' : '模型在加载，第一次要等十几秒');
+      // 45 秒还没起来就放开重试 —— 否则一次失败会永远卡在「正在启动」
+      setTimeout(function(){
+        if (b.dataset.busy) {
+          b.dataset.busy = ''; b.disabled = false; b.textContent = '启动模型';
+          toast('模型还没起来，看 logs\\server.err.log', true);
+        }
+      }, 45000);
+    }).catch(function(){
+      toast('启动请求失败，看面板日志', true);
+      b.disabled = false; b.dataset.busy = ''; b.textContent = '启动模型';
+    });
+  };
+}
+
+function fetchJson(url, method){
   // 加超时：面板后端是单线程 PowerShell，某个请求卡住时
   // fetch 会一直等，导致 tick 的 Promise.all 永远不 resolve ——
   // 整条轮询链挂死，面板就"卡住了"。
@@ -3253,7 +3338,10 @@ function fetchJson(url){
     timer = setTimeout(function(){ try { ctl.abort(); } catch(_){} }, 8000);
   } catch(_) { ctl = null; }
 
-  var opt = ctl ? { signal: ctl.signal, cache: 'no-store' } : { cache: 'no-store' };
+  // method 不传就是 GET；POST 的接口（启动模型、跑任务）显式传 'POST'
+  var opt = { cache: 'no-store' };
+  if (method) { opt.method = method; }
+  if (ctl) { opt.signal = ctl.signal; }
   return fetch(url + (url.indexOf('?')>=0?'&':'?') + 't=' + Date.now(), opt)
     .then(function(r){ return r.ok ? r.json() : null; })
     .catch(function(){ return null; })
@@ -3289,7 +3377,7 @@ function tick(){
       var sys = slow ? res[1] : window.__lastSys;
       var sess = slow ? res[2] : window.__lastSess;
 
-      if (slow && sys) { renderSystem(sys, st); window.__lastSys = sys; }
+      if (slow && sys) { renderSystem(sys, st); window.__lastSys = sys; renderModelWarn(sys); }
       if (slow && sess) { window.__lastSess = sess; }
       // 清除对话后必须把缓存也清掉。
       // 之前是 renderFlow(sess || window.__lastSess, st) ——
@@ -4329,6 +4417,7 @@ bindChips();
 bindAnswer();
 bindAutopilot();
 bindMode();
+bindModelWarn();
 loadFiles();
 tick();
 // 自主模式状态单独刷：它几秒才变一次，不用挤进主轮询

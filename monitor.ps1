@@ -74,6 +74,67 @@ function Write-ReqLog {
     } catch { }
 }
 
+# ---------------- 热点缓存 ----------------
+#
+# 面板是单线程的：一个请求慢，后面的全排着。
+# 日志里那一堆「慢请求 /api/state 1543ms」就是证据 ——
+# 主要开销是 Get-CimInstance（查 agent 进程还在不在）。
+# 模型吃满 CPU 时 WMI 要 1.5-2 秒，而前端每 350ms 就轮询一次 state。
+#
+# 两处都按 3 秒缓存：人眼感觉不到，但这些调用能压掉九成以上。
+#   ① 进程探测   → 面板从「卡顿」变「跟手」
+#   ② 模型健康   → /api/system 不用每次都发 HTTP
+#
+$script:ModelUrl   = 'http://' + [string]$Cfg.host + ':' + [string][int]$Cfg.port
+$script:ProcCacheAt = [datetime]::MinValue
+$script:ProcCacheList = @()
+$script:ModelUpAt = [datetime]::MinValue
+$script:ModelUpVal = $false
+
+function Get-AgentProcessList {
+    try {
+        if (((Get-Date) - $script:ProcCacheAt).TotalSeconds -lt 3) { return ,$script:ProcCacheList }
+    } catch { }
+    $list = @()
+    try { $list = @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue) } catch { }
+    $script:ProcCacheAt = Get-Date
+    $script:ProcCacheList = $list
+    return ,$list
+}
+
+function Test-ModelUp {
+    try {
+        if (((Get-Date) - $script:ModelUpAt).TotalSeconds -lt 3) { return $script:ModelUpVal }
+    } catch { }
+    $ok = $false
+    try { $ok = ((Invoke-WebRequest ($script:ModelUrl + '/health') -UseBasicParsing -TimeoutSec 2).StatusCode -eq 200) } catch { $ok = $false }
+    $script:ModelUpAt = Get-Date
+    $script:ModelUpVal = $ok
+    return $ok
+}
+
+# llama 实际给的上下文，不是 config 里写的那个。
+#
+# config 里的 context 只是「想要多少」，launcher 会按内存再算一遍再传 -c。
+# 实测出现过 config 写 6000、llama 实际只给 4096 ——
+# 面板照着 config 显示，用户以为还能塞 6000，其实早就溢出了。
+#
+# /props 的响应里带着完整的 chat template（几百 KB），
+# 所以只正则抓 n_ctx，不做整段 JSON 解析；结果缓存 30 秒。
+$script:CtxRealAt = [datetime]::MinValue
+$script:CtxRealVal = 0
+function Get-RealContext {
+    try { if (((Get-Date) - $script:CtxRealAt).TotalSeconds -lt 30) { return $script:CtxRealVal } } catch { }
+    $val = 0
+    try {
+        $p = (Invoke-WebRequest ($script:ModelUrl + '/props') -UseBasicParsing -TimeoutSec 4).Content
+        if ($p -match '"n_ctx"\s*:\s*(\d+)') { $val = [int]$Matches[1] }
+    } catch { $val = 0 }
+    $script:CtxRealAt = Get-Date
+    $script:CtxRealVal = $val
+    return $val
+}
+
 $WorkerCount = [int]$Cfg.parallel
 if ($WorkerCount -lt 1) { $WorkerCount = 1 }
 if ($WorkerCount -gt 4) { $WorkerCount = 4 }
@@ -408,7 +469,7 @@ function Get-MergedState {
         $script:agentMissStreak = [int]$script:agentMissStreak + 1
         $hasAgent = $false
         try {
-            foreach ($ap in @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue)) {
+            foreach ($ap in @(Get-AgentProcessList)) {
                 $acl = [string]$ap.CommandLine
                 # 宽松匹配：只要命令行里出现 agent.ps1 就算，不再依赖 -File 的写法
                 if ($acl -match 'agent\.ps1') { $hasAgent = $true; $script:agentMissStreak = 0; break }
@@ -522,11 +583,16 @@ function Get-SystemContext {
     $slots = 0
     try { $slots = @((Invoke-WebRequest 'http://127.0.0.1:8080/slots' -UseBasicParsing -TimeoutSec 3).Content | ConvertFrom-Json).Count } catch { }
 
+    $ctxReal = 0
+    try { if (Test-ModelUp) { $ctxReal = [int](Get-RealContext) } } catch { }
+    $ctxShow = $(if ($ctxReal -gt 0) { $ctxReal } else { [int]$Cfg.context })
+
     return [pscustomobject]@{
         model       = [string]$Cfg.modelLabel
         modelId     = [string]$Cfg.model
-        context     = [int]$Cfg.context
-        contextPerSlot = [int][Math]::Floor([int]$Cfg.context / $WorkerCount)
+        context     = $ctxShow
+        contextWant = [int]$Cfg.context
+        contextPerSlot = [int][Math]::Floor($ctxShow / $WorkerCount)
         parallel    = $WorkerCount
         slotsReady  = $slots
         maxTokens   = [int]$Cfg.maxTokens
@@ -540,6 +606,9 @@ function Get-SystemContext {
         toolTokens   = [int][Math]::Round($toolLen / 3.5)
         running     = $Workers.Count
         isAdmin     = $script:IsAdminNow
+        # 模型服务活着吗？面板据此显示「模型没启动，点这里拉起来」的横幅。
+        # 没有这一项，用户发完任务只能干等 30 秒，然后收到一句连接失败。
+        modelUp     = [bool](Test-ModelUp)
     }
 }
 
@@ -1332,6 +1401,35 @@ while ($listener.IsListening) {
                     Send-Text -Response $resp -Text ('{"ok":true,"stopped":' + $n + '}')
                 }
 
+                # 一键启动模型服务。
+                # 面板发现 8080 不通时，用户点一下横幅就走这里。
+                # 走的是 launcher.ps1 —— 和双击 Nafx.bat 同一套逻辑
+                # （先按当前可用内存算 context，再起 llama-server）。
+                # -NoBrowser：面板已经开着，没必要再弹一个窗口。
+                '/api/model/start' {
+                    if ($method -ne 'POST') { Send-Text -Response $resp -Text '{"ok":false,"msg":"只接受 POST"}' -Code 405; break }
+                    if (Test-ModelUp) {
+                        Send-Text -Response $resp -Text '{"ok":true,"already":true}'
+                        break
+                    }
+                    try {
+                        $launcher = Join-Path $Root 'launcher.ps1'
+                        if (-not (Test-Path $launcher)) {
+                            Send-Text -Response $resp -Text '{"ok":false,"msg":"找不到 launcher.ps1"}' -Code 500
+                            break
+                        }
+                        Start-Process -FilePath 'powershell.exe' `
+                            -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File', $launcher, '-NoBrowser') `
+                            -WindowStyle Hidden
+                        Write-PanelLog '按用户请求启动模型服务' 'INFO'
+                        # 不等加载完（要 7-20 秒）。前端继续轮询 /api/system，
+                        # 服务起来后横幅自己消失、状态灯自己变绿。
+                        Send-Text -Response $resp -Text '{"ok":true,"starting":true}'
+                    } catch {
+                        Send-Text -Response $resp -Text ('{"ok":false,"msg":' + (J $_.Exception.Message) + '}') -Code 500
+                    }
+                }
+
                 default {
                     Send-Text -Response $resp -Text '{"ok":false,"msg":"not found"}' -Code 404
                 }
@@ -1343,6 +1441,10 @@ while ($listener.IsListening) {
 
     } catch {
         # 单次请求出错不能拖垮整个面板。
+        #
+        # 以前这里一个字都不记，面板真死掉时日志里只有一行「面板启动」，
+        # 到底是哪个请求、哪一行炸的完全查不到（只能按时间间隔猜它死过）。
+        try { Write-PanelLog ('请求处理出错：' + $_.Exception.Message + '  @行 ' + $_.InvocationInfo.ScriptLineNumber) 'ERROR' } catch { }
         #
         # 关键是这里必须把监听句柄重新挂上。
         # 如果异常发生在 EndGetContext 之后、或者 async 本身已经失效，
@@ -1372,3 +1474,7 @@ while ($listener.IsListening) {
         Start-Sleep -Milliseconds 150
     }
 }
+
+# 走到这里 = 监听循环结束，面板要退出了。
+# 以前是无声退出，日志里连一行都没有，只能靠「面板启动」的时间间隔猜它死过。
+try { Write-PanelLog ('监听循环已结束，面板退出（PID ' + $PID + '）') 'ERROR' } catch { }
