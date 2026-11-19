@@ -147,15 +147,16 @@ html[data-theme="dsh"]{background:#f2f4f7}
 [data-theme="dsh"] .composer-inner,
 [data-theme="dsh"] .cmdbar,
 [data-theme="dsh"] .answer-box{max-width:860px}
-/* 气泡：用户浅灰圆角块靠右，AI 纯白无边框（DeepSeek 的对话感） */
+/* 消息：无气泡平铺（DSH 风格），靠 .who 标签和左右对齐区分角色 */
 [data-theme="dsh"] .msg .bubble{
   border:none;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;
+  background:transparent;border-radius:0;padding:2px 0;
   font-size:14.5px;line-height:1.75}
 [data-theme="dsh"] .msg .wrap{max-width:78%}
 [data-theme="dsh"] .msg.assistant .wrap{max-width:100%}
-[data-theme="dsh"] .msg.user .bubble{border-radius:18px;border-bottom-right-radius:6px}
-[data-theme="dsh"] .msg.assistant .bubble{border-radius:4px 18px 18px 18px;padding:6px 8px}
-[data-theme="dsh"] .msg .who{color:var(--faint)}
+[data-theme="dsh"] .msg.user .bubble{color:#4a4d55}
+[data-theme="dsh"] .msg.assistant .bubble{color:#262629}
+[data-theme="dsh"] .msg .who{color:var(--faint);margin-bottom:2px}
 /* 顶栏与主题切换：白底上要能看出选中态 */
 [data-theme="dsh"] .theme-switch{background:var(--panel2)}
 [data-theme="dsh"] .theme-switch button.on{background:#fff;box-shadow:0 1px 4px rgba(20,30,50,.10)}
@@ -287,6 +288,13 @@ html[data-theme="dsh"]{background:#f2f4f7}
 /* 命令 chip 条（任务下方的步骤索引）：更轻的描边 */
 [data-theme="dsh"] .cmdchip{background:#fff;border-color:#e5e8ec;color:#84868c}
 [data-theme="dsh"] .cmdchip:hover{border-color:#4d6bfe;color:#262629;background:#f5f7ff}
+
+/* 消息无气泡平铺：加 .thread 提一级优先级，压过任何位置的基样式垫底 */
+[data-theme="dsh"] .thread .msg .bubble{background:transparent;border:none;border-radius:0;
+  box-shadow:none;padding:2px 0}
+[data-theme="dsh"] .thread .msg.fail .bubble{background:transparent;border:none;color:var(--err)}
+[data-theme="dsh"] .thread .msg.thinking .bubble{background:transparent;border:1px dashed var(--line)}
+[data-theme="dsh"] .thread .msg.asking .bubble{background:transparent;border:none;box-shadow:none}
 
 *{box-sizing:border-box}
 html,body{height:100%}
