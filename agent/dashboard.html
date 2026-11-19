@@ -2495,15 +2495,54 @@ document.addEventListener('click', function(e){
     if (t.classList && t.classList.contains('step-act')) {
       var stp = t.closest('.step');
       if (stp){
-        stp.classList.toggle('open');
-        // 展开时给想法/返回块一个滑入动画（只在点击时播，轮询重建不触发）
-        if (stp.classList.contains('open') && stp.animate){
-          var parts = stp.querySelectorAll('.think-block, .step-obs-wrap');
-          for (var i=0;i<parts.length;i++){
-            parts[i].animate(
-              [{opacity:0, transform:'translateY(-6px)'},
-               {opacity:1, transform:'translateY(0)'}],
-              {duration:200, easing:'ease-out'});
+        /* 展开用真实高度动画：下面的内容被平滑推下去，
+           不掺透明度（不要渐变），弹簧缓动出果冻感。
+           收起反向播放完再藏，否则收起会突兀地跳一下。 */
+        var spring = 'cubic-bezier(0.34, 1.56, 0.64, 1)';
+        var dur = 380;
+        if (stp.classList.contains('open')){
+          var closing = stp.querySelectorAll('.think-block, .step-obs-wrap');
+          var canAnim = closing.length > 0;
+          for (var ci=0; ci<closing.length; ci++){ if (!closing[ci].animate) canAnim = false; }
+          if (!canAnim){ stp.classList.remove('open'); }
+          else {
+            var left = closing.length;
+            for (var cj=0; cj<closing.length; cj++){
+              var cp = closing[cj];
+              var ccs = getComputedStyle(cp);
+              var ch = cp.scrollHeight;
+              cp.style.overflow = 'hidden';
+              var ca = cp.animate(
+                [{height:ch+'px', marginTop:ccs.marginTop, marginBottom:ccs.marginBottom},
+                 {height:'0px', marginTop:'0px', marginBottom:'0px'}],
+                {duration:dur, easing:spring});
+              (function(el){
+                ca.onfinish = function(){
+                  el.style.overflow = '';
+                  if (--left === 0) stp.classList.remove('open');
+                };
+                ca.oncancel = function(){ el.style.overflow = ''; };
+              })(cp);
+            }
+          }
+        } else {
+          stp.classList.add('open');
+          if (stp.animate){
+            var parts = stp.querySelectorAll('.think-block, .step-obs-wrap');
+            for (var pi=0; pi<parts.length; pi++){
+              var pp = parts[pi];
+              var pcs = getComputedStyle(pp);
+              var ph = pp.scrollHeight;
+              pp.style.overflow = 'hidden';
+              var pa = pp.animate(
+                [{height:'0px', marginTop:'0px', marginBottom:'0px'},
+                 {height:ph+'px', marginTop:pcs.marginTop, marginBottom:pcs.marginBottom}],
+                {duration:dur, easing:spring});
+              (function(el, anim){
+                anim.onfinish = function(){ el.style.overflow = ''; };
+                anim.oncancel = function(){ el.style.overflow = ''; };
+              })(pp, pa);
+            }
           }
         }
       }
