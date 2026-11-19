@@ -278,6 +278,16 @@ html[data-theme="dsh"]{background:#f2f4f7}
 [data-theme="dsh"] .cfg-cell i{color:#84868c}
 [data-theme="dsh"] .file-item{border-radius:8px;transition:background .12s}
 [data-theme="dsh"] .file-item:hover{background:#f0f2f6}
+[data-theme="dsh"] .file-item .fi{display:none}
+[data-theme="dsh"] .fgroup-h{color:#5a5e66;font-size:12px;padding:6px 8px}
+[data-theme="dsh"] .fgroup-h:hover{background:#f0f2f6}
+[data-theme="dsh"] .fgroup-h .fgl{color:#3a3d44}
+
+/* 抽屉整体拉起：按钮只在 DSH 显示，拉起后侧栏整个让位给对话区 */
+.side-collapse{display:none}
+[data-theme="dsh"] .side-collapse{display:inline-block;padding:5px 9px}
+[data-theme="dsh"] body.drawer-collapsed .side{display:none}
+[data-theme="dsh"] body.drawer-collapsed .side-collapse{margin-left:8px}
 [data-theme="dsh"] .side-actions button.danger{color:#c04a4a}
 [data-theme="dsh"] .side-actions button.danger:hover{background:#fbf1f1;color:#c04a4a}
 
@@ -489,6 +499,15 @@ main{position:relative;z-index:1;flex:1;display:flex;min-height:0}
 [data-theme="glass"] .gauge-fill{background:linear-gradient(90deg,#fff,#ffd6f0)}
 
 /* 工作区文件树 */
+/* 文件分组：组头可点折叠，组体默认收起 */
+.fgroup{margin-bottom:2px}
+.fgroup-h{display:flex;align-items:center;gap:7px;padding:5px 8px;border-radius:8px;
+  cursor:pointer;font-size:11.5px;color:var(--dim);user-select:none}
+.fgroup-h:hover{background:var(--panel2)}
+.fgroup-h .fgc{width:11px;flex-shrink:0;font-size:9.5px;color:var(--faint)}
+.fgroup-h .fgn{margin-left:auto;font-size:10px;color:var(--faint)}
+.fgroup .fgroup-b{display:none;padding-left:8px}
+.fgroup.open .fgroup-b{display:block}
 .file-list{display:flex;flex-direction:column;gap:2px;margin:0 -4px}
 .file-group{font-size:10.5px;color:var(--faint);padding:6px 4px 3px;letter-spacing:.5px}
 .file-item{display:flex;align-items:center;gap:7px;padding:6px 8px;border-radius:8px;
@@ -2051,6 +2070,7 @@ header button.ghost:hover{background:var(--panel3);border-color:var(--line2)}
   </div>
   <div class="spacer"></div>
   <button id="btnSide" class="ghost side-toggle">面板</button>
+  <button id="btnDrawer" class="ghost side-collapse" title="拉起 / 展开抽屉">‹</button>
   <div class="theme-switch">
     <button data-theme-btn="light">浅色</button>
     <button data-theme-btn="dark">深色</button>
@@ -2477,8 +2497,8 @@ function applyDshDrawer(on){
     if (on){
       if (!b.classList.contains('dsh-init')){
         b.classList.add('dsh-init');
-        // 工作区像 DSH 的会话列表一样默认展开，其余收起
-        if (!(h && /工作区/.test(h.textContent))) b.classList.add('closed');
+        // 抽屉里的项目全部默认拉起，点开才摊开
+        b.classList.add('closed');
       }
     } else {
       b.classList.remove('closed');
@@ -2498,8 +2518,8 @@ document.addEventListener('click', function(e){
         /* 展开用真实高度动画：下面的内容被平滑推下去，
            不掺透明度（不要渐变），弹簧缓动出果冻感。
            收起反向播放完再藏，否则收起会突兀地跳一下。 */
-        var spring = 'cubic-bezier(0.34, 1.56, 0.64, 1)';
-        var dur = 380;
+        var spring = 'cubic-bezier(0.34, 1.2, 0.64, 1)';
+        var dur = 340;
         if (stp.classList.contains('open')){
           var closing = stp.querySelectorAll('.think-block, .step-obs-wrap');
           var canAnim = closing.length > 0;
@@ -2565,6 +2585,13 @@ document.addEventListener('click', function(e){
 
 /* ---------- 工作区文件 ---------- */
 var wsFiles = [];
+var wsOpen = {};   // 组展开状态，跨轮询保留
+function fType(n){
+  if (/\.(ps1|bat|cmd|py|js|mjs|html|css|psm1|psd1)$/i.test(n)) return '脚本';
+  if (/\.(json|jsonl|csv|zip|xml|ya?ml|7z|gz|db)$/i.test(n)) return '数据';
+  if (/\.(txt|md)$/i.test(n)) return '文档';
+  return '其他';
+}
 function renderFiles(data){
   if (!data) return;
   wsFiles = data.files || [];
@@ -2573,38 +2600,72 @@ function renderFiles(data){
     $('fileList').innerHTML = '<div class="file-empty">工作区是空的</div>';
     return;
   }
-  // 按目录分组，根目录排最前
-  var groups = {}, order = [];
+  // 分组：根目录文件按类型（脚本/数据/文档/其他），子目录各自成组。
+  // 组默认全部收起（拉起），点组头展开；展开状态记在 wsOpen 里，
+  // 轮询重建列表时不丢。
+  var rootCats = {}, dirGroups = {}, dirOrder = [];
   for (var i=0;i<wsFiles.length;i++){
     var f = wsFiles[i];
-    var g = f.dir || '';
-    if (!groups[g]) { groups[g] = []; order.push(g); }
-    groups[g].push(f);
+    if (f.dir){
+      if (!dirGroups[f.dir]) { dirGroups[f.dir] = []; dirOrder.push(f.dir); }
+      dirGroups[f.dir].push(f);
+    } else {
+      var t = fType(f.name);
+      if (!rootCats[t]) rootCats[t] = [];
+      rootCats[t].push(f);
+    }
   }
-  order.sort(function(a,b){
-    if (a === '') return -1;
-    if (b === '') return 1;
-    return a.localeCompare(b);
-  });
+  var groups = [];
+  var fixedOrder = ['脚本','数据','文档','其他'];
+  for (var a=0;a<fixedOrder.length;a++){
+    var t2 = fixedOrder[a];
+    if (rootCats[t2] && rootCats[t2].length) groups.push({gid:t2, label:t2, files:rootCats[t2]});
+  }
+  dirOrder.sort();
+  for (var b2=0;b2<dirOrder.length;b2++){
+    var d = dirOrder[b2];
+    groups.push({gid:d+'/', label:d+'/', files:dirGroups[d]});
+  }
 
   var html = '';
-  for (var k=0;k<order.length;k++){
-    var g = order[k];
-    if (g) html += '<div class="file-group">' + esc(g) + '/</div>';
-    var list = groups[g];
+  for (var k=0;k<groups.length;k++){
+    var grp = groups[k];
+    var open = !!wsOpen[grp.gid];
+    html += '<div class="fgroup' + (open?' open':'') + '" data-gid="' + esc(grp.gid) + '">' +
+      '<div class="fgroup-h"><span class="fgc">' + (open?'▾':'▸') + '</span>' +
+      '<span class="fgl">' + esc(grp.label) + '</span>' +
+      '<span class="fgn">' + grp.files.length + '</span></div>' +
+      '<div class="fgroup-b">';
+    var list = grp.files;
     for (var j=0;j<list.length;j++){
-      var f = list[j];
-      html += '<div class="file-item" data-name="' + esc(f.name) + '" data-dir="' + esc(f.dir) + '">' +
-        '<span class="fi">' + (f.name.match(/\.(ps1|bat)$/i)?'▸':'·') + '</span>' +
-        '<span class="fn">' + esc(f.name) + '</span>' +
-        '<span class="fs">' + fmtSize(f.size) + '</span>' +
+      var f2 = list[j];
+      html += '<div class="file-item" data-name="' + esc(f2.name) + '" data-dir="' + esc(f2.dir) + '">' +
+        '<span class="fi">' + (f2.name.match(/\.(ps1|bat)$/i)?'▸':'·') + '</span>' +
+        '<span class="fn">' + esc(f2.name) + '</span>' +
+        '<span class="fs">' + fmtSize(f2.size) + '</span>' +
         '<span class="file-ops">' +
           '<button data-fop="name">复制名</button>' +
           '<button data-fop="open">打开</button>' +
         '</span></div>';
     }
+    html += '</div></div>';
   }
   $('fileList').innerHTML = html;
+
+  // 组头折叠
+  var fhs = $('fileList').querySelectorAll('.fgroup-h');
+  for (var w=0;w<fhs.length;w++){
+    (function(el){
+      el.onclick = function(){
+        var g = el.parentElement;
+        var gid = g.getAttribute('data-gid');
+        wsOpen[gid] = !wsOpen[gid];
+        g.classList.toggle('open', !!wsOpen[gid]);
+        var c = g.querySelector('.fgc');
+        if (c) c.textContent = wsOpen[gid] ? '▾' : '▸';
+      };
+    })(fhs[w]);
+  }
 
   var items = $('fileList').querySelectorAll('.file-item');
   for (var m=0;m<items.length;m++){
@@ -4887,6 +4948,23 @@ function toggleSide(){
 (function(){
   var b = $('btnSide');
   if (b) b.onclick = toggleSide;
+})();
+
+/* ---------- 抽屉整体拉起（DSH） ---------- */
+(function(){
+  var b = $('btnDrawer');
+  if (!b) return;
+  b.onclick = function(){
+    var c = document.body.classList.toggle('drawer-collapsed');
+    b.textContent = c ? '›' : '‹';
+    try { localStorage.setItem('nafx-drawer', c ? '1' : '0'); } catch(e){}
+  };
+  try {
+    if (localStorage.getItem('nafx-drawer') === '1'){
+      document.body.classList.add('drawer-collapsed');
+      b.textContent = '›';
+    }
+  } catch(e){}
 })();
 
 /* ---------- 启动 ---------- */
