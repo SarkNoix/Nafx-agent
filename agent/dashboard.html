@@ -138,7 +138,7 @@
   --blur:none; --panel-alpha:1;
   --radius:12px; --radius-lg:16px;
 }
-html[data-theme="dsh"],[data-theme="dsh-dark"]{background:#f2f4f7}
+html[data-theme="dsh"]{background:#f2f4f7}
 /* 对话收成居中一栏：860px，窄于其他主题的 1180px */
 [data-theme="dsh"],[data-theme="dsh-dark"] .thread{
   padding-left:max(22px,calc((100% - 860px)/2));
@@ -373,7 +373,7 @@ html,body{height:100%}
 html{background:#0b0c0f;transition:background .35s}
 html[data-theme="light"]{background:#f6f7f9}
 html[data-theme="glass"]{background:linear-gradient(135deg,#ffd3e8 0%,#f7b8f0 22%,#c9a6f7 48%,#9d8cf5 72%,#b7a4ff 100%)}
-html[data-theme="dsh"],[data-theme="dsh-dark"]{background:#f2f4f7}
+html[data-theme="dsh"]{background:#f2f4f7}
 body{
   margin:0;background:var(--bg);color:var(--fg);
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;
@@ -2097,6 +2097,7 @@ html[data-theme="dsh-dark"]{
   --run-bg:rgba(91,118,255,.10); --run-bd:rgba(91,118,255,.35);
   --warn-bg:rgba(217,165,63,.10); --warn-bd:rgba(217,165,63,.35);
   --blur:none; --panel-alpha:1;
+  --radius:12px; --radius-lg:16px;
 }/* ============================================================
    dsh 主题 —— ATC UI（Agentic UI，参考 DeepSeek Harness 风）
    参考 DeepSeek 官网浅色界面：纯白内容、浅灰蓝底、
@@ -2105,29 +2106,10 @@ html[data-theme="dsh-dark"]{
    用户浅灰圆角块 / AI 纯白无边框，更像聊天页。
    功能不减：面板、队列、历史、设置、侧栏全部照旧。
    ============================================================ */
-[data-theme="dsh-dark"]{
-  --bg:#0d0f12; --bg2:#eef0f4;
-  --panel:#16181d; --panel2:#1a1d23; --panel3:#eceff4;
-  --fg:#e8eaee; --dim:#a2a7b1; --faint:#7f8692;
-  --line:#262a31; --line2:#2c3038;
-  --accent:#4d6bfe; --accent2:#4d6bfe;
-  --ok:#0ea35e; --warn:#c47c10; --err:#d93b3b; --run:#2f7ce0;
-  --bubble-user-bg:#1d2026; --bubble-user-bd:#1d2026; --bubble-user-fg:#e8eaee;
-  --bubble-ai-bg:#16181d; --bubble-ai-bd:#16181d;
-  --code-bg:#f6f8fa; --code-bd:#e8ebee; --code-fg:#444b55;
-  --inline-bg:#eff3fb; --inline-bd:#e0e7f5; --inline-fg:#3b5bdb;
-  --shadow:0 4px 18px rgba(20,30,50,.06);
-  --mask:rgba(20,30,50,.32);
-  --primary-fg:#16181d;
-  --inset-hi:rgba(255,255,255,0);
-  --shadow-sm:0 1px 3px rgba(20,30,50,.07);
-  --ok-bg:rgba(14,163,94,.09); --ok-bd:rgba(14,163,94,.30);
-  --err-bg:rgba(217,59,59,.08); --err-bd:rgba(217,59,59,.30);
-  --run-bg:rgba(47,124,224,.09); --run-bd:rgba(47,124,224,.30);
-  --warn-bg:rgba(196,124,16,.09); --warn-bd:rgba(196,124,16,.30);
-  --blur:none; --panel-alpha:1;
-  --radius:12px; --radius-lg:16px;
-}
+/* 浅色 dsh 的变量块在上面 L118（批量扩展后 dsh/dsh-dark 共用），
+   深色变量统一走下面 L2222 的显式暗色块 —— 这里不再放变量，
+   上一版曾在这里留过一个半转换的混合变量块（dsh-dark 选择器
+   装着浅色值），它会把暗色主题的 code/panel3 染回浅色，已删除。 */
 html[data-theme="dsh-dark"]{background:#0d0f12}
 [data-theme="dsh-dark"] .msg.user .bubble{color:#9aa0ab}
 [data-theme="dsh-dark"] .msg.assistant .bubble{color:#e8eaee}
@@ -2240,6 +2222,7 @@ html[data-theme="dsh-dark"]{
   --run-bg:rgba(91,118,255,.10); --run-bd:rgba(91,118,255,.35);
   --warn-bg:rgba(217,165,63,.10); --warn-bd:rgba(217,165,63,.35);
   --blur:none; --panel-alpha:1;
+  --radius:12px; --radius-lg:16px;
 }
 /* ---------- ATC UI 深色补漏：短写 #fff 未进映射表的面板底色统一收口 ---------- */
 [data-theme="dsh-dark"] .composer{background:#16181d}
