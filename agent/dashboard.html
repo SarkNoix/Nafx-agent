@@ -230,6 +230,64 @@ html[data-theme="dsh"]{background:#f2f4f7}
   padding:8px 10px;font-size:12.5px;color:#5a5e66;text-align:left;justify-content:flex-start}
 [data-theme="dsh"] .side-actions button:hover{background:#f0f2f6;color:#262629}
 
+/* ---------- DSH 细节打磨（第二轮 UI）---------- */
+
+/* 顶栏状态胶囊 → 「标签+值」纯文字（DSH 顶栏是极简的，没有灰底胶囊） */
+[data-theme="dsh"] .hbar{gap:14px}
+[data-theme="dsh"] .hbar > span{background:transparent;border:none;padding:2px 2px}
+[data-theme="dsh"] .hbar > span:hover{background:transparent;color:var(--fg)}
+[data-theme="dsh"] .hbar b{color:#262629;font-family:ui-monospace,Consolas,monospace}
+
+/* 发送键：DSH 的圆形 ↑ 按钮（原来的长条「发送」只在其他主题保留） */
+[data-theme="dsh"] .composer #send{
+  width:44px;height:44px;min-width:44px;padding:0;border-radius:50%;
+  font-size:0;display:flex;align-items:center;justify-content:center;
+  background:#4d6bfe;box-shadow:0 2px 8px rgba(77,107,254,.35)}
+[data-theme="dsh"] .composer #send::before{
+  content:'↑';font-size:20px;font-weight:700;color:#fff;line-height:1}
+[data-theme="dsh"] .composer #send:hover{background:#3d5bf0;transform:translateY(-1px)}
+[data-theme="dsh"] .composer #send:hover{box-shadow:0 4px 14px rgba(77,107,254,.45)}
+[data-theme="dsh"] .composer #send:active{transform:translateY(0)}
+
+/* 输入框：DSH 的细边框圆角输入区 */
+[data-theme="dsh"] .composer textarea{
+  border:1px solid #e3e6ec;border-radius:16px;padding:13px 16px;background:#fff}
+[data-theme="dsh"] .composer textarea:focus{
+  border-color:#4d6bfe;box-shadow:0 0 0 3px rgba(77,107,254,.10)}
+
+/* 滚动条：细一点、淡一点 */
+[data-theme="dsh"] ::-webkit-scrollbar{width:6px;height:6px}
+[data-theme="dsh"] ::-webkit-scrollbar-thumb{background:#d8dce2;border-radius:3px}
+[data-theme="dsh"] ::-webkit-scrollbar-thumb:hover{background:#c4c9d1}
+[data-theme="dsh"] ::-webkit-scrollbar-track{background:transparent}
+
+/* 步骤行：去掉左侧 3px 强调条，统一细边框（其他主题保留强调条） */
+[data-theme="dsh"] .step::before{display:none}
+
+/* 侧栏内里控件统一扁平 */
+[data-theme="dsh"] .side input[type="text"],
+[data-theme="dsh"] .side select{
+  border:1px solid #e3e6ec;border-radius:8px;background:#fff;
+  color:#262629;font-size:12.5px}
+[data-theme="dsh"] .side input[type="text"]:focus{border-color:#4d6bfe;outline:none}
+[data-theme="dsh"] .auto-status{background:#f7f8fa;border:1px solid #eef0f3;border-radius:8px;color:#84868c}
+[data-theme="dsh"] .auto-status.on{border-color:#b9c6f5;background:#f5f7ff}
+[data-theme="dsh"] .cfg-cell{background:#f7f8fa;border:1px solid #eef0f3;border-radius:8px}
+[data-theme="dsh"] .cfg-cell b{color:#262629;font-weight:600}
+[data-theme="dsh"] .cfg-cell i{color:#84868c}
+[data-theme="dsh"] .file-item{border-radius:8px;transition:background .12s}
+[data-theme="dsh"] .file-item:hover{background:#f0f2f6}
+[data-theme="dsh"] .side-actions button.danger{color:#c04a4a}
+[data-theme="dsh"] .side-actions button.danger:hover{background:#fbf1f1;color:#c04a4a}
+
+/* 会话气泡 hover 轻反馈、模式按钮圆润 */
+[data-theme="dsh"] .mode-btn{border-radius:16px}
+[data-theme="dsh"] .mode-btn.on{background:#4d6bfe;border-color:#4d6bfe;box-shadow:0 2px 8px rgba(77,107,254,.30)}
+
+/* 命令 chip 条（任务下方的步骤索引）：更轻的描边 */
+[data-theme="dsh"] .cmdchip{background:#fff;border-color:#e5e8ec;color:#84868c}
+[data-theme="dsh"] .cmdchip:hover{border-color:#4d6bfe;color:#262629;background:#f5f7ff}
+
 *{box-sizing:border-box}
 html,body{height:100%}
 /* html 也给一层底色：玻璃主题时视口不会露出默认白底 */
@@ -1109,6 +1167,7 @@ button:disabled{opacity:.42;cursor:not-allowed;transform:none!important}
 }
 .composer button.primary{
   border-radius:var(--radius-lg);
+  height:46px;padding:0 22px;
   transition:background .16s,transform .1s,box-shadow .16s;
 }
 .composer button.primary:hover{box-shadow:0 4px 16px rgba(110,168,254,.26)}
@@ -2095,7 +2154,7 @@ header button.ghost:hover{background:var(--panel3);border-color:var(--line2)}
       </div>
       <div class="composer-inner">
         <textarea id="input" rows="1" placeholder="说点什么，让它去做…"></textarea>
-        <button class="primary" id="send" style="height:46px;padding:0 22px">发送</button>
+        <button class="primary" id="send">发送</button>
       </div>
       <div class="hint">
         <span>Enter 发送</span>
