@@ -296,6 +296,26 @@ html[data-theme="dsh"]{background:#f2f4f7}
 [data-theme="dsh"] .thread .msg.thinking .bubble{background:transparent;border:1px dashed var(--line)}
 [data-theme="dsh"] .thread .msg.asking .bubble{background:transparent;border:none;box-shadow:none}
 
+/* 步骤行：DSH 的「执行了命令」平铺小字 —— 无卡片、无编号圈、无工具胶囊 */
+[data-theme="dsh"] .thread .step{border:none;border-radius:0;background:transparent;
+  margin:0;padding:0}
+[data-theme="dsh"] .thread .step .step-act{padding:3px 8px;border-radius:8px}
+[data-theme="dsh"] .thread .step .step-act:hover{background:#f5f6f8}
+[data-theme="dsh"] .thread .step.open .step-act{border-bottom:none}
+[data-theme="dsh"] .thread .step-act .row{font-size:13px;color:#5a5e66}
+[data-theme="dsh"] .thread .step-act .row::before{content:'↳';color:#b0b4bb;font-size:13px;flex-shrink:0}
+[data-theme="dsh"] .thread .step-n{display:none}
+[data-theme="dsh"] .thread .step-tool{background:transparent;border:none;padding:0;color:#3a3d44;
+  font-family:ui-monospace,Consolas,monospace;font-weight:500;font-size:12.5px}
+[data-theme="dsh"] .thread .step-tool.bad{background:transparent;border:none;color:#c04a4a}
+[data-theme="dsh"] .thread .step-arg{background:transparent;border:none;border-radius:0;
+  padding:0;color:#84868c}
+[data-theme="dsh"] .thread .step-sec{color:#a3a7ae;font-size:11px}
+/* 展开区（想法/返回）缩进到行文字起点，与平铺行对齐 */
+[data-theme="dsh"] .thread .step .think-block,
+[data-theme="dsh"] .thread .step .step-obs-wrap{margin:2px 0 4px 26px}
+[data-theme="dsh"] .thread .step .step-obs{background:#f7f8fa;border:1px solid #eef0f3;border-radius:8px}
+
 *{box-sizing:border-box}
 html,body{height:100%}
 /* html 也给一层底色：玻璃主题时视口不会露出默认白底 */
