@@ -108,7 +108,7 @@
 [data-theme="glass"] .tool-chip{ border-color:rgba(255,255,255,.38) }
 
 /* ============================================================
-   dsh 主题 —— DeepSeek Harness 风
+   dsh 主题 —— ATC UI（Agentic UI，参考 DeepSeek Harness 风）
    参考 DeepSeek 官网浅色界面：纯白内容、浅灰蓝底、
    品牌蓝 #4D6BFE 只做点缀，几乎不要阴影，靠细分隔线分层。
    渲染上把对话收成居中一栏（约 860px），气泡改成
@@ -2055,7 +2055,7 @@ header button.ghost:hover{background:var(--panel3);border-color:var(--line2)}
     <button data-theme-btn="light">浅色</button>
     <button data-theme-btn="dark">深色</button>
     <button data-theme-btn="glass">液态玻璃</button>
-    <button data-theme-btn="dsh">DSH</button>
+    <button data-theme-btn="dsh">ATC UI</button>
   </div>
   <button id="btnModel" class="ghost">模型</button>
   <button id="btnQueue" class="ghost">队列</button>
@@ -2494,7 +2494,19 @@ document.addEventListener('click', function(e){
   while (t && t !== document) {
     if (t.classList && t.classList.contains('step-act')) {
       var stp = t.closest('.step');
-      if (stp) stp.classList.toggle('open');
+      if (stp){
+        stp.classList.toggle('open');
+        // 展开时给想法/返回块一个滑入动画（只在点击时播，轮询重建不触发）
+        if (stp.classList.contains('open') && stp.animate){
+          var parts = stp.querySelectorAll('.think-block, .step-obs-wrap');
+          for (var i=0;i<parts.length;i++){
+            parts[i].animate(
+              [{opacity:0, transform:'translateY(-6px)'},
+               {opacity:1, transform:'translateY(0)'}],
+              {duration:200, easing:'ease-out'});
+          }
+        }
+      }
       return;
     }
     t = t.parentNode;
