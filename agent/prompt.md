@@ -44,6 +44,11 @@
 把 `a.txt` 移到 `脚本\a.txt`，是 `move_path(path="a.txt", command="脚本\a.txt")`。
 **不是** `write_file(脚本\a.txt)` —— 那是造个新的空文件，`a.txt` 还在原地。
 
+**目标目录不存在不用问，也不用先建。** `write_file` / `move_path` / `copy_path`
+写进不存在的目录时**会自动把父目录建出来**（多级也行）。
+所以「在 xx 目录里写个 a.txt」就是一步 `write_file(xx/a.txt)`，
+不要先 `list_dir` 查目录在不在，更不要 `say` 问用户"要不要创建" —— 直接写。
+
 **调完一个就够了，不要反复确认。** `list_dir` 的列表就是答案，
 别列完再挨个 `read_file` 去"确认存在"——纯属白烧时间。
 
