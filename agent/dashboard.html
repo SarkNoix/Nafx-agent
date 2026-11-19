@@ -296,34 +296,49 @@ html[data-theme="dsh"]{background:#f2f4f7}
 [data-theme="dsh"] .thread .msg.thinking .bubble{background:transparent;border:1px dashed var(--line)}
 [data-theme="dsh"] .thread .msg.asking .bubble{background:transparent;border:none;box-shadow:none}
 
-/* 步骤行：DSH 的「执行了命令」平铺小字 —— 无卡片、无编号圈、无工具胶囊 */
+/* 步骤行：纯文本化 —— 无盒子、无图标、宽松行距（对齐 DSH 参照） */
 [data-theme="dsh"] .thread .step{border:none;border-radius:0;background:transparent;
-  margin:0;padding:0}
-[data-theme="dsh"] .thread .step .step-act{padding:3px 8px;border-radius:8px}
-[data-theme="dsh"] .thread .step .step-act:hover{background:#f5f6f8}
+  margin:0 0 6px;padding:0}
+[data-theme="dsh"] .thread .step:last-child{margin-bottom:2px}
+[data-theme="dsh"] .thread .step .step-act{padding:4px 8px;border-radius:8px;
+  background:transparent;border:none}
+[data-theme="dsh"] .thread .step .step-act:hover{background:#f7f8fa}
 [data-theme="dsh"] .thread .step.open .step-act{border-bottom:none}
-[data-theme="dsh"] .thread .step-act .row{font-size:13px;color:#5a5e66}
-[data-theme="dsh"] .thread .step-act .row::before{content:'↳';color:#b0b4bb;font-size:13px;flex-shrink:0}
+[data-theme="dsh"] .thread .step-act .row{font-size:13px;color:#5a5e66;gap:10px}
+[data-theme="dsh"] .thread .step-act .row::before{content:'↳';color:#b8bcc4;font-size:13px;flex-shrink:0}
 [data-theme="dsh"] .thread .step-n{display:none}
+[data-theme="dsh"] .thread .step-tool .ti{display:none}
 [data-theme="dsh"] .thread .step-tool{background:transparent;border:none;padding:0;color:#3a3d44;
   font-family:ui-monospace,Consolas,monospace;font-weight:500;font-size:12.5px}
 [data-theme="dsh"] .thread .step-tool.bad{background:transparent;border:none;color:#c04a4a}
 [data-theme="dsh"] .thread .step-arg{background:transparent;border:none;border-radius:0;
-  padding:0;color:#84868c}
-[data-theme="dsh"] .thread .step-sec{color:#a3a7ae;font-size:11px}
-/* 展开区（想法/返回）缩进到行文字起点，与平铺行对齐 */
-[data-theme="dsh"] .thread .step .think-block,
-[data-theme="dsh"] .thread .step .step-obs-wrap{margin:2px 0 4px 26px}
-[data-theme="dsh"] .thread .step .step-obs{background:#f7f8fa;border:1px solid #eef0f3;border-radius:8px}
+  padding:0;color:#84868c;font-size:12.5px}
+[data-theme="dsh"] .thread .step-sec{color:#b0b4bb;font-size:11px}
+
+/* 想法：纯文本缩进，无底无框无图标 */
+[data-theme="dsh"] .thread .step .think-block{background:transparent;border:none;
+  padding:0;margin:6px 0 4px 28px}
+[data-theme="dsh"] .thread .think-ico{display:none}
+[data-theme="dsh"] .thread .think-label{color:#a3a7ae;font-weight:500;font-size:11px}
+[data-theme="dsh"] .thread .think-body,[data-theme="dsh"] .thread .think-full{
+  color:#84868c;font-size:12.5px;line-height:1.75}
+
+/* 返回：纯文本缩进，无代码块底 */
+[data-theme="dsh"] .thread .step .step-obs-wrap{background:transparent;border:none;
+  margin:6px 0 4px 28px;padding:0}
+[data-theme="dsh"] .thread .step-obs-wrap .label{color:#a3a7ae;font-size:11px;margin-bottom:3px}
+[data-theme="dsh"] .thread .step .step-obs{background:transparent;border:none;padding:0;
+  color:#84868c;font-size:12px;line-height:1.7;max-height:none}
+[data-theme="dsh"] .thread .step .step-obs.bad{background:transparent;border:none;color:#c04a4a}
 
 /* 任务卡也拍平：白卡+灰块会在灰底上露出白边，改成透明分节 + 细线 */
 [data-theme="dsh"] .thread .live-box{background:transparent;border:none;box-shadow:none;
   border-radius:0;margin-top:10px}
 [data-theme="dsh"] .thread .live-box .live-head{background:transparent;border-radius:0;
-  padding:6px 8px}
-[data-theme="dsh"] .thread .live-box .live-head.foldable:hover{background:#f5f6f8}
+  padding:8px}
+[data-theme="dsh"] .thread .live-box .live-head.foldable:hover{background:#f7f8fa}
 [data-theme="dsh"] .thread .live-box .live-stream{background:transparent;border:none;
-  border-radius:0;margin-top:0;border-top:1px solid #f0f2f5;padding-top:4px}
+  border-radius:0;margin-top:0;border-top:none;padding:2px 0 6px 0}
 
 *{box-sizing:border-box}
 html,body{height:100%}
