@@ -140,163 +140,163 @@
 }
 html[data-theme="dsh"]{background:#f2f4f7}
 /* 对话收成居中一栏：860px，窄于其他主题的 1180px */
-[data-theme="dsh"],[data-theme="dsh-dark"] .thread{
+[data-theme="dsh"] .thread,[data-theme="dsh-dark"] .thread{
   padding-left:max(22px,calc((100% - 860px)/2));
   padding-right:max(22px,calc((100% - 860px)/2));
 }
-[data-theme="dsh"],[data-theme="dsh-dark"] .composer-inner,
-[data-theme="dsh"],[data-theme="dsh-dark"] .cmdbar,
-[data-theme="dsh"],[data-theme="dsh-dark"] .answer-box{max-width:860px}
+[data-theme="dsh"] .composer-inner,[data-theme="dsh-dark"] .composer-inner,
+[data-theme="dsh"] .cmdbar,[data-theme="dsh-dark"] .cmdbar,
+[data-theme="dsh"] .answer-box,[data-theme="dsh-dark"] .answer-box{max-width:860px}
 /* 消息：无气泡平铺（DSH 风格），靠 .who 标签和左右对齐区分角色 */
-[data-theme="dsh"],[data-theme="dsh-dark"] .msg .bubble{
+[data-theme="dsh"] .msg .bubble,[data-theme="dsh-dark"] .msg .bubble{
   border:none;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;
   background:transparent;border-radius:0;padding:2px 0;
   font-size:14.5px;line-height:1.75}
-[data-theme="dsh"],[data-theme="dsh-dark"] .msg .wrap{max-width:78%}
-[data-theme="dsh"],[data-theme="dsh-dark"] .msg.assistant .wrap{max-width:100%}
-[data-theme="dsh"],[data-theme="dsh-dark"] .msg.user .bubble{color:#4a4d55}
-[data-theme="dsh"],[data-theme="dsh-dark"] .msg.assistant .bubble{color:#262629}
-[data-theme="dsh"],[data-theme="dsh-dark"] .msg .who{color:var(--faint);margin-bottom:2px}
+[data-theme="dsh"] .msg .wrap,[data-theme="dsh-dark"] .msg .wrap{max-width:78%}
+[data-theme="dsh"] .msg.assistant .wrap,[data-theme="dsh-dark"] .msg.assistant .wrap{max-width:100%}
+[data-theme="dsh"] .msg.user .bubble,[data-theme="dsh-dark"] .msg.user .bubble{color:#4a4d55}
+[data-theme="dsh"] .msg.assistant .bubble,[data-theme="dsh-dark"] .msg.assistant .bubble{color:#262629}
+[data-theme="dsh"] .msg .who,[data-theme="dsh-dark"] .msg .who{color:var(--faint);margin-bottom:2px}
 /* 顶栏与主题切换：白底上要能看出选中态 */
-[data-theme="dsh"],[data-theme="dsh-dark"] .theme-switch{background:var(--panel2)}
-[data-theme="dsh"],[data-theme="dsh-dark"] .theme-switch button.on{background:#fff;box-shadow:0 1px 4px rgba(20,30,50,.10)}
+[data-theme="dsh"] .theme-switch,[data-theme="dsh-dark"] .theme-switch{background:var(--panel2)}
+[data-theme="dsh"] .theme-switch button.on,[data-theme="dsh-dark"] .theme-switch button.on{background:#fff;box-shadow:0 1px 4px rgba(20,30,50,.10)}
 /* 输入区：白色输入框 + 细边框，发送键品牌蓝 */
-[data-theme="dsh"],[data-theme="dsh-dark"] .composer{background:#ffffff}
-[data-theme="dsh"],[data-theme="dsh-dark"] .composer textarea{background:#fff}
-[data-theme="dsh"],[data-theme="dsh-dark"] .composer textarea:focus{border-color:#4d6bfe;box-shadow:0 0 0 3px rgba(77,107,254,.12)}
+[data-theme="dsh"] .composer,[data-theme="dsh-dark"] .composer{background:#ffffff}
+[data-theme="dsh"] .composer textarea,[data-theme="dsh-dark"] .composer textarea{background:#fff}
+[data-theme="dsh"] .composer textarea:focus,[data-theme="dsh-dark"] .composer textarea:focus{border-color:#4d6bfe;box-shadow:0 0 0 3px rgba(77,107,254,.12)}
 /* 侧栏卡片：白底细线，去掉重阴影 */
-[data-theme="dsh"],[data-theme="dsh-dark"] .side{background:#f7f8fa;border-right-color:#e5e8ec}
-[data-theme="dsh"],[data-theme="dsh-dark"] .side-block{background:#fff;border-color:#e9ecef;box-shadow:none}
+[data-theme="dsh"] .side,[data-theme="dsh-dark"] .side{background:#f7f8fa;border-right-color:#e5e8ec}
+[data-theme="dsh"] .side-block,[data-theme="dsh-dark"] .side-block{background:#fff;border-color:#e9ecef;box-shadow:none}
 
 /* ---------- DSH 重排：模型输出悬浮窗退役 ----------
    输出已经嵌进任务卡的 .live-stream 折叠行，悬浮窗不再出现。 */
-[data-theme="dsh"],[data-theme="dsh-dark"] #streamOut{display:none!important}
+[data-theme="dsh"] #streamOut,[data-theme="dsh-dark"] #streamOut{display:none!important}
 
 /* ---------- DSH 重排：右侧抽屉（模型 / 队列 / 历史 / 设置）----------
    对齐 DeepSeek Harness：纯白、细分隔线、行式布局，去掉大圆角弹簧动画。 */
-[data-theme="dsh"],[data-theme="dsh-dark"] .drawer{
+[data-theme="dsh"] .drawer,[data-theme="dsh-dark"] .drawer{
   background:#fff;border-left-color:#e5e8ec;border-radius:0;
   transition:transform .18s ease-out;box-shadow:-8px 0 30px rgba(20,30,50,.08)}
-[data-theme="dsh"],[data-theme="dsh-dark"] .drawer-head{padding:14px 20px;border-bottom:1px solid #eef0f3}
-[data-theme="dsh"],[data-theme="dsh-dark"] .drawer-head h2{font-size:14.5px}
-[data-theme="dsh"],[data-theme="dsh-dark"] .drawer .ghost{border:none;background:transparent;color:#84868c}
-[data-theme="dsh"],[data-theme="dsh-dark"] .drawer .ghost:hover{background:#f5f7fa;color:#262629}
+[data-theme="dsh"] .drawer-head,[data-theme="dsh-dark"] .drawer-head{padding:14px 20px;border-bottom:1px solid #eef0f3}
+[data-theme="dsh"] .drawer-head h2,[data-theme="dsh-dark"] .drawer-head h2{font-size:14.5px}
+[data-theme="dsh"] .drawer .ghost,[data-theme="dsh-dark"] .drawer .ghost{border:none;background:transparent;color:#84868c}
+[data-theme="dsh"] .drawer .ghost:hover,[data-theme="dsh-dark"] .drawer .ghost:hover{background:#f5f7fa;color:#262629}
 
 /* 模型抽屉：原始输出 / 翻译 两个盒子改成 DSH 式浅灰代码区 */
-[data-theme="dsh"],[data-theme="dsh-dark"] .mbox{border:1px solid #eef0f3;border-radius:12px;box-shadow:none;background:#fff}
-[data-theme="dsh"],[data-theme="dsh-dark"] .mbox-head{background:#fafbfc;border-bottom:1px solid #eef0f3;font-size:12px}
-[data-theme="dsh"],[data-theme="dsh-dark"] .mbox-pre{background:#f7f8fa;border:none;border-radius:0}
+[data-theme="dsh"] .mbox,[data-theme="dsh-dark"] .mbox{border:1px solid #eef0f3;border-radius:12px;box-shadow:none;background:#fff}
+[data-theme="dsh"] .mbox-head,[data-theme="dsh-dark"] .mbox-head{background:#fafbfc;border-bottom:1px solid #eef0f3;font-size:12px}
+[data-theme="dsh"] .mbox-pre,[data-theme="dsh-dark"] .mbox-pre{background:#f7f8fa;border:none;border-radius:0}
 
 /* 系统信息面板（∑）：白底细线，行式 */
-[data-theme="dsh"],[data-theme="dsh-dark"] #sysPanel{border-color:#e5e8ec;border-radius:14px;
+[data-theme="dsh"] #sysPanel,[data-theme="dsh-dark"] #sysPanel{border-color:#e5e8ec;border-radius:14px;
   box-shadow:0 12px 44px rgba(20,30,50,.14);transition:.16s ease-out}
-[data-theme="dsh"],[data-theme="dsh-dark"] .sys-row{border-bottom:1px solid #f2f4f7;padding:7px 0}
-[data-theme="dsh"],[data-theme="dsh-dark"] .sys-row span:last-child{color:#262629}
+[data-theme="dsh"] .sys-row,[data-theme="dsh-dark"] .sys-row{border-bottom:1px solid #f2f4f7;padding:7px 0}
+[data-theme="dsh"] .sys-row span:last-child,[data-theme="dsh-dark"] .sys-row span:last-child{color:#262629}
 
 /* ---------- DSH 重排：步骤折叠行 ----------
    对齐 DSH 的「执行了命令」：每步一行（序号 + 工具 + 参数 + 秒数），
    点开展开想法和返回，默认收起。其他主题保持现在的全展开。 */
-[data-theme="dsh"],[data-theme="dsh-dark"] .step{border:1px solid #eef0f3;border-radius:10px;
+[data-theme="dsh"] .step,[data-theme="dsh-dark"] .step{border:1px solid #eef0f3;border-radius:10px;
   background:#fff;margin:0 0 8px;padding:0;overflow:hidden}
-[data-theme="dsh"],[data-theme="dsh-dark"] .step .step-act{cursor:pointer;padding:7px 10px}
-[data-theme="dsh"],[data-theme="dsh-dark"] .step .step-act:hover{background:#fafbfc}
-[data-theme="dsh"],[data-theme="dsh-dark"] .step:not(.open) .think-block,
-[data-theme="dsh"],[data-theme="dsh-dark"] .step:not(.open) .step-obs-wrap{display:none}
-[data-theme="dsh"],[data-theme="dsh-dark"] .step.open .step-act{border-bottom:1px solid #f0f2f5}
-[data-theme="dsh"],[data-theme="dsh-dark"] .step .think-block,
-[data-theme="dsh"],[data-theme="dsh-dark"] .step .step-obs-wrap{margin:0;padding:8px 12px;border:none;background:#fff}
-[data-theme="dsh"],[data-theme="dsh-dark"] .step .step-obs{background:#f7f8fa;border:1px solid #eef0f3;border-radius:8px}
+[data-theme="dsh"] .step .step-act,[data-theme="dsh-dark"] .step .step-act{cursor:pointer;padding:7px 10px}
+[data-theme="dsh"] .step .step-act:hover,[data-theme="dsh-dark"] .step .step-act:hover{background:#fafbfc}
+[data-theme="dsh"] .step:not(.open) .think-block,[data-theme="dsh-dark"] .step:not(.open) .think-block,
+[data-theme="dsh"] .step:not(.open) .step-obs-wrap,[data-theme="dsh-dark"] .step:not(.open) .step-obs-wrap{display:none}
+[data-theme="dsh"] .step.open .step-act,[data-theme="dsh-dark"] .step.open .step-act{border-bottom:1px solid #f0f2f5}
+[data-theme="dsh"] .step .think-block,[data-theme="dsh-dark"] .step .think-block,
+[data-theme="dsh"] .step .step-obs-wrap,[data-theme="dsh-dark"] .step .step-obs-wrap{margin:0;padding:8px 12px;border:none;background:#fff}
+[data-theme="dsh"] .step .step-obs,[data-theme="dsh-dark"] .step .step-obs{background:#f7f8fa;border:1px solid #eef0f3;border-radius:8px}
 
 /* ---------- DSH 重排：抽屉（左侧栏）变扁平列表 ----------
    对齐 DSH 左栏：条目行（h3）+ 可折叠内容，行式排列，不再是卡片堆。
    内容全保留：自主模式 / 配置 / 上下文占用 / 工作区 / 工具都在，
    收起时只剩一行标题，点开展开。折叠由 applyDshDrawer() 加 .closed 控制。 */
-[data-theme="dsh"],[data-theme="dsh-dark"] .side{background:#fbfcfd;border-right:1px solid #e5e8ec;padding:10px;gap:2px}
-[data-theme="dsh"],[data-theme="dsh-dark"] .side-block{background:transparent;border:none;border-radius:10px;
+[data-theme="dsh"] .side,[data-theme="dsh-dark"] .side{background:#fbfcfd;border-right:1px solid #e5e8ec;padding:10px;gap:2px}
+[data-theme="dsh"] .side-block,[data-theme="dsh-dark"] .side-block{background:transparent;border:none;border-radius:10px;
   box-shadow:none;padding:0;margin:0 0 2px}
-[data-theme="dsh"],[data-theme="dsh-dark"] .side-block > h3{
+[data-theme="dsh"] .side-block > h3,[data-theme="dsh-dark"] .side-block > h3{
   display:flex;align-items:center;gap:6px;margin:0;padding:9px 10px;
   font-size:13px;font-weight:500;color:#262629;cursor:pointer;user-select:none;
   border-radius:8px;transition:background .12s}
-[data-theme="dsh"],[data-theme="dsh-dark"] .side-block > h3:hover{background:#f0f2f6}
-[data-theme="dsh"],[data-theme="dsh-dark"] .side-block > h3 .cnt{margin-left:auto}
-[data-theme="dsh"],[data-theme="dsh-dark"] .side-block > h3::after{content:'▸';font-size:10px;color:#a3a7ae;
+[data-theme="dsh"] .side-block > h3:hover,[data-theme="dsh-dark"] .side-block > h3:hover{background:#f0f2f6}
+[data-theme="dsh"] .side-block > h3 .cnt,[data-theme="dsh-dark"] .side-block > h3 .cnt{margin-left:auto}
+[data-theme="dsh"] .side-block > h3::after,[data-theme="dsh-dark"] .side-block > h3::after{content:'▸';font-size:10px;color:#a3a7ae;
   transform:rotate(90deg);transition:transform .15s}
-[data-theme="dsh"],[data-theme="dsh-dark"] .side-block.closed > h3::after{transform:rotate(0deg)}
-[data-theme="dsh"],[data-theme="dsh-dark"] .side-block.closed > *:not(h3){display:none}
-[data-theme="dsh"],[data-theme="dsh-dark"] .side-block > .quote{display:none}
-[data-theme="dsh"],[data-theme="dsh-dark"] .side-actions{display:flex;flex-direction:column;gap:4px;
+[data-theme="dsh"] .side-block.closed > h3::after,[data-theme="dsh-dark"] .side-block.closed > h3::after{transform:rotate(0deg)}
+[data-theme="dsh"] .side-block.closed > *:not(h3),[data-theme="dsh-dark"] .side-block.closed > *:not(h3){display:none}
+[data-theme="dsh"] .side-block > .quote,[data-theme="dsh-dark"] .side-block > .quote{display:none}
+[data-theme="dsh"] .side-actions,[data-theme="dsh-dark"] .side-actions{display:flex;flex-direction:column;gap:4px;
   border:none;padding:8px 2px 0;margin-top:8px;border-top:1px solid #eef0f3}
-[data-theme="dsh"],[data-theme="dsh-dark"] .side-actions button{background:transparent;border:none;border-radius:8px;
+[data-theme="dsh"] .side-actions button,[data-theme="dsh-dark"] .side-actions button{background:transparent;border:none;border-radius:8px;
   padding:8px 10px;font-size:12.5px;color:#5a5e66;text-align:left;justify-content:flex-start}
-[data-theme="dsh"],[data-theme="dsh-dark"] .side-actions button:hover{background:#f0f2f6;color:#262629}
+[data-theme="dsh"] .side-actions button:hover,[data-theme="dsh-dark"] .side-actions button:hover{background:#f0f2f6;color:#262629}
 
 /* ---------- DSH 细节打磨（第二轮 UI）---------- */
 
 /* 顶栏状态胶囊 → 「标签+值」纯文字（DSH 顶栏是极简的，没有灰底胶囊） */
-[data-theme="dsh"],[data-theme="dsh-dark"] .hbar{gap:14px}
-[data-theme="dsh"],[data-theme="dsh-dark"] .hbar > span{background:transparent;border:none;padding:2px 2px}
-[data-theme="dsh"],[data-theme="dsh-dark"] .hbar > span:hover{background:transparent;color:var(--fg)}
-[data-theme="dsh"],[data-theme="dsh-dark"] .hbar b{color:#262629;font-family:ui-monospace,Consolas,monospace}
+[data-theme="dsh"] .hbar,[data-theme="dsh-dark"] .hbar{gap:14px}
+[data-theme="dsh"] .hbar > span,[data-theme="dsh-dark"] .hbar > span{background:transparent;border:none;padding:2px 2px}
+[data-theme="dsh"] .hbar > span:hover,[data-theme="dsh-dark"] .hbar > span:hover{background:transparent;color:var(--fg)}
+[data-theme="dsh"] .hbar b,[data-theme="dsh-dark"] .hbar b{color:#262629;font-family:ui-monospace,Consolas,monospace}
 
 /* 发送键：DSH 的圆形 ↑ 按钮（原来的长条「发送」只在其他主题保留） */
-[data-theme="dsh"],[data-theme="dsh-dark"] .composer #send{
+[data-theme="dsh"] .composer #send,[data-theme="dsh-dark"] .composer #send{
   width:44px;height:44px;min-width:44px;padding:0;border-radius:50%;
   font-size:0;display:flex;align-items:center;justify-content:center;
   background:#4d6bfe;box-shadow:0 2px 8px rgba(77,107,254,.35)}
-[data-theme="dsh"],[data-theme="dsh-dark"] .composer #send::before{
+[data-theme="dsh"] .composer #send::before,[data-theme="dsh-dark"] .composer #send::before{
   content:'↑';font-size:20px;font-weight:700;color:#fff;line-height:1}
-[data-theme="dsh"],[data-theme="dsh-dark"] .composer #send:hover{background:#3d5bf0;transform:translateY(-1px)}
-[data-theme="dsh"],[data-theme="dsh-dark"] .composer #send:hover{box-shadow:0 4px 14px rgba(77,107,254,.45)}
-[data-theme="dsh"],[data-theme="dsh-dark"] .composer #send:active{transform:translateY(0)}
+[data-theme="dsh"] .composer #send:hover,[data-theme="dsh-dark"] .composer #send:hover{background:#3d5bf0;transform:translateY(-1px)}
+[data-theme="dsh"] .composer #send:hover,[data-theme="dsh-dark"] .composer #send:hover{box-shadow:0 4px 14px rgba(77,107,254,.45)}
+[data-theme="dsh"] .composer #send:active,[data-theme="dsh-dark"] .composer #send:active{transform:translateY(0)}
 
 /* 输入框：DSH 的细边框圆角输入区 */
-[data-theme="dsh"],[data-theme="dsh-dark"] .composer textarea{
+[data-theme="dsh"] .composer textarea,[data-theme="dsh-dark"] .composer textarea{
   border:1px solid #e3e6ec;border-radius:16px;padding:13px 16px;background:#fff}
-[data-theme="dsh"],[data-theme="dsh-dark"] .composer textarea:focus{
+[data-theme="dsh"] .composer textarea:focus,[data-theme="dsh-dark"] .composer textarea:focus{
   border-color:#4d6bfe;box-shadow:0 0 0 3px rgba(77,107,254,.10)}
 
 /* 滚动条：细一点、淡一点 */
-[data-theme="dsh"],[data-theme="dsh-dark"] ::-webkit-scrollbar{width:6px;height:6px}
-[data-theme="dsh"],[data-theme="dsh-dark"] ::-webkit-scrollbar-thumb{background:#d8dce2;border-radius:3px}
-[data-theme="dsh"],[data-theme="dsh-dark"] ::-webkit-scrollbar-thumb:hover{background:#c4c9d1}
-[data-theme="dsh"],[data-theme="dsh-dark"] ::-webkit-scrollbar-track{background:transparent}
+[data-theme="dsh"] ::-webkit-scrollbar,[data-theme="dsh-dark"] ::-webkit-scrollbar{width:6px;height:6px}
+[data-theme="dsh"] ::-webkit-scrollbar-thumb,[data-theme="dsh-dark"] ::-webkit-scrollbar-thumb{background:#d8dce2;border-radius:3px}
+[data-theme="dsh"] ::-webkit-scrollbar-thumb:hover,[data-theme="dsh-dark"] ::-webkit-scrollbar-thumb:hover{background:#c4c9d1}
+[data-theme="dsh"] ::-webkit-scrollbar-track,[data-theme="dsh-dark"] ::-webkit-scrollbar-track{background:transparent}
 
 /* 步骤行：去掉左侧 3px 强调条，统一细边框（其他主题保留强调条） */
-[data-theme="dsh"],[data-theme="dsh-dark"] .step::before{display:none}
+[data-theme="dsh"] .step::before,[data-theme="dsh-dark"] .step::before{display:none}
 
 /* 侧栏内里控件统一扁平 */
-[data-theme="dsh"],[data-theme="dsh-dark"] .side input[type="text"],
-[data-theme="dsh"],[data-theme="dsh-dark"] .side select{
+[data-theme="dsh"] .side input[type="text"],[data-theme="dsh-dark"] .side input[type="text"],
+[data-theme="dsh"] .side select,[data-theme="dsh-dark"] .side select{
   border:1px solid #e3e6ec;border-radius:8px;background:#fff;
   color:#262629;font-size:12.5px}
-[data-theme="dsh"],[data-theme="dsh-dark"] .side input[type="text"]:focus{border-color:#4d6bfe;outline:none}
-[data-theme="dsh"],[data-theme="dsh-dark"] .auto-status{background:#f7f8fa;border:1px solid #eef0f3;border-radius:8px;color:#84868c}
-[data-theme="dsh"],[data-theme="dsh-dark"] .auto-status.on{border-color:#b9c6f5;background:#f5f7ff}
-[data-theme="dsh"],[data-theme="dsh-dark"] .cfg-cell{background:#f7f8fa;border:1px solid #eef0f3;border-radius:8px}
-[data-theme="dsh"],[data-theme="dsh-dark"] .cfg-cell b{color:#262629;font-weight:600}
-[data-theme="dsh"],[data-theme="dsh-dark"] .cfg-cell i{color:#84868c}
-[data-theme="dsh"],[data-theme="dsh-dark"] .file-item{border-radius:8px;transition:background .12s}
-[data-theme="dsh"],[data-theme="dsh-dark"] .file-item:hover{background:#f0f2f6}
-[data-theme="dsh"],[data-theme="dsh-dark"] .file-item .fi{display:none}
-[data-theme="dsh"],[data-theme="dsh-dark"] .fgroup-h{color:#5a5e66;font-size:12px;padding:6px 8px}
-[data-theme="dsh"],[data-theme="dsh-dark"] .fgroup-h:hover{background:#f0f2f6}
-[data-theme="dsh"],[data-theme="dsh-dark"] .fgroup-h .fgl{color:#3a3d44}
+[data-theme="dsh"] .side input[type="text"]:focus,[data-theme="dsh-dark"] .side input[type="text"]:focus{border-color:#4d6bfe;outline:none}
+[data-theme="dsh"] .auto-status,[data-theme="dsh-dark"] .auto-status{background:#f7f8fa;border:1px solid #eef0f3;border-radius:8px;color:#84868c}
+[data-theme="dsh"] .auto-status.on,[data-theme="dsh-dark"] .auto-status.on{border-color:#b9c6f5;background:#f5f7ff}
+[data-theme="dsh"] .cfg-cell,[data-theme="dsh-dark"] .cfg-cell{background:#f7f8fa;border:1px solid #eef0f3;border-radius:8px}
+[data-theme="dsh"] .cfg-cell b,[data-theme="dsh-dark"] .cfg-cell b{color:#262629;font-weight:600}
+[data-theme="dsh"] .cfg-cell i,[data-theme="dsh-dark"] .cfg-cell i{color:#84868c}
+[data-theme="dsh"] .file-item,[data-theme="dsh-dark"] .file-item{border-radius:8px;transition:background .12s}
+[data-theme="dsh"] .file-item:hover,[data-theme="dsh-dark"] .file-item:hover{background:#f0f2f6}
+[data-theme="dsh"] .file-item .fi,[data-theme="dsh-dark"] .file-item .fi{display:none}
+[data-theme="dsh"] .fgroup-h,[data-theme="dsh-dark"] .fgroup-h{color:#5a5e66;font-size:12px;padding:6px 8px}
+[data-theme="dsh"] .fgroup-h:hover,[data-theme="dsh-dark"] .fgroup-h:hover{background:#f0f2f6}
+[data-theme="dsh"] .fgroup-h .fgl,[data-theme="dsh-dark"] .fgroup-h .fgl{color:#3a3d44}
 
 /* ---------- ATC 打磨（第三轮）：怎么舒服怎么来 ---------- */
 /* 悬停底色统一走主题变量，深浅色观感一致 */
-[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step .step-act:hover{background:var(--panel2)}
-[data-theme="dsh"],[data-theme="dsh-dark"] .side-block > h3:hover{background:var(--panel2)}
-[data-theme="dsh"],[data-theme="dsh-dark"] .fgroup-h:hover{background:var(--panel2)}
-[data-theme="dsh"],[data-theme="dsh-dark"] .file-item:hover{background:var(--panel2)}
+[data-theme="dsh"] .thread .step .step-act:hover,[data-theme="dsh-dark"] .thread .step .step-act:hover{background:var(--panel2)}
+[data-theme="dsh"] .side-block > h3:hover,[data-theme="dsh-dark"] .side-block > h3:hover{background:var(--panel2)}
+[data-theme="dsh"] .fgroup-h:hover,[data-theme="dsh-dark"] .fgroup-h:hover{background:var(--panel2)}
+[data-theme="dsh"] .file-item:hover,[data-theme="dsh-dark"] .file-item:hover{background:var(--panel2)}
 /* 侧栏标题更松弛：小字号 + 字距，像目录不像按钮 */
-[data-theme="dsh"],[data-theme="dsh-dark"] .side-block > h3{
+[data-theme="dsh"] .side-block > h3,[data-theme="dsh-dark"] .side-block > h3{
   font-size:12px;font-weight:600;letter-spacing:.4px;color:var(--dim)}
 /* 输入框聚焦光晕收敛：边框为主，光晕淡一档 */
-[data-theme="dsh"],[data-theme="dsh-dark"] .composer textarea:focus{
+[data-theme="dsh"] .composer textarea:focus,[data-theme="dsh-dark"] .composer textarea:focus{
   box-shadow:0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent)}
 /* 对话区留白放宽一档，长消息不顶边 */
-[data-theme="dsh"],[data-theme="dsh-dark"] .thread{padding:22px 26px 12px}
+[data-theme="dsh"] .thread,[data-theme="dsh-dark"] .thread{padding:22px 26px 12px}
 
 /* 抽屉整体拉起（收起侧边栏）：全主题可用，拉起后侧栏整个让位给对话区 */
 .side-collapse{display:inline-block;padding:5px 9px}
@@ -304,67 +304,67 @@ body.drawer-collapsed .side{display:none}
 body.drawer-collapsed .side-collapse{margin-left:8px}
 
 /* 左上角 Nafx 旁边的光球（状态点）在 ATC UI 下去掉 */
-[data-theme="dsh"],[data-theme="dsh-dark"] .brand .dot{display:none}
-[data-theme="dsh"],[data-theme="dsh-dark"] .side-actions button.danger{color:#c04a4a}
-[data-theme="dsh"],[data-theme="dsh-dark"] .side-actions button.danger:hover{background:#fbf1f1;color:#c04a4a}
+[data-theme="dsh"] .brand .dot,[data-theme="dsh-dark"] .brand .dot{display:none}
+[data-theme="dsh"] .side-actions button.danger,[data-theme="dsh-dark"] .side-actions button.danger{color:#c04a4a}
+[data-theme="dsh"] .side-actions button.danger:hover,[data-theme="dsh-dark"] .side-actions button.danger:hover{background:#fbf1f1;color:#c04a4a}
 
 /* 会话气泡 hover 轻反馈、模式按钮圆润 */
-[data-theme="dsh"],[data-theme="dsh-dark"] .mode-btn{border-radius:16px}
-[data-theme="dsh"],[data-theme="dsh-dark"] .mode-btn.on{background:#4d6bfe;border-color:#4d6bfe;box-shadow:0 2px 8px rgba(77,107,254,.30)}
+[data-theme="dsh"] .mode-btn,[data-theme="dsh-dark"] .mode-btn{border-radius:16px}
+[data-theme="dsh"] .mode-btn.on,[data-theme="dsh-dark"] .mode-btn.on{background:#4d6bfe;border-color:#4d6bfe;box-shadow:0 2px 8px rgba(77,107,254,.30)}
 
 /* 命令 chip 条（任务下方的步骤索引）：更轻的描边 */
-[data-theme="dsh"],[data-theme="dsh-dark"] .cmdchip{background:#fff;border-color:#e5e8ec;color:#84868c}
-[data-theme="dsh"],[data-theme="dsh-dark"] .cmdchip:hover{border-color:#4d6bfe;color:#262629;background:#f5f7ff}
+[data-theme="dsh"] .cmdchip,[data-theme="dsh-dark"] .cmdchip{background:#fff;border-color:#e5e8ec;color:#84868c}
+[data-theme="dsh"] .cmdchip:hover,[data-theme="dsh-dark"] .cmdchip:hover{border-color:#4d6bfe;color:#262629;background:#f5f7ff}
 
 /* 消息无气泡平铺：加 .thread 提一级优先级，压过任何位置的基样式垫底 */
-[data-theme="dsh"],[data-theme="dsh-dark"] .thread .msg .bubble{background:transparent;border:none;border-radius:0;
+[data-theme="dsh"] .thread .msg .bubble,[data-theme="dsh-dark"] .thread .msg .bubble{background:transparent;border:none;border-radius:0;
   box-shadow:none;padding:2px 0}
-[data-theme="dsh"],[data-theme="dsh-dark"] .thread .msg.fail .bubble{background:transparent;border:none;color:var(--err)}
-[data-theme="dsh"],[data-theme="dsh-dark"] .thread .msg.thinking .bubble{background:transparent;border:1px dashed var(--line)}
-[data-theme="dsh"],[data-theme="dsh-dark"] .thread .msg.asking .bubble{background:transparent;border:none;box-shadow:none}
+[data-theme="dsh"] .thread .msg.fail .bubble,[data-theme="dsh-dark"] .thread .msg.fail .bubble{background:transparent;border:none;color:var(--err)}
+[data-theme="dsh"] .thread .msg.thinking .bubble,[data-theme="dsh-dark"] .thread .msg.thinking .bubble{background:transparent;border:1px dashed var(--line)}
+[data-theme="dsh"] .thread .msg.asking .bubble,[data-theme="dsh-dark"] .thread .msg.asking .bubble{background:transparent;border:none;box-shadow:none}
 
 /* 步骤行：纯文本化 —— 无盒子、无图标、宽松行距（对齐 DSH 参照） */
-[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step{border:none;border-radius:0;background:transparent;
+[data-theme="dsh"] .thread .step,[data-theme="dsh-dark"] .thread .step{border:none;border-radius:0;background:transparent;
   margin:0 0 6px;padding:0}
-[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step:last-child{margin-bottom:2px}
-[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step .step-act{padding:4px 8px;border-radius:8px;
+[data-theme="dsh"] .thread .step:last-child,[data-theme="dsh-dark"] .thread .step:last-child{margin-bottom:2px}
+[data-theme="dsh"] .thread .step .step-act,[data-theme="dsh-dark"] .thread .step .step-act{padding:4px 8px;border-radius:8px;
   background:transparent;border:none}
-[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step .step-act:hover{background:#f7f8fa}
-[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step.open .step-act{border-bottom:none}
-[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step-act .row{font-size:13px;color:#5a5e66;gap:10px}
-[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step-act .row::before{content:'↳';color:#9ba1ac;font-size:13px;flex-shrink:0}
-[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step-n{display:none}
-[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step-tool .ti{display:none}
-[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step-tool{background:transparent;border:none;padding:0;color:#3a3d44;
+[data-theme="dsh"] .thread .step .step-act:hover,[data-theme="dsh-dark"] .thread .step .step-act:hover{background:#f7f8fa}
+[data-theme="dsh"] .thread .step.open .step-act,[data-theme="dsh-dark"] .thread .step.open .step-act{border-bottom:none}
+[data-theme="dsh"] .thread .step-act .row,[data-theme="dsh-dark"] .thread .step-act .row{font-size:13px;color:#5a5e66;gap:10px}
+[data-theme="dsh"] .thread .step-act .row::before,[data-theme="dsh-dark"] .thread .step-act .row::before{content:'↳';color:#9ba1ac;font-size:13px;flex-shrink:0}
+[data-theme="dsh"] .thread .step-n,[data-theme="dsh-dark"] .thread .step-n{display:none}
+[data-theme="dsh"] .thread .step-tool .ti,[data-theme="dsh-dark"] .thread .step-tool .ti{display:none}
+[data-theme="dsh"] .thread .step-tool,[data-theme="dsh-dark"] .thread .step-tool{background:transparent;border:none;padding:0;color:#3a3d44;
   font-family:ui-monospace,Consolas,monospace;font-weight:500;font-size:12.5px}
-[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step-tool.bad{background:transparent;border:none;color:#c04a4a}
-[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step-arg{background:transparent;border:none;border-radius:0;
+[data-theme="dsh"] .thread .step-tool.bad,[data-theme="dsh-dark"] .thread .step-tool.bad{background:transparent;border:none;color:#c04a4a}
+[data-theme="dsh"] .thread .step-arg,[data-theme="dsh-dark"] .thread .step-arg{background:transparent;border:none;border-radius:0;
   padding:0;color:#84868c;font-size:12.5px}
-[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step-sec{color:#8f95a0;font-size:11px}
+[data-theme="dsh"] .thread .step-sec,[data-theme="dsh-dark"] .thread .step-sec{color:#8f95a0;font-size:11px}
 
 /* 想法：纯文本缩进，无底无框无图标 */
-[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step .think-block{background:transparent;border:none;
+[data-theme="dsh"] .thread .step .think-block,[data-theme="dsh-dark"] .thread .step .think-block{background:transparent;border:none;
   padding:0;margin:6px 0 4px 28px}
-[data-theme="dsh"],[data-theme="dsh-dark"] .thread .think-ico{display:none}
-[data-theme="dsh"],[data-theme="dsh-dark"] .thread .think-label{color:#878c96;font-weight:500;font-size:11px}
-[data-theme="dsh"],[data-theme="dsh-dark"] .thread .think-body,[data-theme="dsh"],[data-theme="dsh-dark"] .thread .think-full{
+[data-theme="dsh"] .thread .think-ico,[data-theme="dsh-dark"] .thread .think-ico{display:none}
+[data-theme="dsh"] .thread .think-label,[data-theme="dsh-dark"] .thread .think-label{color:#878c96;font-weight:500;font-size:11px}
+[data-theme="dsh"] .thread .think-body,[data-theme="dsh-dark"] .thread .think-body,[data-theme="dsh"] .thread .think-full,[data-theme="dsh-dark"] .thread .think-full{
   color:#6d717a;font-size:12.5px;line-height:1.75}
 
 /* 返回：纯文本缩进，无代码块底 */
-[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step .step-obs-wrap{background:transparent;border:none;
+[data-theme="dsh"] .thread .step .step-obs-wrap,[data-theme="dsh-dark"] .thread .step .step-obs-wrap{background:transparent;border:none;
   margin:6px 0 4px 28px;padding:0}
-[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step-obs-wrap .label{color:#878c96;font-size:11px;margin-bottom:3px}
-[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step .step-obs{background:transparent;border:none;padding:0;
+[data-theme="dsh"] .thread .step-obs-wrap .label,[data-theme="dsh-dark"] .thread .step-obs-wrap .label{color:#878c96;font-size:11px;margin-bottom:3px}
+[data-theme="dsh"] .thread .step .step-obs,[data-theme="dsh-dark"] .thread .step .step-obs{background:transparent;border:none;padding:0;
   color:#84868c;font-size:12px;line-height:1.7;max-height:none}
-[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step .step-obs.bad{background:transparent;border:none;color:#c04a4a}
+[data-theme="dsh"] .thread .step .step-obs.bad,[data-theme="dsh-dark"] .thread .step .step-obs.bad{background:transparent;border:none;color:#c04a4a}
 
 /* 任务卡也拍平：白卡+灰块会在灰底上露出白边，改成透明分节 + 细线 */
-[data-theme="dsh"],[data-theme="dsh-dark"] .thread .live-box{background:transparent;border:none;box-shadow:none;
+[data-theme="dsh"] .thread .live-box,[data-theme="dsh-dark"] .thread .live-box{background:transparent;border:none;box-shadow:none;
   border-radius:0;margin-top:10px}
-[data-theme="dsh"],[data-theme="dsh-dark"] .thread .live-box .live-head{background:transparent;border-radius:0;
+[data-theme="dsh"] .thread .live-box .live-head,[data-theme="dsh-dark"] .thread .live-box .live-head{background:transparent;border-radius:0;
   padding:8px}
-[data-theme="dsh"],[data-theme="dsh-dark"] .thread .live-box .live-head.foldable:hover{background:#f7f8fa}
-[data-theme="dsh"],[data-theme="dsh-dark"] .thread .live-box .live-stream{background:transparent;border:none;
+[data-theme="dsh"] .thread .live-box .live-head.foldable:hover,[data-theme="dsh-dark"] .thread .live-box .live-head.foldable:hover{background:#f7f8fa}
+[data-theme="dsh"] .thread .live-box .live-stream,[data-theme="dsh-dark"] .thread .live-box .live-stream{background:transparent;border:none;
   border-radius:0;margin-top:0;border-top:none;padding:2px 0 6px 0}
 
 *{box-sizing:border-box}
@@ -632,7 +632,7 @@ main{position:relative;z-index:1;flex:1;display:flex;min-height:0}
   font-size:11px;color:var(--code-fg);white-space:pre-wrap;word-break:break-word;
   line-height:1.5}
 .live-stream.open .ls-body{display:block}
-[data-theme="dsh"],[data-theme="dsh-dark"] .live-stream{display:block}
+[data-theme="dsh"] .live-stream,[data-theme="dsh-dark"] .live-stream{display:block}
 
 .live-box{border:1px solid var(--line);border-radius:var(--radius-lg);
   background:var(--panel);margin-bottom:13px;overflow:hidden;
