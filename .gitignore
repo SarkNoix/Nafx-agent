@@ -1,4 +1,4 @@
-# 模型文件太大，不进仓库
+﻿# 模型文件太大，不进仓库
 models/*.gguf
 
 # 运行时产生的东西
@@ -16,3 +16,19 @@ workspace/*.tmp
 # 系统
 Thumbs.db
 desktop.ini
+
+# 运行时数据（不该进仓库）
+agent/autopilot.json
+agent/autopilot-history.jsonl
+agent/memory/
+
+# 调参产物：每次训练都会生成一大批备份和报告
+train/out/
+train/sandbox-config.json
+
+# 用户工作区里的临时文件和自动备份
+workspace/.backup/
+workspace/test/
+
+# 开发期整包备份
+/_backup_*/

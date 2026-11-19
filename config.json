@@ -40,9 +40,9 @@
     "kvCacheTypeK":  "f16",
     "kvCacheTypeV":  "f16",
     "flashAttn":  "off",
-    "_内存说明":  "KV缓存量化：把注意力缓存从 fp16 压到 8bit/4bit，同样内存能装 2-4 倍的上下文。kvCacheTypeK/V 可选 f16(不压)/q8_0/q4_0，内存紧就用 q4_0。flashAttn 量化时建议开。改完重启生效。",    "warmupOnStart":  true,
+    "_内存说明":  "KV缓存量化：把注意力缓存从 fp16 压到 8bit/4bit，同样内存能装 2-4 倍的上下文。kvCacheTypeK/V 可选 f16(不压)/q8_0/q4_0，内存紧就用 q4_0。flashAttn 量化时建议开。改完重启生效。",
+    "warmupOnStart":  true,
     "_warmupOnStart说明":  "启动后在后台预热提示词（约 60 秒 CPU），第一个任务能快一倍多。不想让开机后占 CPU 就改 false，第一个任务会慢回去。",
-
     "context":  4000,
     "threads":  7,
     "maxTokens":  600,
