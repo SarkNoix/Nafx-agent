@@ -378,10 +378,13 @@ function Invoke-Dispatch {
         if ($nextMode -eq 'auto') { $modeMaxSteps = [int][Math]::Min(40, [int]$Cfg.maxSteps + 10) }
 
         $slotState = Get-SlotStateFile $slot
+        # speed/cacheHit 先给 0：agent 起来后第一步就有真实值。
+        # 之前占位 JSON 漏了这两个字段，单步任务（代收尾，运行期间不写中间 state）
+        # 的进度条全程拿到的是 undefined，一条横线都不显示。
         $ph = '{"status":"running","task":' + (J $next.task) + ',"steps":[],"step":1,"maxSteps":' + $modeMaxSteps +
               ',"elapsed":0,"phase":"第' + $slot + '路 准备","model":' + (J $Cfg.modelLabel) +
               ',"workspace":' + (J $Cfg.workspace) + ',"answer":"","logFile":"","slot":' + $slot +
-              ',"mode":' + (J $nextMode) + '}'
+              ',"speed":0,"cacheHit":0,"mode":' + (J $nextMode) + '}'
         [IO.File]::WriteAllText($slotState, $ph, (New-Object Text.UTF8Encoding($false)))
         # 第 1 路的也同步到主 state，兼容老逻辑
         if ($slot -eq 1) { [IO.File]::WriteAllText($StateFile, $ph, (New-Object Text.UTF8Encoding($false))) }
@@ -560,6 +563,14 @@ if ($script:agentMissStreak -ge 2 -and -not $hasAgent -and -not $hasResult -and 
         ctxHistory = $(if ($main.PSObject.Properties.Name -contains 'ctxHistory') { [int]$main.ctxHistory } else { 0 })
         ctxTools   = $(if ($main.PSObject.Properties.Name -contains 'ctxTools') { [int]$main.ctxTools } else { 0 })
         ctxUsed    = $(if ($main.PSObject.Properties.Name -contains 'ctxUsed') { [int]$main.ctxUsed } else { 0 })
+        # ---- 生成进度条（DSH 式状态行）----
+        # speed / cacheHit 由 agent 写：生成中是字符增量估的 tok/s，
+        # 一步结束被 llama timings 的 predicted_per_second 和
+        # cache_n/(cache_n+prompt_n) 覆盖成真实值。
+        # 这个 return 是手工拼字段的，漏了面板就拿不到 ——
+        # 上面 ctx 六个字段就是这么漏过一次的，别再犯。
+        speed     = $(if ($main.PSObject.Properties.Name -contains 'speed') { [double]$main.speed } else { 0 })
+        cacheHit  = $(if ($main.PSObject.Properties.Name -contains 'cacheHit') { [double]$main.cacheHit } else { 0 })
         phase     = [string]$main.phase
         workers   = $summary
     }

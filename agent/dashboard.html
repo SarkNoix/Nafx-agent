@@ -107,12 +107,136 @@
 [data-theme="glass"] .gauge-bar{ background:rgba(20,4,32,.42) }
 [data-theme="glass"] .tool-chip{ border-color:rgba(255,255,255,.38) }
 
+/* ============================================================
+   dsh 主题 —— DeepSeek Harness 风
+   参考 DeepSeek 官网浅色界面：纯白内容、浅灰蓝底、
+   品牌蓝 #4D6BFE 只做点缀，几乎不要阴影，靠细分隔线分层。
+   渲染上把对话收成居中一栏（约 860px），气泡改成
+   用户浅灰圆角块 / AI 纯白无边框，更像聊天页。
+   功能不减：面板、队列、历史、设置、侧栏全部照旧。
+   ============================================================ */
+[data-theme="dsh"]{
+  --bg:#f2f4f7; --bg2:#eef0f4;
+  --panel:#ffffff; --panel2:#f5f7fa; --panel3:#eceff4;
+  --fg:#262629; --dim:#84868c; --faint:#a3a7ae;
+  --line:#e5e8ec; --line2:#d8dce2;
+  --accent:#4d6bfe; --accent2:#4d6bfe;
+  --ok:#0ea35e; --warn:#c47c10; --err:#d93b3b; --run:#2f7ce0;
+  --bubble-user-bg:#eef1f6; --bubble-user-bd:#eef1f6; --bubble-user-fg:#262629;
+  --bubble-ai-bg:#ffffff; --bubble-ai-bd:#ffffff;
+  --code-bg:#f6f8fa; --code-bd:#e8ebee; --code-fg:#444b55;
+  --inline-bg:#eff3fb; --inline-bd:#e0e7f5; --inline-fg:#3b5bdb;
+  --shadow:0 4px 18px rgba(20,30,50,.06);
+  --mask:rgba(20,30,50,.32);
+  --primary-fg:#ffffff;
+  --inset-hi:rgba(255,255,255,0);
+  --shadow-sm:0 1px 3px rgba(20,30,50,.07);
+  --ok-bg:rgba(14,163,94,.09); --ok-bd:rgba(14,163,94,.30);
+  --err-bg:rgba(217,59,59,.08); --err-bd:rgba(217,59,59,.30);
+  --run-bg:rgba(47,124,224,.09); --run-bd:rgba(47,124,224,.30);
+  --warn-bg:rgba(196,124,16,.09); --warn-bd:rgba(196,124,16,.30);
+  --blur:none; --panel-alpha:1;
+  --radius:12px; --radius-lg:16px;
+}
+html[data-theme="dsh"]{background:#f2f4f7}
+/* 对话收成居中一栏：860px，窄于其他主题的 1180px */
+[data-theme="dsh"] .thread{
+  padding-left:max(22px,calc((100% - 860px)/2));
+  padding-right:max(22px,calc((100% - 860px)/2));
+}
+[data-theme="dsh"] .composer-inner,
+[data-theme="dsh"] .cmdbar,
+[data-theme="dsh"] .answer-box{max-width:860px}
+/* 气泡：用户浅灰圆角块靠右，AI 纯白无边框（DeepSeek 的对话感） */
+[data-theme="dsh"] .msg .bubble{
+  border:none;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;
+  font-size:14.5px;line-height:1.75}
+[data-theme="dsh"] .msg .wrap{max-width:78%}
+[data-theme="dsh"] .msg.assistant .wrap{max-width:100%}
+[data-theme="dsh"] .msg.user .bubble{border-radius:18px;border-bottom-right-radius:6px}
+[data-theme="dsh"] .msg.assistant .bubble{border-radius:4px 18px 18px 18px;padding:6px 8px}
+[data-theme="dsh"] .msg .who{color:var(--faint)}
+/* 顶栏与主题切换：白底上要能看出选中态 */
+[data-theme="dsh"] .theme-switch{background:var(--panel2)}
+[data-theme="dsh"] .theme-switch button.on{background:#fff;box-shadow:0 1px 4px rgba(20,30,50,.10)}
+/* 输入区：白色输入框 + 细边框，发送键品牌蓝 */
+[data-theme="dsh"] .composer{background:#ffffff}
+[data-theme="dsh"] .composer textarea{background:#fff}
+[data-theme="dsh"] .composer textarea:focus{border-color:#4d6bfe;box-shadow:0 0 0 3px rgba(77,107,254,.12)}
+/* 侧栏卡片：白底细线，去掉重阴影 */
+[data-theme="dsh"] .side{background:#f7f8fa;border-right-color:#e5e8ec}
+[data-theme="dsh"] .side-block{background:#fff;border-color:#e9ecef;box-shadow:none}
+
+/* ---------- DSH 重排：模型输出悬浮窗退役 ----------
+   输出已经嵌进任务卡的 .live-stream 折叠行，悬浮窗不再出现。 */
+[data-theme="dsh"] #streamOut{display:none!important}
+
+/* ---------- DSH 重排：右侧抽屉（模型 / 队列 / 历史 / 设置）----------
+   对齐 DeepSeek Harness：纯白、细分隔线、行式布局，去掉大圆角弹簧动画。 */
+[data-theme="dsh"] .drawer{
+  background:#fff;border-left-color:#e5e8ec;border-radius:0;
+  transition:transform .18s ease-out;box-shadow:-8px 0 30px rgba(20,30,50,.08)}
+[data-theme="dsh"] .drawer-head{padding:14px 20px;border-bottom:1px solid #eef0f3}
+[data-theme="dsh"] .drawer-head h2{font-size:14.5px}
+[data-theme="dsh"] .drawer .ghost{border:none;background:transparent;color:#84868c}
+[data-theme="dsh"] .drawer .ghost:hover{background:#f5f7fa;color:#262629}
+
+/* 模型抽屉：原始输出 / 翻译 两个盒子改成 DSH 式浅灰代码区 */
+[data-theme="dsh"] .mbox{border:1px solid #eef0f3;border-radius:12px;box-shadow:none;background:#fff}
+[data-theme="dsh"] .mbox-head{background:#fafbfc;border-bottom:1px solid #eef0f3;font-size:12px}
+[data-theme="dsh"] .mbox-pre{background:#f7f8fa;border:none;border-radius:0}
+
+/* 系统信息面板（∑）：白底细线，行式 */
+[data-theme="dsh"] #sysPanel{border-color:#e5e8ec;border-radius:14px;
+  box-shadow:0 12px 44px rgba(20,30,50,.14);transition:.16s ease-out}
+[data-theme="dsh"] .sys-row{border-bottom:1px solid #f2f4f7;padding:7px 0}
+[data-theme="dsh"] .sys-row span:last-child{color:#262629}
+
+/* ---------- DSH 重排：步骤折叠行 ----------
+   对齐 DSH 的「执行了命令」：每步一行（序号 + 工具 + 参数 + 秒数），
+   点开展开想法和返回，默认收起。其他主题保持现在的全展开。 */
+[data-theme="dsh"] .step{border:1px solid #eef0f3;border-radius:10px;
+  background:#fff;margin:0 0 8px;padding:0;overflow:hidden}
+[data-theme="dsh"] .step .step-act{cursor:pointer;padding:7px 10px}
+[data-theme="dsh"] .step .step-act:hover{background:#fafbfc}
+[data-theme="dsh"] .step:not(.open) .think-block,
+[data-theme="dsh"] .step:not(.open) .step-obs-wrap{display:none}
+[data-theme="dsh"] .step.open .step-act{border-bottom:1px solid #f0f2f5}
+[data-theme="dsh"] .step .think-block,
+[data-theme="dsh"] .step .step-obs-wrap{margin:0;padding:8px 12px;border:none;background:#fff}
+[data-theme="dsh"] .step .step-obs{background:#f7f8fa;border:1px solid #eef0f3;border-radius:8px}
+
+/* ---------- DSH 重排：抽屉（左侧栏）变扁平列表 ----------
+   对齐 DSH 左栏：条目行（h3）+ 可折叠内容，行式排列，不再是卡片堆。
+   内容全保留：自主模式 / 配置 / 上下文占用 / 工作区 / 工具都在，
+   收起时只剩一行标题，点开展开。折叠由 applyDshDrawer() 加 .closed 控制。 */
+[data-theme="dsh"] .side{background:#fbfcfd;border-right:1px solid #e5e8ec;padding:10px;gap:2px}
+[data-theme="dsh"] .side-block{background:transparent;border:none;border-radius:10px;
+  box-shadow:none;padding:0;margin:0 0 2px}
+[data-theme="dsh"] .side-block > h3{
+  display:flex;align-items:center;gap:6px;margin:0;padding:9px 10px;
+  font-size:13px;font-weight:500;color:#262629;cursor:pointer;user-select:none;
+  border-radius:8px;transition:background .12s}
+[data-theme="dsh"] .side-block > h3:hover{background:#f0f2f6}
+[data-theme="dsh"] .side-block > h3 .cnt{margin-left:auto}
+[data-theme="dsh"] .side-block > h3::after{content:'▸';font-size:10px;color:#a3a7ae;
+  transform:rotate(90deg);transition:transform .15s}
+[data-theme="dsh"] .side-block.closed > h3::after{transform:rotate(0deg)}
+[data-theme="dsh"] .side-block.closed > *:not(h3){display:none}
+[data-theme="dsh"] .side-block > .quote{display:none}
+[data-theme="dsh"] .side-actions{display:flex;flex-direction:column;gap:4px;
+  border:none;padding:8px 2px 0;margin-top:8px;border-top:1px solid #eef0f3}
+[data-theme="dsh"] .side-actions button{background:transparent;border:none;border-radius:8px;
+  padding:8px 10px;font-size:12.5px;color:#5a5e66;text-align:left;justify-content:flex-start}
+[data-theme="dsh"] .side-actions button:hover{background:#f0f2f6;color:#262629}
+
 *{box-sizing:border-box}
 html,body{height:100%}
 /* html 也给一层底色：玻璃主题时视口不会露出默认白底 */
 html{background:#0b0c0f;transition:background .35s}
 html[data-theme="light"]{background:#f6f7f9}
 html[data-theme="glass"]{background:linear-gradient(135deg,#ffd3e8 0%,#f7b8f0 22%,#c9a6f7 48%,#9d8cf5 72%,#b7a4ff 100%)}
+html[data-theme="dsh"]{background:#f2f4f7}
 body{
   margin:0;background:var(--bg);color:var(--fg);
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;
@@ -328,6 +452,41 @@ main{position:relative;z-index:1;flex:1;display:flex;min-height:0}
 .inline-code{font-family:ui-monospace,Consolas,monospace;font-size:.92em;
   padding:1px 5px;border-radius:4px;background:var(--inline-bg);
   border:1px solid var(--inline-bd);color:var(--inline-fg)}
+
+/* ============================================================
+   生成进度条（DSH 式状态行）—— 参考DeepSeek Harness：
+   任务跑的时候输入框下一条极简状态行：阶段 / tok/s / 缓存命中 /
+   上下文占用。任务结束隐藏。数据来自 state.speed / cacheHit / ctxUsed。
+   ============================================================ */
+.genbar{display:flex;align-items:center;justify-content:center;gap:12px;
+  margin:7px auto 0;padding:0 12px;font-size:11.5px;color:var(--dim);
+  max-width:900px;flex-wrap:wrap}
+.genbar.hide{display:none}
+.gb-it{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.gb-it svg{width:11px;height:11px;stroke:currentColor;fill:none;
+  stroke-width:2;stroke-linecap:round;stroke-linejoin:round;opacity:.7}
+.gb-it b{color:var(--fg);font-weight:600}
+.gb-sep{width:1px;height:10px;background:var(--line2);flex-shrink:0}
+.gb-run{color:var(--run)}
+
+/* ============================================================
+   内嵌模型输出（DSH）：任务卡里一条「模型输出」折叠行，
+   点开展开看实时吐字。默认隐藏，只在 DSH 主题显示
+   （其他主题用悬浮窗 #streamOut，见下面 DSH 段的 display:none）。
+   ============================================================ */
+.live-stream{display:none;margin-top:10px;border:1px solid var(--line);
+  border-radius:10px;background:var(--panel2);overflow:hidden}
+.live-stream .ls-row{display:flex;align-items:center;gap:8px;padding:8px 12px;
+  font-size:12px;color:var(--dim);cursor:pointer;user-select:none}
+.live-stream .ls-row:hover{color:var(--fg)}
+.live-stream .ls-label{flex:1}
+.live-stream .ls-fold{font-size:11px;opacity:.8}
+.live-stream .ls-body{display:none;max-height:180px;overflow-y:auto;
+  padding:2px 12px 10px;font-family:ui-monospace,Consolas,monospace;
+  font-size:11px;color:var(--code-fg);white-space:pre-wrap;word-break:break-word;
+  line-height:1.5}
+.live-stream.open .ls-body{display:block}
+[data-theme="dsh"] .live-stream{display:block}
 
 .live-box{border:1px solid var(--line);border-radius:var(--radius-lg);
   background:var(--panel);margin-bottom:13px;overflow:hidden;
@@ -1785,6 +1944,7 @@ header button.ghost:hover{background:var(--panel3);border-color:var(--line2)}
     <button data-theme-btn="light">浅色</button>
     <button data-theme-btn="dark">深色</button>
     <button data-theme-btn="glass">液态玻璃</button>
+    <button data-theme-btn="dsh">DSH</button>
   </div>
   <button id="btnModel" class="ghost">模型</button>
   <button id="btnQueue" class="ghost">队列</button>
@@ -1941,6 +2101,18 @@ header button.ghost:hover{background:var(--panel3);border-color:var(--line2)}
         <span>Enter 发送</span>
         <span>Shift+Enter 换行</span>
         <span id="hintStatus"></span>
+      </div>
+      <!-- 生成进度条（参考 DeepSeek Harness 的底部状态行）：
+           任务跑的时候显示 阶段 / tok/s / 缓存命中 / 上下文占用，
+           任务结束就隐藏。所有主题都有，数据来自 state.speed / cacheHit / ctxUsed。 -->
+      <div class="genbar hide" id="genBar">
+        <span class="gb-it gb-run"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg><span id="gbPhase">—</span></span>
+        <span class="gb-sep"></span>
+        <span class="gb-it"><svg viewBox="0 0 24 24"><path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z"/></svg><span id="gbSpeed">—</span></span>
+        <span class="gb-sep"></span>
+        <span class="gb-it"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg><span id="gbCache">—</span></span>
+        <span class="gb-sep"></span>
+        <span class="gb-it"><svg viewBox="0 0 24 24"><path d="M12 21a9 9 0 1 1 9-9"/><path d="M12 12l5-3"/></svg><span id="gbCtx">—</span></span>
       </div>
     </div>
   </section>
@@ -2154,7 +2326,7 @@ function fallbackCopy(txt){
 }
 
 /* ---------- 主题 ---------- */
-var THEMES = ['light','dark','glass'];
+var THEMES = ['light','dark','glass','dsh'];
 function applyTheme(name){
   if (THEMES.indexOf(name) < 0) name = 'dark';
   document.documentElement.setAttribute('data-theme', name);
@@ -2163,7 +2335,60 @@ function applyTheme(name){
   for (var i=0;i<btns.length;i++){
     btns[i].className = (btns[i].getAttribute('data-theme-btn') === name) ? 'on' : '';
   }
+  // DSH 是一套重排的 UI，不只是换色：
+  //   · 左栏卡片收成扁平列表（工作区默认展开，其余点开）
+  //   · 模型输出悬浮窗退役，输出走任务卡里的内嵌行
+  applyDshDrawer(name === 'dsh');
+  if (name === 'dsh') {
+    hideStreamPanel();
+  } else if (curState && curState.status === 'running') {
+    // 切回其他主题：浮窗接回来（内容还在 stNode 里，无缝）
+    showStreamPanel();
+  }
 }
+
+/* DSH 抽屉重排：给每个 side-block 绑折叠，工作区默认展开。
+   切回其他主题时移除 closed，恢复卡片全展开的样子。
+   绑定只做一次（h3 上有标记），折叠类名随主题切换加/删。 */
+function applyDshDrawer(on){
+  var blocks = document.querySelectorAll('.side-block');
+  for (var i=0;i<blocks.length;i++){
+    var b = blocks[i];
+    var h = b.querySelector('h3');
+    if (h && !h.getAttribute('data-dsh-bound')){
+      h.setAttribute('data-dsh-bound','1');
+      h.addEventListener('click', function(){
+        if (document.documentElement.getAttribute('data-theme') === 'dsh'){
+          this.parentElement.classList.toggle('closed');
+        }
+      });
+    }
+    if (on){
+      if (!b.classList.contains('dsh-init')){
+        b.classList.add('dsh-init');
+        // 工作区像 DSH 的会话列表一样默认展开，其余收起
+        if (!(h && /工作区/.test(h.textContent))) b.classList.add('closed');
+      }
+    } else {
+      b.classList.remove('closed');
+    }
+  }
+}
+
+/* DSH 步骤折叠：点步骤行展开/收起想法和返回（像 DSH 的「执行了命令」）。
+   事件委托挂在 document 上，步骤列表每次重建也不用重新绑。 */
+document.addEventListener('click', function(e){
+  if (document.documentElement.getAttribute('data-theme') !== 'dsh') return;
+  var t = e.target;
+  while (t && t !== document) {
+    if (t.classList && t.classList.contains('step-act')) {
+      var stp = t.closest('.step');
+      if (stp) stp.classList.toggle('open');
+      return;
+    }
+    t = t.parentNode;
+  }
+});
 (function initTheme(){
   var saved = 'dark';
   try { saved = localStorage.getItem('nafx-theme') || 'dark'; } catch(e){}
@@ -2509,6 +2734,60 @@ function toggleThink(el){
   el.textContent = open ? '收起' : '展开';
 }
 
+/* ============================================================
+   生成进度条（DSH 式状态行）。
+   数据源：
+   ① phase     —— state.phase，agent 每 1.5 秒覆盖写
+   ② tok/s     —— state.speed（生成中是字符增量估，一步结束被
+                  timings.predicted_per_second 覆盖成真实值）；
+                  state 里没有就退回「最近一步 tok/sec」
+   ③ 缓存命中  —— state.cacheHit（timings.cache_n/(cache_n+prompt_n)）
+   ④ 上下文    —— state.ctxUsed / contextPerSlot
+   所有主题都显示；任务没在跑就整条隐藏、把 hint 露出来。
+   ============================================================ */
+function refreshGenbar(st){
+  var bar = $('genBar');
+  if (!bar) return;
+  var running = (st && st.status === 'running');
+  bar.classList.toggle('hide', !running);
+  var hint = document.querySelector('.composer .hint');
+  if (hint) hint.style.visibility = running ? 'hidden' : '';
+  if (!running) return;
+
+  $('gbPhase').textContent = st.phase || '正在准备请求…';
+
+  var sp = (typeof st.speed === 'number' && st.speed > 0) ? st.speed : 0;
+  var spdTxt = '';
+  if (sp > 0) {
+    spdTxt = sp.toFixed(1) + ' tok/s';
+  } else {
+    // 兜底：拿最近一步的 tok/sec 估。从后往前找第一个有数据的步骤。
+    var arr = st.steps || [];
+    for (var i = arr.length - 1; i >= 0; i--) {
+      var s = arr[i];
+      if (s && s.sec > 0.3 && s.tok > 0) {
+        spdTxt = (s.tok / s.sec).toFixed(1) + ' tok/s';
+        break;
+      }
+    }
+  }
+  $('gbSpeed').innerHTML = spdTxt ? '<b>' + spdTxt + '</b>' : '<b>—</b>';
+
+  var ch = (typeof st.cacheHit === 'number' && st.cacheHit > 0) ? st.cacheHit : null;
+  $('gbCache').innerHTML = (ch !== null)
+    ? '缓存命中 <b>' + ch.toFixed(1) + '%</b>'
+    : '缓存 <b>—</b>';
+
+  var sys = window.__lastSys;
+  var per = (sys && sys.contextPerSlot) ? sys.contextPerSlot : 0;
+  if (per > 0 && st.ctxUsed > 0) {
+    var pct = Math.min(100, Math.round(st.ctxUsed / per * 100));
+    $('gbCtx').innerHTML = '上下文 <b>' + pct + '%</b>';
+  } else {
+    $('gbCtx').innerHTML = '上下文 <b>—</b>';
+  }
+}
+
 function liveBox(st){
   if (!st || !st.task) return '';
   var active = (st.status === 'running');
@@ -2544,6 +2823,15 @@ function liveBox(st){
     '<span class="step-sec">' + esc(st.phase||'') + ' · ' + (st.step||0) + '/' + (st.maxSteps||0) +
     ' · ' + fmtTime(st.elapsed) + '</span></div>' +
     body +
+    /* 内嵌模型输出（DSH）：实时吐字直接长在任务卡里。
+       悬浮窗（#streamOut）在 DSH 下退役，这里就是它的替身 ——
+       renderStream 会同时往两处写，切主题时内容无缝跟着走。 */
+    '<div class="live-stream">' +
+    '<div class="ls-row" onclick="toggleInlineStream(event)">' +
+    '<span class="ls-label">模型输出</span>' +
+    '<span class="ls-fold">展开</span></div>' +
+    '<div class="ls-body"><span class="ls-txt"></span><span class="st-caret">▍</span></div>' +
+    '</div>' +
     '</div>';
 }
 
@@ -2669,6 +2957,16 @@ function toggleStreamFold(e){
   if (tag) tag.textContent = collapsed ? '收起' : '展开';
 }
 
+/* DSH 内嵌输出行的展开/收起。行内文字由 renderStream 统一写，这里只切显隐。 */
+function toggleInlineStream(e){
+  if (e) e.stopPropagation();
+  var el = document.querySelector('.live-stream');
+  if (!el) return;
+  el.classList.toggle('open');
+  var tag = el.querySelector('.ls-fold');
+  if (tag) tag.textContent = el.classList.contains('open') ? '收起' : '展开';
+}
+
 function renderStream(){
   // 不在这里判断有没有内容 —— 回合在跑浮窗就该亮着，
   // 哪怕模型还在思考、一个字都没吐。空的时候写一句状态。
@@ -2695,6 +2993,18 @@ function renderStream(){
   }
   if (stNode.firstChild) stNode.firstChild.nodeValue = shown;
   else stNode.appendChild(document.createTextNode(shown));
+  // DSH 的内嵌输出行：和悬浮窗写同样的内容。
+  // 用 textNode.appendData 同款套路（整块替换 nodeValue），不做 innerHTML 解析。
+  var inl = document.querySelector('.live-stream .ls-txt');
+  if (inl) {
+    if (inl.firstChild) inl.firstChild.nodeValue = shown;
+    else inl.appendChild(document.createTextNode(shown));
+  }
+  var ib = document.querySelector('.live-stream');
+  if (ib && ib.classList.contains('open')) {
+    var ibb = ib.querySelector('.ls-body');
+    if (ibb && ibb.scrollHeight > ibb.clientHeight) ibb.scrollTop = ibb.scrollHeight;
+  }
   // 配色只在类型变化时改，避免每帧改 class 触发样式重算
   var body = el.querySelector('.st-body');
   if (body) {
@@ -2986,6 +3296,7 @@ function renderFlow(sess, st){
     $('hIntent').innerHTML = '意图 <b>' + (INTENT_TEXT[st.intent] || st.intent || '—') + '</b>';
     $('hSlot').innerHTML = '步骤 <b>' + (st.step||0) + '/' + (st.maxSteps||0) + '</b>';
     $('hQueue').innerHTML = '用时 <b>' + fmtTime(st.elapsed) + '</b>';
+    refreshGenbar(st);
   }
 
   curSession = sess || [];
@@ -3400,9 +3711,15 @@ function tick(){
       // 之前靠 .stream-out:empty 自动隐藏，模型思考的几十秒里一个字都不吐，
       // 浮窗就消失了 —— 用户以为它挂了。现在只看 status，不看有没有内容。
       // 模型抽屉开着的时候不显示浮窗 —— 抽屉里看得更全，浮窗只会挡住内容
+      // DSH 主题下浮窗退役（输出嵌进任务卡的 .live-stream），renderStream 照跑，
+      // 内容写到内嵌行里；切回其他主题时浮窗原样接回来。
       var mdo = $('modelDrawer');
       var drawerOn = !!(mdo && mdo.className.indexOf('on') >= 0);
-      if (busy && !drawerOn) { showStreamPanel(); renderStream(); }
+      var dshNow = (document.documentElement.getAttribute('data-theme') === 'dsh');
+      if (busy) {
+        renderStream();
+        if (!drawerOn && !dshNow) { showStreamPanel(); } else { hideStreamPanel(); }
+      }
       else { hideStreamPanel(); }
       if (mdo && drawerOn) { renderModelDrawer(); }
       // 模型抽屉开着的话，跟着刷新（原始输出 + 翻译）

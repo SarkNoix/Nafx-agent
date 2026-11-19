@@ -893,6 +893,18 @@ function Write-LivePhase {
         } else {
             $phase = '正在连接模型…'
         }
+        # 实时吐字速度：按两次调用之间的字符增量估 tok/s（1.47 字 ≈ 1 tok）。
+        # 真实值要等这一步结束（timings 里的 predicted_per_second 会覆盖它），
+        # 但生成中的几十秒里面板就能看到会动的速度，而不是干等。
+        $now = Get-Date
+        if ($script:LivePrevT -and $Chars -gt $script:LivePrevChars) {
+            $dt = ($now - $script:LivePrevT).TotalSeconds
+            if ($dt -ge 0.5) {
+                $script:LiveState.speed = [math]::Round((($Chars - $script:LivePrevChars) / 1.47) / $dt, 1)
+            }
+        }
+        $script:LivePrevT = $now
+        $script:LivePrevChars = $Chars
         $script:LiveState.phase = $phase
         if ($script:LiveClock) { $script:LiveState.elapsed = [double]$script:LiveClock.Elapsed.TotalSeconds }
         # 直接覆盖写，不走 Write-State —— 那边还要序列化 steps，每 1.5 秒做一次太重。
@@ -932,6 +944,10 @@ function Invoke-Model {
                 ',"max_tokens":' + $(if ($MaxTokens -gt 0) { $MaxTokens } else { [int]$Cfg.maxTokens }) +
                 ',"tools":' + $ToolsJson +
                 ',"tool_choice":' + $choice +
+                # include_usage：llama-server 会在最后一个 chunk 里带 usage + timings。
+                # timings 里有真实的 predicted_per_second（tok/s）和 cache_n/prompt_n（缓存命中），
+                # 面板进度条要显示的就是这两个数 —— 不用再拿字符数瞎估。
+                ',"stream_options":{"include_usage":true}' +
                 ',"stream":true}'
     $bytes = [Text.Encoding]::UTF8.GetBytes($jsonBody)
 
@@ -943,6 +959,8 @@ function Invoke-Model {
     # 拼起来才完整 —— 这正好就是「模型一个字一个字写参数」的样子。
     # 纯文本回答（finish / 闲聊）分片是 content，直接显示。
     $sw = [Diagnostics.Stopwatch]::StartNew()
+    # 每次请求前清掉上一步的 timings，别把上一步的命中当成这一步的。
+    $script:LastTimings = $null
     $resp = $null
     $reader = $null
     $acc = ''
@@ -981,6 +999,10 @@ function Invoke-Model {
 
                 $chunk = $null
                 try { $chunk = $payload | ConvertFrom-Json } catch { continue }
+                # usage/timings chunk 没有 choices —— 在这里抓走再 continue，别丢。
+                # llama-server 开了 include_usage 后最后一块带 timings：
+                # predicted_per_second = 真 tok/s；cache_n/(cache_n+prompt_n) = 真缓存命中率。
+                if ($chunk.timings) { $script:LastTimings = $chunk.timings }
                 if (-not $chunk.choices) { continue }
                 $d = $chunk.choices[0].delta
                 if ($chunk.choices[0].finish_reason) { $finishReason = [string]$chunk.choices[0].finish_reason }
@@ -1051,6 +1073,25 @@ function Invoke-Model {
     if ($reader) { try { $reader.Close() } catch { } }
     if ($resp) { try { $resp.Close() } catch { } }
     $sw.Stop()
+
+    # ---- 把真实 timings 写进 LiveState（面板进度条的数据源）----
+    # 有 timings（include_usage 生效）就用真实值：
+    #   speed    = predicted_per_second，真 tok/s
+    #   cacheHit = cache_n / (cache_n + prompt_n) * 100，真缓存命中率
+    # 没有（旧版 llama-server / 请求失败）就保留字符估的 live 速度，cacheHit 留 0。
+    if ($script:LastTimings -and $script:LiveState) {
+        try {
+            $t = $script:LastTimings
+            if ($t.predicted_per_second) {
+                $script:LiveState.speed = [math]::Round([double]$t.predicted_per_second, 1)
+            }
+            $cn = 0.0; if ($t.cache_n)   { $cn = [double]$t.cache_n }
+            $pn = 0.0; if ($t.prompt_n)  { $pn = [double]$t.prompt_n }
+            if (($cn + $pn) -gt 0) {
+                $script:LiveState.cacheHit = [math]::Round($cn / ($cn + $pn) * 100, 1)
+            }
+        } catch { }
+    }
 
     # ---- 把分片拼成调用 ----
     $calls = @()
@@ -1847,6 +1888,10 @@ $state = [pscustomobject]@{
     ctxTools   = [int](Get-CtxTokens $toolsJson)
     ctxHistory = 0
     ctxUsed    = [int](Get-CtxTokens $sysFull) + [int](Get-CtxTokens $toolsJson)
+    # 生成进度条（DSH 式状态行）用：speed=tok/s，cacheHit=缓存命中百分比。
+    # 每次模型请求后会被真实 timings 覆盖（见 Invoke-Model 末尾）。
+    speed      = 0
+    cacheHit   = 0
     phase     = '准备'
 }
 Write-State $state
