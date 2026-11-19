@@ -1760,11 +1760,12 @@ if ($Mode -eq 'auto') {
         "**先拆，再排，再做。**" + "`n" +
         "① 拆：这件事能分成哪几步？每步的产出是什么（一个文件？一段输出？一个结论？）。" + "`n" +
         "② 排：哪步必须先做（后一步要读前一步的产出）？能并的先并。" + "`n" +
-        "③ 做：一次只做一步，做完马上验证 —— 写文件就回读，跑命令就看输出。" + "`n" +
+        "③ 做：一次只做一步。**验证看成本**：跑命令就看输出、写脚本就跑一遍，这些必须验证；" + "`n" +
+        "``write_file`` 写完**不用**回读 —— 工具返回值已经告诉你写进去没有，再读一遍是白烧一步（一步约 10 秒）。" + "`n" +
         "验证不过就回头改，不要在错的基础上继续往下堆。" + "`n" +
-        "**第一步必须是 ``plan``，不是 ``think``。** 把①②的结果写进 plan 的 steps，然后才开始动手。" + "`n" +
-        "注意：``plan`` 是一个工具调用，和 ``think`` 一样在 tool_calls 里调，不是在文字里写计划。" + "`n" +
-        "漏了 ``plan`` 直接动手，就等于没计划 —— 做到一半才发现步骤不对，只能推倒重来。" + "`n" +
+        "**两步以上才 ``plan``。** 一步能干完的（建个文件、读个文件、改一句话）直接做，" +
+        "别为了走流程先列计划 —— plan 本身也是一次完整生成，对单步任务是纯开销。" + "`n" +
+        "``plan`` 是工具调用，和 ``think`` 一样在 tool_calls 里调，不是在文字里写计划。" + "`n" +
         "之后每做完一步，在 ``think`` 里写一句「刚才这步成没成、下一步做什么」。" + "`n" +
         "有现成技能（``skill list``）能用的优先用技能，别自己造轮子。"
     Write-Log '  模式：工作（要求先列计划）'
@@ -2393,7 +2394,14 @@ Add-SessionNote -Text $bcSay -Kind 'say'
     # steps 已经不为空了，拦截条件直接失效，plan 永远等不到。
     # 正确的判据：这个任务到现在为止，有没有真的 plan 过。
     $hasPlan = ($state.plan -and ([string]$state.plan).Trim())
-    if ($Mode -eq 'work' -and -not $hasPlan -and
+    # 单步任务不强制 plan（2026-11-19）：
+    # 一个「建个文件、写句话」也要先 plan 一次，等于白多一次完整生成
+    # （冷启动约 30 秒、热的时候约 8 秒），用户体感就是「点了发送先卡住」。
+    # 判据故意保守：短 + 没有多步连接词。拿不准就照旧强制 ——
+    # 宁可多花一步，也不要让复杂任务没计划就跑偏。
+    $script:SimpleTask = ($TaskText.Length -le 40) -and
+        ($TaskText -notmatch '然后|接着|并且|分别|每个|所有|批量|逐个|整理|归类|清理')
+    if ($Mode -eq 'work' -and -not $hasPlan -and -not $script:SimpleTask -and
         $toolName -notin @('plan', 'think', 'finish', 'web_search')) {
         $script:planNudge = [int]$script:planNudge + 1
         if ($script:planNudge -le 2) {
@@ -2428,7 +2436,7 @@ Add-SessionNote -Text $bcSay -Kind 'say'
     # 直接查比先纠结强，不拦。
     $anyStep = ($state.steps.Count -gt 0)
     # plan 也豁免：工作模式下第一步就该是 plan，不是 think。
-    if (-not $anyStep -and $toolName -notin @('think', 'finish', 'web_search', 'plan')) {
+    if (-not $anyStep -and -not $script:SimpleTask -and $toolName -notin @('think', 'finish', 'web_search', 'plan')) {
         $script:thinkNudge = [int]$script:thinkNudge + 1
         if ($script:thinkNudge -le 2) {
             Write-Log ("  [要求先想] 第 $($script:thinkNudge) 次打回：" + $toolName + " → 先 think")

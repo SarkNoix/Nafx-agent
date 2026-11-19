@@ -76,7 +76,16 @@ if (-not (Test-AiUp)) {
     try {
         $memScript = Join-Path $Root 'scripts\nafx-memory.ps1'
         if (Test-Path $memScript) {
-            $memOut = & powershell -NoProfile -ExecutionPolicy Bypass -File $memScript -ForLauncher 2>$null
+            # 不能直接写 `& powershell`：有些会话的 PATH 里没有
+            # System32\WindowsPowerShell\v1.0（实测就踩过，脚本静默回退成
+            # 配置里的固定值，KV 档位永远选不对）。先按名字找，找不到用全路径。
+            $memExe = $null
+            try { $memExe = (Get-Command powershell -ErrorAction SilentlyContinue).Source } catch { }
+            if (-not $memExe) {
+                $cand = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+                if (Test-Path $cand) { $memExe = $cand }
+            }
+            $memOut = & $memExe -NoProfile -ExecutionPolicy Bypass -File $memScript -ForLauncher 2>$null
             $memObj = $null
             try { $memObj = ($memOut | Select-Object -First 1) | ConvertFrom-Json } catch { }
             if ($memObj -and $memObj.context) {
@@ -209,6 +218,24 @@ if (-not (Test-AiUp)) {
         exit 1
     }
     Write-Host ('服务就绪（' + $waited + 's）') -ForegroundColor Green
+
+    # 就绪后立刻在后台把 prompt.md 的前缀灌进 KV 缓存。
+    # 为什么：KV 缓存只活在进程里，重启就清空，而每个任务的第一步
+    # 都要把这 2500 token 从头 prefill（36 tok/s 约 70 秒）——
+    # 用户看到的就是「刚打开 Nafx，第一个任务要等两分多钟」。
+    # 放到后台跑，用户打字的那段时间刚好把它跑完；就算手快，
+    # 任务排在预热后面，总耗时也不比冷启动差。
+    try {
+        $warmScript = Join-Path $Root 'scripts\nafx-warmup.ps1'
+        $warmOn = -not ($Cfg -and ($Cfg.warmupOnStart -eq $false))
+        if ((Test-Path $warmScript) -and $warmOn) {
+            $psExe = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+            if (-not (Test-Path $psExe)) { $psExe = 'powershell.exe' }
+            Start-Process -FilePath $psExe `
+                -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $warmScript, '-Quiet') `
+                -WindowStyle Hidden | Out-Null
+        }
+    } catch { }
 } else {
     Write-Host '服务已在运行' -ForegroundColor Green
 }
