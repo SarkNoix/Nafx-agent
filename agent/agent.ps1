@@ -2994,6 +2994,50 @@ Add-SessionNote -Text $bcSay -Kind 'say'
         }
     }
 
+    # ---- 单步任务直接收尾，不再为 finish 烧一次生成 ----
+    #
+    # SimpleTask（≤40 字、无多步连接词）在提示词层已经不要求 plan 了，
+    # 但模型做完工具后还是会规规矩矩再生成一次 finish 调用 ——
+    # 那是又一次完整生成，一步 8~10 秒，占这种任务总耗时的一半。
+    # 而写文件/建目录/删文件这类动作，结果框架自己就知道
+    # （$obs 第一行就是「已写入 xxx 6 字节」这种确定性结论），
+    # 没必要再让模型复述一遍。
+    #
+    # 只认 4 个结果完全确定的工具。run_cmd / write_script 不在此列 ——
+    # 它们的输出要模型看一眼才能下结论，代收尾会把没验证的东西说成做完。
+    if ($Mode -eq 'work' -and $script:SimpleTask -and $ok -and $planList.Count -eq 0 -and
+        $toolName -in @('write_file', 'append_file', 'make_dir', 'delete_path')) {
+        # 防提前收尾：代收尾的前提是「这个动作做完 = 任务做完」。
+        # 实测会翻车的场景：「在 test 目录里写个 a.txt」——先 make_dir 再 write_file，
+        # 如果 make_dir 就代收尾，文件根本还没写。所以：
+        #   ① 任务提到 ≥2 个不同文件名 → 不代收尾（多半是多步活）
+        #   ② 工具是 make_dir 且任务里点了具体文件名 → 不代收尾（后面还有文件要写）
+        $fileMentions = @([regex]::Matches($TaskText, '[\w\-\.]+\.(txt|csv|jsonl|json|md|ps1|bat|log)') |
+                          ForEach-Object { $_.Value } | Select-Object -Unique)
+        $canAutoFinish = $true
+        if ($fileMentions.Count -ge 2) { $canAutoFinish = $false }
+        if ($toolName -eq 'make_dir' -and $fileMentions.Count -ge 1) { $canAutoFinish = $false }
+        if ($canAutoFinish) {
+        # 回答用上面播报的那句（「写好了 xxx」），干净；
+        # obs 第一行有时会把模型的 think 带进来，不直接用。
+        $answer = ''
+        if ($bcLine) { $answer = [string]$bcLine }
+        if (-not $answer) { $answer = (($obs -split "`n")[0]).Trim() }
+        if ($answer.Length -gt 200) { $answer = $answer.Substring(0, 200) + '…' }
+        $state.status = 'done'
+        $state.answer = $answer
+        $state.elapsed = $clock.Elapsed.TotalSeconds
+        $state.summary = $answer
+        $state.steps += @{ n = $step; think = $think; tool = 'finish'; arg = ''; ok = $true
+                           note = $answer; raw = ''; obs = '（框架代收尾：单步任务工具已成功，跳过 finish 生成）'; sec = 0 }
+        Write-State $state
+        Write-Log ('  [代收尾] 单步任务 ' + $toolName + ' 已成功，跳过 finish 生成：' + $answer)
+        Write-Closing -State $state -Status 'done' -Summary $state.summary -StepCount $step
+        $finished = $true
+        break
+        }
+    }
+
     # ---- 同一个文件别挪两次 ----
     #
     # 实测「按类型归类」：calc.ps1 被挪了 3 次（scripts\calc.ps1 → 脚本\calc.ps1 → 脚本\calc.ps1），
