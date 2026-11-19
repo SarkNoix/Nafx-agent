@@ -118,7 +118,7 @@
 [data-theme="dsh"],[data-theme="dsh-dark"]{
   --bg:#f2f4f7; --bg2:#eef0f4;
   --panel:#ffffff; --panel2:#f5f7fa; --panel3:#eceff4;
-  --fg:#262629; --dim:#84868c; --faint:#a3a7ae;
+  --fg:#262629; --dim:#6d717a; --faint:#8e939c;
   --line:#e5e8ec; --line2:#d8dce2;
   --accent:#4d6bfe; --accent2:#4d6bfe;
   --ok:#0ea35e; --warn:#c47c10; --err:#d93b3b; --run:#2f7ce0;
@@ -283,11 +283,25 @@ html[data-theme="dsh"],[data-theme="dsh-dark"]{background:#f2f4f7}
 [data-theme="dsh"],[data-theme="dsh-dark"] .fgroup-h:hover{background:#f0f2f6}
 [data-theme="dsh"],[data-theme="dsh-dark"] .fgroup-h .fgl{color:#3a3d44}
 
-/* 抽屉整体拉起：按钮只在 DSH 显示，拉起后侧栏整个让位给对话区 */
-.side-collapse{display:none}
-[data-theme="dsh"],[data-theme="dsh-dark"] .side-collapse{display:inline-block;padding:5px 9px}
-[data-theme="dsh"],[data-theme="dsh-dark"] body.drawer-collapsed .side{display:none}
-[data-theme="dsh"],[data-theme="dsh-dark"] body.drawer-collapsed .side-collapse{margin-left:8px}
+/* ---------- ATC 打磨（第三轮）：怎么舒服怎么来 ---------- */
+/* 悬停底色统一走主题变量，深浅色观感一致 */
+[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step .step-act:hover{background:var(--panel2)}
+[data-theme="dsh"],[data-theme="dsh-dark"] .side-block > h3:hover{background:var(--panel2)}
+[data-theme="dsh"],[data-theme="dsh-dark"] .fgroup-h:hover{background:var(--panel2)}
+[data-theme="dsh"],[data-theme="dsh-dark"] .file-item:hover{background:var(--panel2)}
+/* 侧栏标题更松弛：小字号 + 字距，像目录不像按钮 */
+[data-theme="dsh"],[data-theme="dsh-dark"] .side-block > h3{
+  font-size:12px;font-weight:600;letter-spacing:.4px;color:var(--dim)}
+/* 输入框聚焦光晕收敛：边框为主，光晕淡一档 */
+[data-theme="dsh"],[data-theme="dsh-dark"] .composer textarea:focus{
+  box-shadow:0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent)}
+/* 对话区留白放宽一档，长消息不顶边 */
+[data-theme="dsh"],[data-theme="dsh-dark"] .thread{padding:22px 26px 12px}
+
+/* 抽屉整体拉起（收起侧边栏）：全主题可用，拉起后侧栏整个让位给对话区 */
+.side-collapse{display:inline-block;padding:5px 9px}
+body.drawer-collapsed .side{display:none}
+body.drawer-collapsed .side-collapse{margin-left:8px}
 
 /* 左上角 Nafx 旁边的光球（状态点）在 ATC UI 下去掉 */
 [data-theme="dsh"],[data-theme="dsh-dark"] .brand .dot{display:none}
@@ -318,7 +332,7 @@ html[data-theme="dsh"],[data-theme="dsh-dark"]{background:#f2f4f7}
 [data-theme="dsh"],[data-theme="dsh-dark"] .thread .step .step-act:hover{background:#f7f8fa}
 [data-theme="dsh"],[data-theme="dsh-dark"] .thread .step.open .step-act{border-bottom:none}
 [data-theme="dsh"],[data-theme="dsh-dark"] .thread .step-act .row{font-size:13px;color:#5a5e66;gap:10px}
-[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step-act .row::before{content:'↳';color:#b8bcc4;font-size:13px;flex-shrink:0}
+[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step-act .row::before{content:'↳';color:#9ba1ac;font-size:13px;flex-shrink:0}
 [data-theme="dsh"],[data-theme="dsh-dark"] .thread .step-n{display:none}
 [data-theme="dsh"],[data-theme="dsh-dark"] .thread .step-tool .ti{display:none}
 [data-theme="dsh"],[data-theme="dsh-dark"] .thread .step-tool{background:transparent;border:none;padding:0;color:#3a3d44;
@@ -326,20 +340,20 @@ html[data-theme="dsh"],[data-theme="dsh-dark"]{background:#f2f4f7}
 [data-theme="dsh"],[data-theme="dsh-dark"] .thread .step-tool.bad{background:transparent;border:none;color:#c04a4a}
 [data-theme="dsh"],[data-theme="dsh-dark"] .thread .step-arg{background:transparent;border:none;border-radius:0;
   padding:0;color:#84868c;font-size:12.5px}
-[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step-sec{color:#b0b4bb;font-size:11px}
+[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step-sec{color:#8f95a0;font-size:11px}
 
 /* 想法：纯文本缩进，无底无框无图标 */
 [data-theme="dsh"],[data-theme="dsh-dark"] .thread .step .think-block{background:transparent;border:none;
   padding:0;margin:6px 0 4px 28px}
 [data-theme="dsh"],[data-theme="dsh-dark"] .thread .think-ico{display:none}
-[data-theme="dsh"],[data-theme="dsh-dark"] .thread .think-label{color:#a3a7ae;font-weight:500;font-size:11px}
+[data-theme="dsh"],[data-theme="dsh-dark"] .thread .think-label{color:#878c96;font-weight:500;font-size:11px}
 [data-theme="dsh"],[data-theme="dsh-dark"] .thread .think-body,[data-theme="dsh"],[data-theme="dsh-dark"] .thread .think-full{
-  color:#84868c;font-size:12.5px;line-height:1.75}
+  color:#6d717a;font-size:12.5px;line-height:1.75}
 
 /* 返回：纯文本缩进，无代码块底 */
 [data-theme="dsh"],[data-theme="dsh-dark"] .thread .step .step-obs-wrap{background:transparent;border:none;
   margin:6px 0 4px 28px;padding:0}
-[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step-obs-wrap .label{color:#a3a7ae;font-size:11px;margin-bottom:3px}
+[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step-obs-wrap .label{color:#878c96;font-size:11px;margin-bottom:3px}
 [data-theme="dsh"],[data-theme="dsh-dark"] .thread .step .step-obs{background:transparent;border:none;padding:0;
   color:#84868c;font-size:12px;line-height:1.7;max-height:none}
 [data-theme="dsh"],[data-theme="dsh-dark"] .thread .step .step-obs.bad{background:transparent;border:none;color:#c04a4a}
@@ -1121,6 +1135,21 @@ button:disabled{opacity:.42;cursor:not-allowed;transform:none!important}
 
 /* ---------- 配置：2 列网格 ---------- */
 .cfg-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+/* 模型编译方式（CPU/GPU）：两行选项卡，初始化过才能选 */
+.lm-box{display:flex;flex-direction:column;gap:6px;margin-bottom:8px}
+.lm-opt{
+  display:flex;align-items:center;justify-content:space-between;
+  background:var(--panel3);border:1px solid var(--line);
+  border-radius:var(--radius);padding:8px 10px;cursor:pointer;
+  transition:border-color .16s, background .16s;
+}
+.lm-opt:hover{border-color:var(--line2)}
+.lm-opt.active{border-color:var(--accent);background:color-mix(in srgb, var(--accent) 8%, var(--panel3))}
+.lm-opt .lm-info{display:flex;flex-direction:column;gap:2px;min-width:0}
+.lm-opt .lm-info b{font-size:12px;color:var(--fg);font-weight:600}
+.lm-opt .lm-st{font-size:10.5px;color:var(--faint)}
+.lm-opt.ready .lm-st{color:var(--ok)}
+.lm-opt .ghost.sm{flex-shrink:0}
 .cfg-cell{
   background:var(--panel3);border:1px solid transparent;
   border-radius:var(--radius);padding:7px 9px;
@@ -2050,7 +2079,7 @@ header button.ghost:hover{background:var(--panel3);border-color:var(--line2)}
 html[data-theme="dsh-dark"]{
   --bg:#0d0f12; --bg2:#111318;
   --panel:#16181d; --panel2:#1a1d23; --panel3:#22252c;
-  --fg:#e8eaee; --dim:#8b8f98; --faint:#6b707a;
+  --fg:#e8eaee; --dim:#a2a7b1; --faint:#7f8692;
   --line:#262a31; --line2:#30343c;
   --accent:#5b76ff; --accent2:#5b76ff;
   --ok:#3fae6a; --warn:#d9a53f; --err:#e06c5f; --run:#5b76ff;
@@ -2079,7 +2108,7 @@ html[data-theme="dsh-dark"]{
 [data-theme="dsh-dark"]{
   --bg:#0d0f12; --bg2:#eef0f4;
   --panel:#16181d; --panel2:#1a1d23; --panel3:#eceff4;
-  --fg:#e8eaee; --dim:#8b8f98; --faint:#6b707a;
+  --fg:#e8eaee; --dim:#a2a7b1; --faint:#7f8692;
   --line:#262a31; --line2:#2c3038;
   --accent:#4d6bfe; --accent2:#4d6bfe;
   --ok:#0ea35e; --warn:#c47c10; --err:#d93b3b; --run:#2f7ce0;
@@ -2173,18 +2202,18 @@ html[data-theme="dsh-dark"]{background:#0d0f12}
 [data-theme="dsh-dark"] .cmdchip:hover{border-color:#4d6bfe;color:#e8eaee;background:#161a28}
 [data-theme="dsh-dark"] .thread .step .step-act:hover{background:#1a1d23}
 [data-theme="dsh-dark"] .thread .step-act .row{font-size:13px;color:#9aa0ab;gap:10px}
-[data-theme="dsh-dark"] .thread .step-act .row::before{content:'↳';color:#565b66;font-size:13px;flex-shrink:0}
+[data-theme="dsh-dark"] .thread .step-act .row::before{content:'↳';color:#6e7480;font-size:13px;flex-shrink:0}
 [data-theme="dsh-dark"] .thread .step-tool{background:transparent;border:none;padding:0;color:#c9cdd4;
   font-family:ui-monospace,Consolas,monospace;font-weight:500;font-size:12.5px}
 [data-theme="dsh-dark"] .thread .step-arg{background:transparent;border:none;border-radius:0;
-  padding:0;color:#8b8f98;font-size:12.5px}
-[data-theme="dsh-dark"] .thread .step-sec{color:#565b66;font-size:11px}
-[data-theme="dsh-dark"] .thread .think-label{color:#6b707a;font-weight:500;font-size:11px}
+  padding:0;color:#9aa1ad;font-size:12.5px}
+[data-theme="dsh-dark"] .thread .step-sec{color:#79808c;font-size:11px}
+[data-theme="dsh-dark"] .thread .think-label{color:#8e95a3;font-weight:500;font-size:11px}
 [data-theme="dsh-dark"] .thread .think-body,[data-theme="dsh-dark"] .thread .think-full{
-  color:#8b8f98;font-size:12.5px;line-height:1.75}
-[data-theme="dsh-dark"] .thread .step-obs-wrap .label{color:#6b707a;font-size:11px;margin-bottom:3px}
+  color:#9aa1ad;font-size:12.5px;line-height:1.75}
+[data-theme="dsh-dark"] .thread .step-obs-wrap .label{color:#8e95a3;font-size:11px;margin-bottom:3px}
 [data-theme="dsh-dark"] .thread .step .step-obs{background:transparent;border:none;padding:0;
-  color:#8b8f98;font-size:12px;line-height:1.7;max-height:none}
+  color:#9aa1ad;font-size:12px;line-height:1.7;max-height:none}
 [data-theme="dsh-dark"] .thread .live-box .live-head.foldable:hover{background:#1a1d23}
 html[data-theme="dsh-dark"]{background:#0d0f12}
 
@@ -2193,7 +2222,7 @@ html[data-theme="dsh-dark"]{background:#0d0f12}
 html[data-theme="dsh-dark"]{
   --bg:#0d0f12; --bg2:#111318;
   --panel:#16181d; --panel2:#1a1d23; --panel3:#22252c;
-  --fg:#e8eaee; --dim:#8b8f98; --faint:#6b707a;
+  --fg:#e8eaee; --dim:#a2a7b1; --faint:#7f8692;
   --line:#262a31; --line2:#30343c;
   --accent:#5b76ff; --accent2:#5b76ff;
   --ok:#3fae6a; --warn:#d9a53f; --err:#e06c5f; --run:#5b76ff;
@@ -2228,7 +2257,7 @@ html[data-theme="dsh-dark"]{
 [data-theme="dsh-dark"] .step .step-obs-wrap{background:transparent}
 [data-theme="dsh-dark"] .side input[type="text"],
 [data-theme="dsh-dark"] .side select{background:#10131a;color:#e8eaee}
-[data-theme="dsh-dark"] .cmdchip{background:#16181d;border-color:#262a31;color:#8b8f98}</style>
+[data-theme="dsh-dark"] .cmdchip{background:#16181d;border-color:#262a31;color:#9aa1ad}</style>
 </head>
 <body>
 
@@ -2257,7 +2286,7 @@ html[data-theme="dsh-dark"]{
   </div>
   <div class="spacer"></div>
   <button id="btnSide" class="ghost side-toggle">面板</button>
-  <button id="btnDrawer" class="ghost side-collapse" title="拉起 / 展开抽屉">‹</button>
+  <button id="btnDrawer" class="ghost side-collapse" title="收起 / 展开侧边栏">‹</button>
   <div class="theme-switch">
     <button data-theme-btn="light">浅色</button>
     <button data-theme-btn="dark">深色</button>
@@ -2533,6 +2562,19 @@ html[data-theme="dsh-dark"]{
         </select>
       </div>
     </div>
+    <div class="sys-tit">模型编译方式</div>
+    <div class="lm-box" id="lmBox">
+      <div class="lm-opt" data-mode="cpu">
+        <div class="lm-info"><b>CPU 版</b><span class="lm-st" id="lmStCpu">未初始化</span></div>
+        <button class="ghost sm" data-lm-init="cpu">初始化</button>
+      </div>
+      <div class="lm-opt" data-mode="gpu">
+        <div class="lm-info"><b>GPU 版</b><span class="lm-st" id="lmStGpu">未初始化</span></div>
+        <button class="ghost sm" data-lm-init="gpu">初始化</button>
+      </div>
+    </div>
+    <div class="cfg-note">切换前先点对应「初始化」做检测（GPU 版要先把 CUDA 编译的 llama 放进 llama-gpu 文件夹）。当前使用：<span id="lmCur">—</span>，切换后重启服务生效。</div>
+
     <button class="cfg-save" id="cfgSave">保存配置</button>
     <div class="cfg-note">改完要重启服务才生效。不确定填什么，双击项目里的「自动调参.bat」看推荐值。</div>
 
@@ -2674,6 +2716,14 @@ function applyTheme(name){
 /* DSH 抽屉重排：给每个 side-block 绑折叠，工作区默认展开。
    切回其他主题时移除 closed，恢复卡片全展开的样子。
    绑定只做一次（h3 上有标记），折叠类名随主题切换加/删。 */
+function sideKey(b){
+  var h = b.querySelector('h3');
+  return h ? h.textContent.trim() : ('sb' + Array.prototype.indexOf.call(b.parentElement.children, b));
+}
+function loadSideState(){
+  try { return JSON.parse(localStorage.getItem('nafx-side') || '{}') || {}; } catch(e){ return {}; }
+}
+function saveSideState(m){ try { localStorage.setItem('nafx-side', JSON.stringify(m)); } catch(e){} }
 function applyDshDrawer(on){
   var blocks = document.querySelectorAll('.side-block');
   for (var i=0;i<blocks.length;i++){
@@ -2684,16 +2734,29 @@ function applyDshDrawer(on){
       h.addEventListener('click', function(){
         if (atcTheme()){
           this.parentElement.classList.toggle('closed');
+          // 折叠状态立刻落盘：换主题、刷新、重启都不丢
+          var st = loadSideState();
+          st[sideKey(this.parentElement)] = !this.parentElement.classList.contains('closed');
+          saveSideState(st);
         }
       });
     }
     if (on){
-      if (!b.classList.contains('dsh-init')){
-        b.classList.add('dsh-init');
-        // 抽屉里的项目全部默认拉起，点开才摊开
+      // 状态从 localStorage 恢复：切走再切回、刷新页面都是原样。
+      // 没有记录的项目默认拉起（收起，点开才摊开）。
+      var st = loadSideState();
+      var key = sideKey(b);
+      if (Object.prototype.hasOwnProperty.call(st, key)){
+        b.classList.toggle('closed', !st[key]);
+      } else {
         b.classList.add('closed');
       }
     } else {
+      // 切走前把当前折叠状态存下来，回来时恢复
+      var st2 = loadSideState();
+      var key2 = sideKey(b);
+      st2[key2] = !b.classList.contains('closed');
+      saveSideState(st2);
       b.classList.remove('closed');
     }
   }
@@ -5045,8 +5108,78 @@ function loadCfg(){
       }
       var lm = $('cfgLoadMode');
       if (lm && c.loadMode) lm.value = c.loadMode;
+      // 编译方式：配置里的 llamaMode + 初始化状态一起渲染
+      fetch('/api/llama-init?t=' + Date.now())
+        .then(function(r){ return r.ok ? r.json() : null; })
+        .then(function(j){ renderLm(c, (j && j.inited) || {}); })
+        .catch(function(){ renderLm(c, {}); });
     })
     .catch(function(){});
+}
+
+/* ---------- 模型编译方式（CPU/GPU） ---------- */
+function renderLm(cfg, inited){
+  var cur = (cfg && cfg.llamaMode) ? cfg.llamaMode : 'cpu';
+  var c = $('lmCur');
+  if (c) c.textContent = cur === 'gpu' ? 'GPU 版' : 'CPU 版';
+  ['cpu','gpu'].forEach(function(m){
+    var box = document.querySelector('.lm-opt[data-mode="' + m + '"]');
+    if (!box) return;
+    var st = $('lmSt' + (m === 'cpu' ? 'Cpu' : 'Gpu'));
+    var rec = inited && inited[m] ? String(inited[m]) : '';
+    if (st) st.textContent = rec ? ('已初始化 · ' + rec.split('|')[1]) : '未初始化';
+    box.classList.toggle('active', cur === m);
+    box.classList.toggle('ready', !!rec);
+  });
+}
+function bindLm(){
+  var box = $('lmBox');
+  if (!box || box.getAttribute('data-bound')) return;
+  box.setAttribute('data-bound','1');
+  box.addEventListener('click', function(e){
+    var t = e.target.closest ? e.target.closest('[data-lm-init]') : null;
+    if (t){
+      var m = t.getAttribute('data-lm-init');
+      t.disabled = true; t.textContent = '检测中…';
+      fetch('/api/llama-init', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({mode: m})
+      })
+        .then(function(r){ return r.json(); })
+        .then(function(j){
+          toast((j && j.msg) || (j && j.ok ? '初始化通过' : '初始化失败'), !(j && j.ok));
+          loadCfg();
+        })
+        .catch(function(e){ toast('初始化失败：' + e.message, true); })
+        .then(function(){ t.disabled = false; t.textContent = '初始化'; });
+      return;
+    }
+    var opt = e.target.closest ? e.target.closest('.lm-opt') : null;
+    if (!opt) return;
+    var mode = opt.getAttribute('data-mode');
+    var stEl = $('lmSt' + (mode === 'cpu' ? 'Cpu' : 'Gpu'));
+    // 没初始化过的编译版不允许直接选：先点「初始化」做检测
+    if (stEl && stEl.textContent.indexOf('未初始化') === 0){
+      toast(mode.toUpperCase() + ' 版还没初始化，先点右侧「初始化」', true);
+      return;
+    }
+    fetch('/api/config', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({llamaMode: mode})
+    })
+      .then(function(r){ return r.json(); })
+      .then(function(j){
+        if (j && j.ok){
+          toast('已选 ' + mode.toUpperCase() + ' 版，重启服务生效');
+          renderLm({llamaMode: mode}, null);
+        } else {
+          toast((j && j.msg) || '切换失败', true);
+        }
+      })
+      .catch(function(e){ toast('切换失败：' + e.message, true); });
+  });
 }
 
 function saveCfg(){
@@ -5089,6 +5222,7 @@ function saveCfg(){
 function bindCfg(){
   var btn = $('cfgSave');
   if (btn) btn.onclick = saveCfg;
+  bindLm();
   loadCfg();
 }
 if (document.readyState !== 'loading') bindCfg();

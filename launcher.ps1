@@ -23,7 +23,15 @@ function Resolve-AppPath([string]$p) {
 }
 
 $ModelPath = Resolve-AppPath $Cfg.model
-$Server = Join-Path $Root 'llama\llama-server.exe'
+# llama 编译方式：cpu 用 llama\，gpu 用 llama-gpu\。
+# 在面板「设置 → 模型编译方式」里切换（先初始化检测，再选择）。
+$LlamaMode = if ($Cfg.llamaMode) { [string]$Cfg.llamaMode } else { 'cpu' }
+$LlamaDir  = if ($LlamaMode -eq 'gpu') {
+    if ($Cfg.llamaGpuDir) { [string]$Cfg.llamaGpuDir } else { 'llama-gpu' }
+} else {
+    if ($Cfg.llamaCpuDir) { [string]$Cfg.llamaCpuDir } else { 'llama' }
+}
+$Server = Join-Path $Root ($LlamaDir.Trim('\') + '\llama-server.exe')
 $LogDir = Join-Path $Root 'logs'
 $Listen = [string]$Cfg.host
 $Port = [int]$Cfg.port
@@ -123,6 +131,14 @@ if (-not (Test-AiUp)) {
         '--prio', $prio,
         '--timeout', '600'
     )
+
+    # GPU 编译版：默认整模全量进显存（-ngl 99）。
+    # extraArgs 里用户自己写了 -ngl 就以用户的为准，不重复加。
+    if ($LlamaMode -eq 'gpu') {
+        $extraNgls = ''
+        try { if ($prof -and $prof.extraArgs) { $extraNgls = [string]$prof.extraArgs } } catch { }
+        if ($extraNgls -notmatch '-ngl') { $argList += @('-ngl', '99') }
+    }
 
     # KV 缓存量化：这是省内存的关键。fp16 的 KV 很占地方，
     # 压到 8bit 后同样内存能多装 2 倍上下文（4B 模型上质量几乎无感）。

@@ -1070,6 +1070,51 @@ while ($listener.IsListening) {
                     }
                 }
 
+                '/api/llama-init' {
+                    # llama 编译方式（cpu/gpu）的初始化检测：
+                    # 校验对应目录的 llama-server.exe 能跑、版本输出里探测后端。
+                    # 检测通过才允许在面板上选中该模式。
+                    if ($method -eq 'POST') {
+                        $body = Read-Body $ctx.Request
+                        try {
+                            $mode = [string]$body.mode
+                            if ($mode -notin @('cpu','gpu')) { throw 'mode 必须是 cpu 或 gpu' }
+                            $dirName = if ($mode -eq 'gpu') { 'llama-gpu' } else { 'llama' }
+                            $srv = Join-Path $Root ($dirName + '\llama-server.exe')
+                            if (-not (Test-Path $srv)) {
+                                Send-Text -Response $resp -Text ('{"ok":false,"msg":' + (J "没找到 $dirName\llama-server.exe。请先把 $mode 版编译文件放进 $dirName 文件夹再初始化。") + '}') -Code 400
+                                break
+                            }
+                            $verOut = (& $srv --version 2>&1 | Out-String)
+                            if (-not $verOut -or $LASTEXITCODE -ne 0) { throw 'llama-server.exe --version 跑不起来，文件可能不完整' }
+                            $backend = if ($verOut -match 'CUDA|Vulkan|HIP|SYCL') { 'gpu' } else { 'cpu' }
+                            # 通过检测，把初始化时间和后端记进配置
+                            $cur = Get-Content $CfgPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                            $init = @{}
+                            try {
+                                if ($cur.llamaInited) {
+                                    foreach ($p in $cur.llamaInited.PSObject.Properties) { $init[$p.Name] = [string]$p.Value }
+                                }
+                            } catch { }
+                            $init[$mode] = "$backend|$(Get-Date -Format 'yyyy-MM-dd HH:mm')"
+                            $cur | Add-Member -NotePropertyName 'llamaInited' -NotePropertyValue ([pscustomobject]$init) -Force
+                            [IO.File]::WriteAllText($CfgPath, ($cur | ConvertTo-Json -Depth 4), (New-Object Text.UTF8Encoding($false)))
+                            $script:Cfg = $cur
+                            $msg = if ($backend -eq $mode) { "初始化通过（检测到 $($mode.ToUpper()) 后端）" }
+                                   else { "初始化完成，但检测到的后端是 $backend，和 $mode 不一致，谨慎切换" }
+                            Send-Text -Response $resp -Text ('{"ok":true,"msg":' + (J $msg) + ',"backend":' + (J $backend) + '}')
+                        } catch {
+                            Send-Text -Response $resp -Text ('{"ok":false,"msg":' + (J $_.Exception.Message) + '}') -Code 400
+                        }
+                    } else {
+                        $init = [pscustomobject]@{}
+                        try { if ($script:Cfg.llamaInited) { $init = $script:Cfg.llamaInited } } catch { }
+                        $j = ($init | ConvertTo-Json -Compress)
+                        if (-not $j -or $j -eq '{}') { $j = '{}' } else { if ($j -notmatch '^\{') { $j = '{}' } }
+                        Send-Text -Response $resp -Text ('{"ok":true,"inited":' + $j + '}')
+                    }
+                }
+
                 '/api/history' {
                     $list = New-Object System.Collections.ArrayList
                     if (Test-Path $HistFile) {
