@@ -316,6 +316,15 @@ html[data-theme="dsh"]{background:#f2f4f7}
 [data-theme="dsh"] .thread .step .step-obs-wrap{margin:2px 0 4px 26px}
 [data-theme="dsh"] .thread .step .step-obs{background:#f7f8fa;border:1px solid #eef0f3;border-radius:8px}
 
+/* 任务卡也拍平：白卡+灰块会在灰底上露出白边，改成透明分节 + 细线 */
+[data-theme="dsh"] .thread .live-box{background:transparent;border:none;box-shadow:none;
+  border-radius:0;margin-top:10px}
+[data-theme="dsh"] .thread .live-box .live-head{background:transparent;border-radius:0;
+  padding:6px 8px}
+[data-theme="dsh"] .thread .live-box .live-head.foldable:hover{background:#f5f6f8}
+[data-theme="dsh"] .thread .live-box .live-stream{background:transparent;border:none;
+  border-radius:0;margin-top:0;border-top:1px solid #f0f2f5;padding-top:4px}
+
 *{box-sizing:border-box}
 html,body{height:100%}
 /* html 也给一层底色：玻璃主题时视口不会露出默认白底 */
