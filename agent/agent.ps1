@@ -2984,7 +2984,19 @@ Add-SessionNote -Text $bcSay -Kind 'say'
         }
     }
 
-    $state.phase = "执行 $toolName"
+    # phase 用人话：让面板上的「执行 write_file」变成「编辑文件」等用户看得懂的词
+    $phaseName = switch ($toolName) {
+        'write_file' { '编辑文件' }
+        'read_file'  { '读取文件' }
+        'list_dir'   { '查看目录' }
+        'make_dir'   { '创建目录' }
+        'run_cmd'    { '跑命令' }
+        'think'      { '思考' }
+        'finish'     { '收尾' }
+        'plan'       { '列计划' }
+        default      { "执行 $toolName" }
+    }
+    $state.phase = $phaseName
     Write-State $state
     try {
         $obs = [string](Invoke-AiTool -Action $act)

@@ -115,7 +115,7 @@
    用户浅灰圆角块 / AI 纯白无边框，更像聊天页。
    功能不减：面板、队列、历史、设置、侧栏全部照旧。
    ============================================================ */
-[data-theme="dsh"]{
+[data-theme="dsh"],[data-theme="dsh-dark"]{
   --bg:#f2f4f7; --bg2:#eef0f4;
   --panel:#ffffff; --panel2:#f5f7fa; --panel3:#eceff4;
   --fg:#262629; --dim:#84868c; --faint:#a3a7ae;
@@ -138,219 +138,219 @@
   --blur:none; --panel-alpha:1;
   --radius:12px; --radius-lg:16px;
 }
-html[data-theme="dsh"]{background:#f2f4f7}
+html[data-theme="dsh"],[data-theme="dsh-dark"]{background:#f2f4f7}
 /* 对话收成居中一栏：860px，窄于其他主题的 1180px */
-[data-theme="dsh"] .thread{
+[data-theme="dsh"],[data-theme="dsh-dark"] .thread{
   padding-left:max(22px,calc((100% - 860px)/2));
   padding-right:max(22px,calc((100% - 860px)/2));
 }
-[data-theme="dsh"] .composer-inner,
-[data-theme="dsh"] .cmdbar,
-[data-theme="dsh"] .answer-box{max-width:860px}
+[data-theme="dsh"],[data-theme="dsh-dark"] .composer-inner,
+[data-theme="dsh"],[data-theme="dsh-dark"] .cmdbar,
+[data-theme="dsh"],[data-theme="dsh-dark"] .answer-box{max-width:860px}
 /* 消息：无气泡平铺（DSH 风格），靠 .who 标签和左右对齐区分角色 */
-[data-theme="dsh"] .msg .bubble{
+[data-theme="dsh"],[data-theme="dsh-dark"] .msg .bubble{
   border:none;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;
   background:transparent;border-radius:0;padding:2px 0;
   font-size:14.5px;line-height:1.75}
-[data-theme="dsh"] .msg .wrap{max-width:78%}
-[data-theme="dsh"] .msg.assistant .wrap{max-width:100%}
-[data-theme="dsh"] .msg.user .bubble{color:#4a4d55}
-[data-theme="dsh"] .msg.assistant .bubble{color:#262629}
-[data-theme="dsh"] .msg .who{color:var(--faint);margin-bottom:2px}
+[data-theme="dsh"],[data-theme="dsh-dark"] .msg .wrap{max-width:78%}
+[data-theme="dsh"],[data-theme="dsh-dark"] .msg.assistant .wrap{max-width:100%}
+[data-theme="dsh"],[data-theme="dsh-dark"] .msg.user .bubble{color:#4a4d55}
+[data-theme="dsh"],[data-theme="dsh-dark"] .msg.assistant .bubble{color:#262629}
+[data-theme="dsh"],[data-theme="dsh-dark"] .msg .who{color:var(--faint);margin-bottom:2px}
 /* 顶栏与主题切换：白底上要能看出选中态 */
-[data-theme="dsh"] .theme-switch{background:var(--panel2)}
-[data-theme="dsh"] .theme-switch button.on{background:#fff;box-shadow:0 1px 4px rgba(20,30,50,.10)}
+[data-theme="dsh"],[data-theme="dsh-dark"] .theme-switch{background:var(--panel2)}
+[data-theme="dsh"],[data-theme="dsh-dark"] .theme-switch button.on{background:#fff;box-shadow:0 1px 4px rgba(20,30,50,.10)}
 /* 输入区：白色输入框 + 细边框，发送键品牌蓝 */
-[data-theme="dsh"] .composer{background:#ffffff}
-[data-theme="dsh"] .composer textarea{background:#fff}
-[data-theme="dsh"] .composer textarea:focus{border-color:#4d6bfe;box-shadow:0 0 0 3px rgba(77,107,254,.12)}
+[data-theme="dsh"],[data-theme="dsh-dark"] .composer{background:#ffffff}
+[data-theme="dsh"],[data-theme="dsh-dark"] .composer textarea{background:#fff}
+[data-theme="dsh"],[data-theme="dsh-dark"] .composer textarea:focus{border-color:#4d6bfe;box-shadow:0 0 0 3px rgba(77,107,254,.12)}
 /* 侧栏卡片：白底细线，去掉重阴影 */
-[data-theme="dsh"] .side{background:#f7f8fa;border-right-color:#e5e8ec}
-[data-theme="dsh"] .side-block{background:#fff;border-color:#e9ecef;box-shadow:none}
+[data-theme="dsh"],[data-theme="dsh-dark"] .side{background:#f7f8fa;border-right-color:#e5e8ec}
+[data-theme="dsh"],[data-theme="dsh-dark"] .side-block{background:#fff;border-color:#e9ecef;box-shadow:none}
 
 /* ---------- DSH 重排：模型输出悬浮窗退役 ----------
    输出已经嵌进任务卡的 .live-stream 折叠行，悬浮窗不再出现。 */
-[data-theme="dsh"] #streamOut{display:none!important}
+[data-theme="dsh"],[data-theme="dsh-dark"] #streamOut{display:none!important}
 
 /* ---------- DSH 重排：右侧抽屉（模型 / 队列 / 历史 / 设置）----------
    对齐 DeepSeek Harness：纯白、细分隔线、行式布局，去掉大圆角弹簧动画。 */
-[data-theme="dsh"] .drawer{
+[data-theme="dsh"],[data-theme="dsh-dark"] .drawer{
   background:#fff;border-left-color:#e5e8ec;border-radius:0;
   transition:transform .18s ease-out;box-shadow:-8px 0 30px rgba(20,30,50,.08)}
-[data-theme="dsh"] .drawer-head{padding:14px 20px;border-bottom:1px solid #eef0f3}
-[data-theme="dsh"] .drawer-head h2{font-size:14.5px}
-[data-theme="dsh"] .drawer .ghost{border:none;background:transparent;color:#84868c}
-[data-theme="dsh"] .drawer .ghost:hover{background:#f5f7fa;color:#262629}
+[data-theme="dsh"],[data-theme="dsh-dark"] .drawer-head{padding:14px 20px;border-bottom:1px solid #eef0f3}
+[data-theme="dsh"],[data-theme="dsh-dark"] .drawer-head h2{font-size:14.5px}
+[data-theme="dsh"],[data-theme="dsh-dark"] .drawer .ghost{border:none;background:transparent;color:#84868c}
+[data-theme="dsh"],[data-theme="dsh-dark"] .drawer .ghost:hover{background:#f5f7fa;color:#262629}
 
 /* 模型抽屉：原始输出 / 翻译 两个盒子改成 DSH 式浅灰代码区 */
-[data-theme="dsh"] .mbox{border:1px solid #eef0f3;border-radius:12px;box-shadow:none;background:#fff}
-[data-theme="dsh"] .mbox-head{background:#fafbfc;border-bottom:1px solid #eef0f3;font-size:12px}
-[data-theme="dsh"] .mbox-pre{background:#f7f8fa;border:none;border-radius:0}
+[data-theme="dsh"],[data-theme="dsh-dark"] .mbox{border:1px solid #eef0f3;border-radius:12px;box-shadow:none;background:#fff}
+[data-theme="dsh"],[data-theme="dsh-dark"] .mbox-head{background:#fafbfc;border-bottom:1px solid #eef0f3;font-size:12px}
+[data-theme="dsh"],[data-theme="dsh-dark"] .mbox-pre{background:#f7f8fa;border:none;border-radius:0}
 
 /* 系统信息面板（∑）：白底细线，行式 */
-[data-theme="dsh"] #sysPanel{border-color:#e5e8ec;border-radius:14px;
+[data-theme="dsh"],[data-theme="dsh-dark"] #sysPanel{border-color:#e5e8ec;border-radius:14px;
   box-shadow:0 12px 44px rgba(20,30,50,.14);transition:.16s ease-out}
-[data-theme="dsh"] .sys-row{border-bottom:1px solid #f2f4f7;padding:7px 0}
-[data-theme="dsh"] .sys-row span:last-child{color:#262629}
+[data-theme="dsh"],[data-theme="dsh-dark"] .sys-row{border-bottom:1px solid #f2f4f7;padding:7px 0}
+[data-theme="dsh"],[data-theme="dsh-dark"] .sys-row span:last-child{color:#262629}
 
 /* ---------- DSH 重排：步骤折叠行 ----------
    对齐 DSH 的「执行了命令」：每步一行（序号 + 工具 + 参数 + 秒数），
    点开展开想法和返回，默认收起。其他主题保持现在的全展开。 */
-[data-theme="dsh"] .step{border:1px solid #eef0f3;border-radius:10px;
+[data-theme="dsh"],[data-theme="dsh-dark"] .step{border:1px solid #eef0f3;border-radius:10px;
   background:#fff;margin:0 0 8px;padding:0;overflow:hidden}
-[data-theme="dsh"] .step .step-act{cursor:pointer;padding:7px 10px}
-[data-theme="dsh"] .step .step-act:hover{background:#fafbfc}
-[data-theme="dsh"] .step:not(.open) .think-block,
-[data-theme="dsh"] .step:not(.open) .step-obs-wrap{display:none}
-[data-theme="dsh"] .step.open .step-act{border-bottom:1px solid #f0f2f5}
-[data-theme="dsh"] .step .think-block,
-[data-theme="dsh"] .step .step-obs-wrap{margin:0;padding:8px 12px;border:none;background:#fff}
-[data-theme="dsh"] .step .step-obs{background:#f7f8fa;border:1px solid #eef0f3;border-radius:8px}
+[data-theme="dsh"],[data-theme="dsh-dark"] .step .step-act{cursor:pointer;padding:7px 10px}
+[data-theme="dsh"],[data-theme="dsh-dark"] .step .step-act:hover{background:#fafbfc}
+[data-theme="dsh"],[data-theme="dsh-dark"] .step:not(.open) .think-block,
+[data-theme="dsh"],[data-theme="dsh-dark"] .step:not(.open) .step-obs-wrap{display:none}
+[data-theme="dsh"],[data-theme="dsh-dark"] .step.open .step-act{border-bottom:1px solid #f0f2f5}
+[data-theme="dsh"],[data-theme="dsh-dark"] .step .think-block,
+[data-theme="dsh"],[data-theme="dsh-dark"] .step .step-obs-wrap{margin:0;padding:8px 12px;border:none;background:#fff}
+[data-theme="dsh"],[data-theme="dsh-dark"] .step .step-obs{background:#f7f8fa;border:1px solid #eef0f3;border-radius:8px}
 
 /* ---------- DSH 重排：抽屉（左侧栏）变扁平列表 ----------
    对齐 DSH 左栏：条目行（h3）+ 可折叠内容，行式排列，不再是卡片堆。
    内容全保留：自主模式 / 配置 / 上下文占用 / 工作区 / 工具都在，
    收起时只剩一行标题，点开展开。折叠由 applyDshDrawer() 加 .closed 控制。 */
-[data-theme="dsh"] .side{background:#fbfcfd;border-right:1px solid #e5e8ec;padding:10px;gap:2px}
-[data-theme="dsh"] .side-block{background:transparent;border:none;border-radius:10px;
+[data-theme="dsh"],[data-theme="dsh-dark"] .side{background:#fbfcfd;border-right:1px solid #e5e8ec;padding:10px;gap:2px}
+[data-theme="dsh"],[data-theme="dsh-dark"] .side-block{background:transparent;border:none;border-radius:10px;
   box-shadow:none;padding:0;margin:0 0 2px}
-[data-theme="dsh"] .side-block > h3{
+[data-theme="dsh"],[data-theme="dsh-dark"] .side-block > h3{
   display:flex;align-items:center;gap:6px;margin:0;padding:9px 10px;
   font-size:13px;font-weight:500;color:#262629;cursor:pointer;user-select:none;
   border-radius:8px;transition:background .12s}
-[data-theme="dsh"] .side-block > h3:hover{background:#f0f2f6}
-[data-theme="dsh"] .side-block > h3 .cnt{margin-left:auto}
-[data-theme="dsh"] .side-block > h3::after{content:'▸';font-size:10px;color:#a3a7ae;
+[data-theme="dsh"],[data-theme="dsh-dark"] .side-block > h3:hover{background:#f0f2f6}
+[data-theme="dsh"],[data-theme="dsh-dark"] .side-block > h3 .cnt{margin-left:auto}
+[data-theme="dsh"],[data-theme="dsh-dark"] .side-block > h3::after{content:'▸';font-size:10px;color:#a3a7ae;
   transform:rotate(90deg);transition:transform .15s}
-[data-theme="dsh"] .side-block.closed > h3::after{transform:rotate(0deg)}
-[data-theme="dsh"] .side-block.closed > *:not(h3){display:none}
-[data-theme="dsh"] .side-block > .quote{display:none}
-[data-theme="dsh"] .side-actions{display:flex;flex-direction:column;gap:4px;
+[data-theme="dsh"],[data-theme="dsh-dark"] .side-block.closed > h3::after{transform:rotate(0deg)}
+[data-theme="dsh"],[data-theme="dsh-dark"] .side-block.closed > *:not(h3){display:none}
+[data-theme="dsh"],[data-theme="dsh-dark"] .side-block > .quote{display:none}
+[data-theme="dsh"],[data-theme="dsh-dark"] .side-actions{display:flex;flex-direction:column;gap:4px;
   border:none;padding:8px 2px 0;margin-top:8px;border-top:1px solid #eef0f3}
-[data-theme="dsh"] .side-actions button{background:transparent;border:none;border-radius:8px;
+[data-theme="dsh"],[data-theme="dsh-dark"] .side-actions button{background:transparent;border:none;border-radius:8px;
   padding:8px 10px;font-size:12.5px;color:#5a5e66;text-align:left;justify-content:flex-start}
-[data-theme="dsh"] .side-actions button:hover{background:#f0f2f6;color:#262629}
+[data-theme="dsh"],[data-theme="dsh-dark"] .side-actions button:hover{background:#f0f2f6;color:#262629}
 
 /* ---------- DSH 细节打磨（第二轮 UI）---------- */
 
 /* 顶栏状态胶囊 → 「标签+值」纯文字（DSH 顶栏是极简的，没有灰底胶囊） */
-[data-theme="dsh"] .hbar{gap:14px}
-[data-theme="dsh"] .hbar > span{background:transparent;border:none;padding:2px 2px}
-[data-theme="dsh"] .hbar > span:hover{background:transparent;color:var(--fg)}
-[data-theme="dsh"] .hbar b{color:#262629;font-family:ui-monospace,Consolas,monospace}
+[data-theme="dsh"],[data-theme="dsh-dark"] .hbar{gap:14px}
+[data-theme="dsh"],[data-theme="dsh-dark"] .hbar > span{background:transparent;border:none;padding:2px 2px}
+[data-theme="dsh"],[data-theme="dsh-dark"] .hbar > span:hover{background:transparent;color:var(--fg)}
+[data-theme="dsh"],[data-theme="dsh-dark"] .hbar b{color:#262629;font-family:ui-monospace,Consolas,monospace}
 
 /* 发送键：DSH 的圆形 ↑ 按钮（原来的长条「发送」只在其他主题保留） */
-[data-theme="dsh"] .composer #send{
+[data-theme="dsh"],[data-theme="dsh-dark"] .composer #send{
   width:44px;height:44px;min-width:44px;padding:0;border-radius:50%;
   font-size:0;display:flex;align-items:center;justify-content:center;
   background:#4d6bfe;box-shadow:0 2px 8px rgba(77,107,254,.35)}
-[data-theme="dsh"] .composer #send::before{
+[data-theme="dsh"],[data-theme="dsh-dark"] .composer #send::before{
   content:'↑';font-size:20px;font-weight:700;color:#fff;line-height:1}
-[data-theme="dsh"] .composer #send:hover{background:#3d5bf0;transform:translateY(-1px)}
-[data-theme="dsh"] .composer #send:hover{box-shadow:0 4px 14px rgba(77,107,254,.45)}
-[data-theme="dsh"] .composer #send:active{transform:translateY(0)}
+[data-theme="dsh"],[data-theme="dsh-dark"] .composer #send:hover{background:#3d5bf0;transform:translateY(-1px)}
+[data-theme="dsh"],[data-theme="dsh-dark"] .composer #send:hover{box-shadow:0 4px 14px rgba(77,107,254,.45)}
+[data-theme="dsh"],[data-theme="dsh-dark"] .composer #send:active{transform:translateY(0)}
 
 /* 输入框：DSH 的细边框圆角输入区 */
-[data-theme="dsh"] .composer textarea{
+[data-theme="dsh"],[data-theme="dsh-dark"] .composer textarea{
   border:1px solid #e3e6ec;border-radius:16px;padding:13px 16px;background:#fff}
-[data-theme="dsh"] .composer textarea:focus{
+[data-theme="dsh"],[data-theme="dsh-dark"] .composer textarea:focus{
   border-color:#4d6bfe;box-shadow:0 0 0 3px rgba(77,107,254,.10)}
 
 /* 滚动条：细一点、淡一点 */
-[data-theme="dsh"] ::-webkit-scrollbar{width:6px;height:6px}
-[data-theme="dsh"] ::-webkit-scrollbar-thumb{background:#d8dce2;border-radius:3px}
-[data-theme="dsh"] ::-webkit-scrollbar-thumb:hover{background:#c4c9d1}
-[data-theme="dsh"] ::-webkit-scrollbar-track{background:transparent}
+[data-theme="dsh"],[data-theme="dsh-dark"] ::-webkit-scrollbar{width:6px;height:6px}
+[data-theme="dsh"],[data-theme="dsh-dark"] ::-webkit-scrollbar-thumb{background:#d8dce2;border-radius:3px}
+[data-theme="dsh"],[data-theme="dsh-dark"] ::-webkit-scrollbar-thumb:hover{background:#c4c9d1}
+[data-theme="dsh"],[data-theme="dsh-dark"] ::-webkit-scrollbar-track{background:transparent}
 
 /* 步骤行：去掉左侧 3px 强调条，统一细边框（其他主题保留强调条） */
-[data-theme="dsh"] .step::before{display:none}
+[data-theme="dsh"],[data-theme="dsh-dark"] .step::before{display:none}
 
 /* 侧栏内里控件统一扁平 */
-[data-theme="dsh"] .side input[type="text"],
-[data-theme="dsh"] .side select{
+[data-theme="dsh"],[data-theme="dsh-dark"] .side input[type="text"],
+[data-theme="dsh"],[data-theme="dsh-dark"] .side select{
   border:1px solid #e3e6ec;border-radius:8px;background:#fff;
   color:#262629;font-size:12.5px}
-[data-theme="dsh"] .side input[type="text"]:focus{border-color:#4d6bfe;outline:none}
-[data-theme="dsh"] .auto-status{background:#f7f8fa;border:1px solid #eef0f3;border-radius:8px;color:#84868c}
-[data-theme="dsh"] .auto-status.on{border-color:#b9c6f5;background:#f5f7ff}
-[data-theme="dsh"] .cfg-cell{background:#f7f8fa;border:1px solid #eef0f3;border-radius:8px}
-[data-theme="dsh"] .cfg-cell b{color:#262629;font-weight:600}
-[data-theme="dsh"] .cfg-cell i{color:#84868c}
-[data-theme="dsh"] .file-item{border-radius:8px;transition:background .12s}
-[data-theme="dsh"] .file-item:hover{background:#f0f2f6}
-[data-theme="dsh"] .file-item .fi{display:none}
-[data-theme="dsh"] .fgroup-h{color:#5a5e66;font-size:12px;padding:6px 8px}
-[data-theme="dsh"] .fgroup-h:hover{background:#f0f2f6}
-[data-theme="dsh"] .fgroup-h .fgl{color:#3a3d44}
+[data-theme="dsh"],[data-theme="dsh-dark"] .side input[type="text"]:focus{border-color:#4d6bfe;outline:none}
+[data-theme="dsh"],[data-theme="dsh-dark"] .auto-status{background:#f7f8fa;border:1px solid #eef0f3;border-radius:8px;color:#84868c}
+[data-theme="dsh"],[data-theme="dsh-dark"] .auto-status.on{border-color:#b9c6f5;background:#f5f7ff}
+[data-theme="dsh"],[data-theme="dsh-dark"] .cfg-cell{background:#f7f8fa;border:1px solid #eef0f3;border-radius:8px}
+[data-theme="dsh"],[data-theme="dsh-dark"] .cfg-cell b{color:#262629;font-weight:600}
+[data-theme="dsh"],[data-theme="dsh-dark"] .cfg-cell i{color:#84868c}
+[data-theme="dsh"],[data-theme="dsh-dark"] .file-item{border-radius:8px;transition:background .12s}
+[data-theme="dsh"],[data-theme="dsh-dark"] .file-item:hover{background:#f0f2f6}
+[data-theme="dsh"],[data-theme="dsh-dark"] .file-item .fi{display:none}
+[data-theme="dsh"],[data-theme="dsh-dark"] .fgroup-h{color:#5a5e66;font-size:12px;padding:6px 8px}
+[data-theme="dsh"],[data-theme="dsh-dark"] .fgroup-h:hover{background:#f0f2f6}
+[data-theme="dsh"],[data-theme="dsh-dark"] .fgroup-h .fgl{color:#3a3d44}
 
 /* 抽屉整体拉起：按钮只在 DSH 显示，拉起后侧栏整个让位给对话区 */
 .side-collapse{display:none}
-[data-theme="dsh"] .side-collapse{display:inline-block;padding:5px 9px}
-[data-theme="dsh"] body.drawer-collapsed .side{display:none}
-[data-theme="dsh"] body.drawer-collapsed .side-collapse{margin-left:8px}
+[data-theme="dsh"],[data-theme="dsh-dark"] .side-collapse{display:inline-block;padding:5px 9px}
+[data-theme="dsh"],[data-theme="dsh-dark"] body.drawer-collapsed .side{display:none}
+[data-theme="dsh"],[data-theme="dsh-dark"] body.drawer-collapsed .side-collapse{margin-left:8px}
 
 /* 左上角 Nafx 旁边的光球（状态点）在 ATC UI 下去掉 */
-[data-theme="dsh"] .brand .dot{display:none}
-[data-theme="dsh"] .side-actions button.danger{color:#c04a4a}
-[data-theme="dsh"] .side-actions button.danger:hover{background:#fbf1f1;color:#c04a4a}
+[data-theme="dsh"],[data-theme="dsh-dark"] .brand .dot{display:none}
+[data-theme="dsh"],[data-theme="dsh-dark"] .side-actions button.danger{color:#c04a4a}
+[data-theme="dsh"],[data-theme="dsh-dark"] .side-actions button.danger:hover{background:#fbf1f1;color:#c04a4a}
 
 /* 会话气泡 hover 轻反馈、模式按钮圆润 */
-[data-theme="dsh"] .mode-btn{border-radius:16px}
-[data-theme="dsh"] .mode-btn.on{background:#4d6bfe;border-color:#4d6bfe;box-shadow:0 2px 8px rgba(77,107,254,.30)}
+[data-theme="dsh"],[data-theme="dsh-dark"] .mode-btn{border-radius:16px}
+[data-theme="dsh"],[data-theme="dsh-dark"] .mode-btn.on{background:#4d6bfe;border-color:#4d6bfe;box-shadow:0 2px 8px rgba(77,107,254,.30)}
 
 /* 命令 chip 条（任务下方的步骤索引）：更轻的描边 */
-[data-theme="dsh"] .cmdchip{background:#fff;border-color:#e5e8ec;color:#84868c}
-[data-theme="dsh"] .cmdchip:hover{border-color:#4d6bfe;color:#262629;background:#f5f7ff}
+[data-theme="dsh"],[data-theme="dsh-dark"] .cmdchip{background:#fff;border-color:#e5e8ec;color:#84868c}
+[data-theme="dsh"],[data-theme="dsh-dark"] .cmdchip:hover{border-color:#4d6bfe;color:#262629;background:#f5f7ff}
 
 /* 消息无气泡平铺：加 .thread 提一级优先级，压过任何位置的基样式垫底 */
-[data-theme="dsh"] .thread .msg .bubble{background:transparent;border:none;border-radius:0;
+[data-theme="dsh"],[data-theme="dsh-dark"] .thread .msg .bubble{background:transparent;border:none;border-radius:0;
   box-shadow:none;padding:2px 0}
-[data-theme="dsh"] .thread .msg.fail .bubble{background:transparent;border:none;color:var(--err)}
-[data-theme="dsh"] .thread .msg.thinking .bubble{background:transparent;border:1px dashed var(--line)}
-[data-theme="dsh"] .thread .msg.asking .bubble{background:transparent;border:none;box-shadow:none}
+[data-theme="dsh"],[data-theme="dsh-dark"] .thread .msg.fail .bubble{background:transparent;border:none;color:var(--err)}
+[data-theme="dsh"],[data-theme="dsh-dark"] .thread .msg.thinking .bubble{background:transparent;border:1px dashed var(--line)}
+[data-theme="dsh"],[data-theme="dsh-dark"] .thread .msg.asking .bubble{background:transparent;border:none;box-shadow:none}
 
 /* 步骤行：纯文本化 —— 无盒子、无图标、宽松行距（对齐 DSH 参照） */
-[data-theme="dsh"] .thread .step{border:none;border-radius:0;background:transparent;
+[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step{border:none;border-radius:0;background:transparent;
   margin:0 0 6px;padding:0}
-[data-theme="dsh"] .thread .step:last-child{margin-bottom:2px}
-[data-theme="dsh"] .thread .step .step-act{padding:4px 8px;border-radius:8px;
+[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step:last-child{margin-bottom:2px}
+[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step .step-act{padding:4px 8px;border-radius:8px;
   background:transparent;border:none}
-[data-theme="dsh"] .thread .step .step-act:hover{background:#f7f8fa}
-[data-theme="dsh"] .thread .step.open .step-act{border-bottom:none}
-[data-theme="dsh"] .thread .step-act .row{font-size:13px;color:#5a5e66;gap:10px}
-[data-theme="dsh"] .thread .step-act .row::before{content:'↳';color:#b8bcc4;font-size:13px;flex-shrink:0}
-[data-theme="dsh"] .thread .step-n{display:none}
-[data-theme="dsh"] .thread .step-tool .ti{display:none}
-[data-theme="dsh"] .thread .step-tool{background:transparent;border:none;padding:0;color:#3a3d44;
+[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step .step-act:hover{background:#f7f8fa}
+[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step.open .step-act{border-bottom:none}
+[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step-act .row{font-size:13px;color:#5a5e66;gap:10px}
+[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step-act .row::before{content:'↳';color:#b8bcc4;font-size:13px;flex-shrink:0}
+[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step-n{display:none}
+[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step-tool .ti{display:none}
+[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step-tool{background:transparent;border:none;padding:0;color:#3a3d44;
   font-family:ui-monospace,Consolas,monospace;font-weight:500;font-size:12.5px}
-[data-theme="dsh"] .thread .step-tool.bad{background:transparent;border:none;color:#c04a4a}
-[data-theme="dsh"] .thread .step-arg{background:transparent;border:none;border-radius:0;
+[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step-tool.bad{background:transparent;border:none;color:#c04a4a}
+[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step-arg{background:transparent;border:none;border-radius:0;
   padding:0;color:#84868c;font-size:12.5px}
-[data-theme="dsh"] .thread .step-sec{color:#b0b4bb;font-size:11px}
+[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step-sec{color:#b0b4bb;font-size:11px}
 
 /* 想法：纯文本缩进，无底无框无图标 */
-[data-theme="dsh"] .thread .step .think-block{background:transparent;border:none;
+[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step .think-block{background:transparent;border:none;
   padding:0;margin:6px 0 4px 28px}
-[data-theme="dsh"] .thread .think-ico{display:none}
-[data-theme="dsh"] .thread .think-label{color:#a3a7ae;font-weight:500;font-size:11px}
-[data-theme="dsh"] .thread .think-body,[data-theme="dsh"] .thread .think-full{
+[data-theme="dsh"],[data-theme="dsh-dark"] .thread .think-ico{display:none}
+[data-theme="dsh"],[data-theme="dsh-dark"] .thread .think-label{color:#a3a7ae;font-weight:500;font-size:11px}
+[data-theme="dsh"],[data-theme="dsh-dark"] .thread .think-body,[data-theme="dsh"],[data-theme="dsh-dark"] .thread .think-full{
   color:#84868c;font-size:12.5px;line-height:1.75}
 
 /* 返回：纯文本缩进，无代码块底 */
-[data-theme="dsh"] .thread .step .step-obs-wrap{background:transparent;border:none;
+[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step .step-obs-wrap{background:transparent;border:none;
   margin:6px 0 4px 28px;padding:0}
-[data-theme="dsh"] .thread .step-obs-wrap .label{color:#a3a7ae;font-size:11px;margin-bottom:3px}
-[data-theme="dsh"] .thread .step .step-obs{background:transparent;border:none;padding:0;
+[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step-obs-wrap .label{color:#a3a7ae;font-size:11px;margin-bottom:3px}
+[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step .step-obs{background:transparent;border:none;padding:0;
   color:#84868c;font-size:12px;line-height:1.7;max-height:none}
-[data-theme="dsh"] .thread .step .step-obs.bad{background:transparent;border:none;color:#c04a4a}
+[data-theme="dsh"],[data-theme="dsh-dark"] .thread .step .step-obs.bad{background:transparent;border:none;color:#c04a4a}
 
 /* 任务卡也拍平：白卡+灰块会在灰底上露出白边，改成透明分节 + 细线 */
-[data-theme="dsh"] .thread .live-box{background:transparent;border:none;box-shadow:none;
+[data-theme="dsh"],[data-theme="dsh-dark"] .thread .live-box{background:transparent;border:none;box-shadow:none;
   border-radius:0;margin-top:10px}
-[data-theme="dsh"] .thread .live-box .live-head{background:transparent;border-radius:0;
+[data-theme="dsh"],[data-theme="dsh-dark"] .thread .live-box .live-head{background:transparent;border-radius:0;
   padding:8px}
-[data-theme="dsh"] .thread .live-box .live-head.foldable:hover{background:#f7f8fa}
-[data-theme="dsh"] .thread .live-box .live-stream{background:transparent;border:none;
+[data-theme="dsh"],[data-theme="dsh-dark"] .thread .live-box .live-head.foldable:hover{background:#f7f8fa}
+[data-theme="dsh"],[data-theme="dsh-dark"] .thread .live-box .live-stream{background:transparent;border:none;
   border-radius:0;margin-top:0;border-top:none;padding:2px 0 6px 0}
 
 *{box-sizing:border-box}
@@ -359,7 +359,7 @@ html,body{height:100%}
 html{background:#0b0c0f;transition:background .35s}
 html[data-theme="light"]{background:#f6f7f9}
 html[data-theme="glass"]{background:linear-gradient(135deg,#ffd3e8 0%,#f7b8f0 22%,#c9a6f7 48%,#9d8cf5 72%,#b7a4ff 100%)}
-html[data-theme="dsh"]{background:#f2f4f7}
+html[data-theme="dsh"],[data-theme="dsh-dark"]{background:#f2f4f7}
 body{
   margin:0;background:var(--bg);color:var(--fg);
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;
@@ -618,7 +618,7 @@ main{position:relative;z-index:1;flex:1;display:flex;min-height:0}
   font-size:11px;color:var(--code-fg);white-space:pre-wrap;word-break:break-word;
   line-height:1.5}
 .live-stream.open .ls-body{display:block}
-[data-theme="dsh"] .live-stream{display:block}
+[data-theme="dsh"],[data-theme="dsh-dark"] .live-stream{display:block}
 
 .live-box{border:1px solid var(--line);border-radius:var(--radius-lg);
   background:var(--panel);margin-bottom:13px;overflow:hidden;
@@ -2044,7 +2044,191 @@ header button.ghost:hover{background:var(--panel3);border-color:var(--line2)}
   #btnHist{display:none}
 }
 
-</style>
+
+/* ---------- ATC UI 深色（dsh-dark）：同一套布局，暗色调。
+   布局规则由上面批量扩展的选择器继承，这里覆盖变量和浅色字面量 ---------- */
+html[data-theme="dsh-dark"]{
+  --bg:#0d0f12; --bg2:#111318;
+  --panel:#16181d; --panel2:#1a1d23; --panel3:#22252c;
+  --fg:#e8eaee; --dim:#8b8f98; --faint:#6b707a;
+  --line:#262a31; --line2:#30343c;
+  --accent:#5b76ff; --accent2:#5b76ff;
+  --ok:#3fae6a; --warn:#d9a53f; --err:#e06c5f; --run:#5b76ff;
+  --bubble-user-bg:#1d2026; --bubble-user-bd:#262a31; --bubble-user-fg:#e8eaee;
+  --bubble-ai-bg:transparent; --bubble-ai-bd:transparent;
+  --code-bg:#10131a; --code-bd:#262a31; --code-fg:#c9cdd4;
+  --inline-bg:#1a2030; --inline-bd:#262a31; --inline-fg:#8fa4ff;
+  --shadow:0 4px 18px rgba(0,0,0,.45);
+  --mask:rgba(0,0,0,.5);
+  --primary-fg:#ffffff;
+  --inset-hi:rgba(255,255,255,0);
+  --shadow-sm:0 1px 3px rgba(0,0,0,.4);
+  --ok-bg:rgba(63,174,106,.10); --ok-bd:rgba(63,174,106,.35);
+  --err-bg:rgba(224,108,95,.10); --err-bd:rgba(224,108,95,.35);
+  --run-bg:rgba(91,118,255,.10); --run-bd:rgba(91,118,255,.35);
+  --warn-bg:rgba(217,165,63,.10); --warn-bd:rgba(217,165,63,.35);
+  --blur:none; --panel-alpha:1;
+}/* ============================================================
+   dsh 主题 —— ATC UI（Agentic UI，参考 DeepSeek Harness 风）
+   参考 DeepSeek 官网浅色界面：纯白内容、浅灰蓝底、
+   品牌蓝 #4D6BFE 只做点缀，几乎不要阴影，靠细分隔线分层。
+   渲染上把对话收成居中一栏（约 860px），气泡改成
+   用户浅灰圆角块 / AI 纯白无边框，更像聊天页。
+   功能不减：面板、队列、历史、设置、侧栏全部照旧。
+   ============================================================ */
+[data-theme="dsh-dark"]{
+  --bg:#0d0f12; --bg2:#eef0f4;
+  --panel:#16181d; --panel2:#1a1d23; --panel3:#eceff4;
+  --fg:#e8eaee; --dim:#8b8f98; --faint:#6b707a;
+  --line:#262a31; --line2:#2c3038;
+  --accent:#4d6bfe; --accent2:#4d6bfe;
+  --ok:#0ea35e; --warn:#c47c10; --err:#d93b3b; --run:#2f7ce0;
+  --bubble-user-bg:#1d2026; --bubble-user-bd:#1d2026; --bubble-user-fg:#e8eaee;
+  --bubble-ai-bg:#16181d; --bubble-ai-bd:#16181d;
+  --code-bg:#f6f8fa; --code-bd:#e8ebee; --code-fg:#444b55;
+  --inline-bg:#eff3fb; --inline-bd:#e0e7f5; --inline-fg:#3b5bdb;
+  --shadow:0 4px 18px rgba(20,30,50,.06);
+  --mask:rgba(20,30,50,.32);
+  --primary-fg:#16181d;
+  --inset-hi:rgba(255,255,255,0);
+  --shadow-sm:0 1px 3px rgba(20,30,50,.07);
+  --ok-bg:rgba(14,163,94,.09); --ok-bd:rgba(14,163,94,.30);
+  --err-bg:rgba(217,59,59,.08); --err-bd:rgba(217,59,59,.30);
+  --run-bg:rgba(47,124,224,.09); --run-bd:rgba(47,124,224,.30);
+  --warn-bg:rgba(196,124,16,.09); --warn-bd:rgba(196,124,16,.30);
+  --blur:none; --panel-alpha:1;
+  --radius:12px; --radius-lg:16px;
+}
+html[data-theme="dsh-dark"]{background:#0d0f12}
+[data-theme="dsh-dark"] .msg.user .bubble{color:#9aa0ab}
+[data-theme="dsh-dark"] .msg.assistant .bubble{color:#e8eaee}
+/* 输入区：白色输入框 + 细边框，发送键品牌蓝 */
+[data-theme="dsh-dark"] .composer{background:#16181d}
+/* 侧栏卡片：白底细线，去掉重阴影 */
+[data-theme="dsh-dark"] .side{background:#1a1d23;border-right-color:#262a31}
+/* ---------- DSH 重排：右侧抽屉（模型 / 队列 / 历史 / 设置）----------
+   对齐 DeepSeek Harness：纯白、细分隔线、行式布局，去掉大圆角弹簧动画。 */
+[data-theme="dsh-dark"] .drawer{
+  background:#fff;border-left-color:#262a31;border-radius:0;
+  transition:transform .18s ease-out;box-shadow:-8px 0 30px rgba(20,30,50,.08)}
+[data-theme="dsh-dark"] .drawer-head{padding:14px 20px;border-bottom:1px solid #262a31}
+[data-theme="dsh-dark"] .drawer .ghost{border:none;background:transparent;color:#8b8f98}
+[data-theme="dsh-dark"] .drawer .ghost:hover{background:#1a1d23;color:#e8eaee}
+/* 模型抽屉：原始输出 / 翻译 两个盒子改成 DSH 式浅灰代码区 */
+[data-theme="dsh-dark"] .mbox{border:1px solid #262a31;border-radius:12px;box-shadow:none;background:#fff}
+[data-theme="dsh-dark"] .mbox-head{background:#1a1d23;border-bottom:1px solid #262a31;font-size:12px}
+[data-theme="dsh-dark"] .mbox-pre{background:#1a1d23;border:none;border-radius:0}
+/* 系统信息面板（∑）：白底细线，行式 */
+[data-theme="dsh-dark"] #sysPanel{border-color:#262a31;border-radius:14px;
+  box-shadow:0 12px 44px rgba(20,30,50,.14);transition:.16s ease-out}
+[data-theme="dsh-dark"] .sys-row{border-bottom:1px solid #0d0f12;padding:7px 0}
+[data-theme="dsh-dark"] .sys-row span:last-child{color:#e8eaee}
+/* ---------- DSH 重排：步骤折叠行 ----------
+   对齐 DSH 的「执行了命令」：每步一行（序号 + 工具 + 参数 + 秒数），
+   点开展开想法和返回，默认收起。其他主题保持现在的全展开。 */
+[data-theme="dsh-dark"] .step{border:1px solid #262a31;border-radius:10px;
+  background:#fff;margin:0 0 8px;padding:0;overflow:hidden}
+[data-theme="dsh-dark"] .step .step-act:hover{background:#1a1d23}
+[data-theme="dsh-dark"] .step.open .step-act{border-bottom:1px solid #22252c}
+[data-theme="dsh-dark"] .step .step-obs{background:#1a1d23;border:1px solid #262a31;border-radius:8px}
+/* ---------- DSH 重排：抽屉（左侧栏）变扁平列表 ----------
+   对齐 DSH 左栏：条目行（h3）+ 可折叠内容，行式排列，不再是卡片堆。
+   内容全保留：自主模式 / 配置 / 上下文占用 / 工作区 / 工具都在，
+   收起时只剩一行标题，点开展开。折叠由 applyDshDrawer() 加 .closed 控制。 */
+[data-theme="dsh-dark"] .side{background:#16181d;border-right:1px solid #262a31;padding:10px;gap:2px}
+[data-theme="dsh-dark"] .side-block > h3{
+  display:flex;align-items:center;gap:6px;margin:0;padding:9px 10px;
+  font-size:13px;font-weight:500;color:#e8eaee;cursor:pointer;user-select:none;
+  border-radius:8px;transition:background .12s}
+[data-theme="dsh-dark"] .side-block > h3:hover{background:#1d2026}
+[data-theme="dsh-dark"] .side-block > h3::after{content:'▸';font-size:10px;color:#6b707a;
+  transform:rotate(90deg);transition:transform .15s}
+[data-theme="dsh-dark"] .side-actions{display:flex;flex-direction:column;gap:4px;
+  border:none;padding:8px 2px 0;margin-top:8px;border-top:1px solid #262a31}
+[data-theme="dsh-dark"] .side-actions button{background:transparent;border:none;border-radius:8px;
+  padding:8px 10px;font-size:12.5px;color:#9aa0ab;text-align:left;justify-content:flex-start}
+[data-theme="dsh-dark"] .side-actions button:hover{background:#1d2026;color:#e8eaee}
+[data-theme="dsh-dark"] .hbar b{color:#e8eaee;font-family:ui-monospace,Consolas,monospace}
+/* 输入框：DSH 的细边框圆角输入区 */
+[data-theme="dsh-dark"] .composer textarea{
+  border:1px solid #2c3038;border-radius:16px;padding:13px 16px;background:#fff}
+[data-theme="dsh-dark"] ::-webkit-scrollbar-thumb{background:#2c3038;border-radius:3px}
+[data-theme="dsh-dark"] ::-webkit-scrollbar-thumb:hover{background:#3a3f4a}
+/* 侧栏内里控件统一扁平 */
+[data-theme="dsh-dark"] .side input[type="text"],
+[data-theme="dsh-dark"] .side select{
+  border:1px solid #2c3038;border-radius:8px;background:#fff;
+  color:#e8eaee;font-size:12.5px}
+[data-theme="dsh-dark"] .auto-status{background:#1a1d23;border:1px solid #262a31;border-radius:8px;color:#8b8f98}
+[data-theme="dsh-dark"] .auto-status.on{border-color:#3a4a7a;background:#161a28}
+[data-theme="dsh-dark"] .cfg-cell{background:#1a1d23;border:1px solid #262a31;border-radius:8px}
+[data-theme="dsh-dark"] .cfg-cell b{color:#e8eaee;font-weight:600}
+[data-theme="dsh-dark"] .cfg-cell i{color:#8b8f98}
+[data-theme="dsh-dark"] .file-item:hover{background:#1d2026}
+[data-theme="dsh-dark"] .fgroup-h{color:#9aa0ab;font-size:12px;padding:6px 8px}
+[data-theme="dsh-dark"] .fgroup-h:hover{background:#1d2026}
+[data-theme="dsh-dark"] .fgroup-h .fgl{color:#c9cdd4}
+/* 命令 chip 条（任务下方的步骤索引）：更轻的描边 */
+[data-theme="dsh-dark"] .cmdchip{background:#fff;border-color:#262a31;color:#8b8f98}
+[data-theme="dsh-dark"] .cmdchip:hover{border-color:#4d6bfe;color:#e8eaee;background:#161a28}
+[data-theme="dsh-dark"] .thread .step .step-act:hover{background:#1a1d23}
+[data-theme="dsh-dark"] .thread .step-act .row{font-size:13px;color:#9aa0ab;gap:10px}
+[data-theme="dsh-dark"] .thread .step-act .row::before{content:'↳';color:#565b66;font-size:13px;flex-shrink:0}
+[data-theme="dsh-dark"] .thread .step-tool{background:transparent;border:none;padding:0;color:#c9cdd4;
+  font-family:ui-monospace,Consolas,monospace;font-weight:500;font-size:12.5px}
+[data-theme="dsh-dark"] .thread .step-arg{background:transparent;border:none;border-radius:0;
+  padding:0;color:#8b8f98;font-size:12.5px}
+[data-theme="dsh-dark"] .thread .step-sec{color:#565b66;font-size:11px}
+[data-theme="dsh-dark"] .thread .think-label{color:#6b707a;font-weight:500;font-size:11px}
+[data-theme="dsh-dark"] .thread .think-body,[data-theme="dsh-dark"] .thread .think-full{
+  color:#8b8f98;font-size:12.5px;line-height:1.75}
+[data-theme="dsh-dark"] .thread .step-obs-wrap .label{color:#6b707a;font-size:11px;margin-bottom:3px}
+[data-theme="dsh-dark"] .thread .step .step-obs{background:transparent;border:none;padding:0;
+  color:#8b8f98;font-size:12px;line-height:1.7;max-height:none}
+[data-theme="dsh-dark"] .thread .live-box .live-head.foldable:hover{background:#1a1d23}
+html[data-theme="dsh-dark"]{background:#0d0f12}
+
+/* ---------- ATC UI 深色（dsh-dark）：同一套布局，暗色调。
+   布局规则由上面批量扩展的选择器继承，这里覆盖变量和浅色字面量 ---------- */
+html[data-theme="dsh-dark"]{
+  --bg:#0d0f12; --bg2:#111318;
+  --panel:#16181d; --panel2:#1a1d23; --panel3:#22252c;
+  --fg:#e8eaee; --dim:#8b8f98; --faint:#6b707a;
+  --line:#262a31; --line2:#30343c;
+  --accent:#5b76ff; --accent2:#5b76ff;
+  --ok:#3fae6a; --warn:#d9a53f; --err:#e06c5f; --run:#5b76ff;
+  --bubble-user-bg:#1d2026; --bubble-user-bd:#262a31; --bubble-user-fg:#e8eaee;
+  --bubble-ai-bg:transparent; --bubble-ai-bd:transparent;
+  --code-bg:#10131a; --code-bd:#262a31; --code-fg:#c9cdd4;
+  --inline-bg:#1a2030; --inline-bd:#262a31; --inline-fg:#8fa4ff;
+  --shadow:0 4px 18px rgba(0,0,0,.45);
+  --mask:rgba(0,0,0,.5);
+  --primary-fg:#ffffff;
+  --inset-hi:rgba(255,255,255,0);
+  --shadow-sm:0 1px 3px rgba(0,0,0,.4);
+  --ok-bg:rgba(63,174,106,.10); --ok-bd:rgba(63,174,106,.35);
+  --err-bg:rgba(224,108,95,.10); --err-bd:rgba(224,108,95,.35);
+  --run-bg:rgba(91,118,255,.10); --run-bd:rgba(91,118,255,.35);
+  --warn-bg:rgba(217,165,63,.10); --warn-bd:rgba(217,165,63,.35);
+  --blur:none; --panel-alpha:1;
+}
+/* ---------- ATC UI 深色补漏：短写 #fff 未进映射表的面板底色统一收口 ---------- */
+[data-theme="dsh-dark"] .composer{background:#16181d}
+[data-theme="dsh-dark"] .composer textarea{background:#10131a;color:#e8eaee;caret-color:#e8eaee}
+[data-theme="dsh-dark"] .composer textarea::placeholder{color:#6b707a}
+[data-theme="dsh-dark"] .theme-switch{background:#1d2026;border-color:#262a31}
+[data-theme="dsh-dark"] .theme-switch button{color:#8b8f98}
+[data-theme="dsh-dark"] .theme-switch button:hover{color:#e8eaee}
+[data-theme="dsh-dark"] .theme-switch button.on{background:#2a2f3a;color:#e8eaee;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+[data-theme="dsh-dark"] .side-block{background:transparent}
+[data-theme="dsh-dark"] .drawer{background:#16181d}
+[data-theme="dsh-dark"] .mbox{background:#10131a}
+[data-theme="dsh-dark"] .step{background:transparent}
+[data-theme="dsh-dark"] .step .think-block,
+[data-theme="dsh-dark"] .step .step-obs-wrap{background:transparent}
+[data-theme="dsh-dark"] .side input[type="text"],
+[data-theme="dsh-dark"] .side select{background:#10131a;color:#e8eaee}
+[data-theme="dsh-dark"] .cmdchip{background:#16181d;border-color:#262a31;color:#8b8f98}</style>
 </head>
 <body>
 
@@ -2079,6 +2263,7 @@ header button.ghost:hover{background:var(--panel3);border-color:var(--line2)}
     <button data-theme-btn="dark">深色</button>
     <button data-theme-btn="glass">液态玻璃</button>
     <button data-theme-btn="dsh">ATC UI</button>
+    <button data-theme-btn="dsh-dark">ATC 深</button>
   </div>
   <button id="btnModel" class="ghost">模型</button>
   <button id="btnQueue" class="ghost">队列</button>
@@ -2460,7 +2645,12 @@ function fallbackCopy(txt){
 }
 
 /* ---------- 主题 ---------- */
-var THEMES = ['light','dark','glass','dsh'];
+/* ATC UI 主题判定：dsh（浅色）与 dsh-dark（深色）共用同一套重排布局 */
+function atcTheme(t){
+  if (!t) t = document.documentElement.getAttribute('data-theme');
+  return t === 'dsh' || t === 'dsh-dark';
+}
+var THEMES = ['light','dark','glass','dsh','dsh-dark'];
 function applyTheme(name){
   if (THEMES.indexOf(name) < 0) name = 'dark';
   document.documentElement.setAttribute('data-theme', name);
@@ -2472,8 +2662,8 @@ function applyTheme(name){
   // DSH 是一套重排的 UI，不只是换色：
   //   · 左栏卡片收成扁平列表（工作区默认展开，其余点开）
   //   · 模型输出悬浮窗退役，输出走任务卡里的内嵌行
-  applyDshDrawer(name === 'dsh');
-  if (name === 'dsh') {
+  applyDshDrawer(atcTheme(name));
+  if (atcTheme(name)) {
     hideStreamPanel();
   } else if (curState && curState.status === 'running') {
     // 切回其他主题：浮窗接回来（内容还在 stNode 里，无缝）
@@ -2492,7 +2682,7 @@ function applyDshDrawer(on){
     if (h && !h.getAttribute('data-dsh-bound')){
       h.setAttribute('data-dsh-bound','1');
       h.addEventListener('click', function(){
-        if (document.documentElement.getAttribute('data-theme') === 'dsh'){
+        if (atcTheme()){
           this.parentElement.classList.toggle('closed');
         }
       });
@@ -2512,7 +2702,7 @@ function applyDshDrawer(on){
 /* DSH 步骤折叠：点步骤行展开/收起想法和返回（像 DSH 的「执行了命令」）。
    事件委托挂在 document 上，步骤列表每次重建也不用重新绑。 */
 document.addEventListener('click', function(e){
-  if (document.documentElement.getAttribute('data-theme') !== 'dsh') return;
+  if (!atcTheme()) return;
   var t = e.target;
   while (t && t !== document) {
     if (t.classList && t.classList.contains('step-act')) {
@@ -2897,10 +3087,34 @@ function toolIcon(n){
   return TOOL_ICONS[String(n)] || '•';
 }
 
+/* 工具名 → 人话短语：让用户看懂模型干了什么，而不是认工具名。
+   映射不到的回落到工具原名。arg 是各工具最主要的一个参数
+   （命令 / 路径），直接拼在短语后面。 */
+function toolPhrase(tool, arg){
+  var t = String(tool || '');
+  switch (t){
+    case 'think':       return '思考';
+    case 'run_cmd':     case 'run_command': case 'shell':
+                        return '执行了命令';
+    case 'list_dir':    case 'ls':          return '查看了目录';
+    case 'make_dir':    case 'mkdir':       return '创建了目录';
+    case 'write_file':  case 'edit_file': case 'patch_file': case 'replace_in_file':
+                        return '已编辑文件';
+    case 'read_file':   case 'cat':         return '读取了文件';
+    case 'move_file':   case 'rename':      return '移动了文件';
+    case 'copy_file':                       return '复制了文件';
+    case 'delete_file': case 'remove':      return '删除了文件';
+    case 'unzip':                           return '解压了文件';
+    case 'finish':                          return '完成任务';
+    default: return t || '?';
+  }
+}
+
 function stepHtml(s){
   var bad = (s.ok === false);
   var tool = String(s.tool || '?');
   var arg = String(s.arg || '');
+  var phrase = toolPhrase(tool, arg);
 
   // ① 想什么（独立一块，和「做了什么」分开）
   // 原来 think 挤在「做了什么」那个灰条里，和工具名、参数混成一行，
@@ -2920,12 +3134,13 @@ function stepHtml(s){
       '</div>';
   }
 
-  // ② 做了什么
+  // ② 做了什么：显示人话短语（悬停 title 里有原始工具名），
+  //    参数（命令/路径）跟在后面
   var act = '<div class="step-act"><div class="row">' +
     '<span class="step-n">' + (s.n||'') + '</span>' +
-    '<span class="step-tool' + (bad?' bad':'') + '">' +
-    '<span class="ti">' + toolIcon(tool) + '</span>' + esc(tool) + '</span>' +
-    '<span class="step-arg">' + esc(arg) + '</span>' +
+    '<span class="step-tool' + (bad?' bad':'') + '" title="工具 ' + esc(tool) + '">' +
+    '<span class="ti">' + toolIcon(tool) + '</span>' + esc(phrase) + '</span>' +
+    (arg ? '<span class="step-arg">' + esc(arg) + '</span>' : '') +
     '<span class="step-sec" style="margin-left:auto">' + Number(s.sec||0).toFixed(1) + 's</span>' +
     '</div></div>';
 
@@ -3490,7 +3705,7 @@ function renderCmdBar(st){
     var arg = String(s.arg || '');
     if (arg.length > 42) arg = arg.substring(0,42) + '…';
     var tool = String(s.tool || '?');
-    var label = tool + (arg ? ' ' + arg : '');
+    var label = toolPhrase(tool, arg) + (arg ? ' ' + arg : '');
     html += '<div class="cmdchip' + (bad ? ' bad' : '') + '" ' +
       'data-copy="' + esc(label).split('"').join('&quot;') + '" ' +
       'title="' + esc(label) + '（点击复制）">' +
@@ -3941,7 +4156,7 @@ function tick(){
       // 内容写到内嵌行里；切回其他主题时浮窗原样接回来。
       var mdo = $('modelDrawer');
       var drawerOn = !!(mdo && mdo.className.indexOf('on') >= 0);
-      var dshNow = (document.documentElement.getAttribute('data-theme') === 'dsh');
+      var dshNow = atcTheme();
       if (busy) {
         renderStream();
         if (!drawerOn && !dshNow) { showStreamPanel(); } else { hideStreamPanel(); }
@@ -4453,8 +4668,8 @@ function histDetail(h){
   for (var i=0;i<steps.length;i++){
     var s = steps[i], ok = (s.ok !== false);
     out += '<div class="hstep"><span class="step-n">' + (s.n||'') + '</span> ' +
-      '<span class="step-tool' + (ok?'':' bad') + '">' +
-      '<span class="ti">' + toolIcon(s.tool) + '</span>' + esc(s.tool) + '</span> ' +
+      '<span class="step-tool' + (ok?'':' bad') + '" title="工具 ' + esc(s.tool||'') + '">' +
+      '<span class="ti">' + toolIcon(s.tool) + '</span>' + esc(toolPhrase(s.tool, s.arg)) + '</span> ' +
       '<span class="step-arg">' + esc(s.arg) + '</span>';
     if (s.think) out += '<div class="step-think">' + esc(s.think) + '</div>';
     if (s.note){
