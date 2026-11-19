@@ -192,9 +192,21 @@ foreach ($ctx in @(6144, 6000, 5120, 5000, 4096, 4000)) {
 #   ② 在不超过的前提下，context 越大越好；同 context 优先高精度 KV。
 $ctxCap = [int]$Cfg.context
 if ($ctxCap -le 0) { $ctxCap = 4096 }
+
+# 排序规则改过一次（2026-11-19 实测）：
+#   原来先按 context 从大到小排，同 context 才比 KV 精度 ——
+#   结果是「6000 + q8_0」压过「5120 + f16」，为了多 900 个 token
+#   换来一套慢一倍的配置。
+#   实测（llama-bench，-p 1024 -d 2048，i3-10105F / 4 核 8 线程）：
+#     f16  + fa off  →  prefill 36.15 tok/s，生成 5.26 tok/s
+#     q8_0 + fa auto →  prefill 15.79 tok/s，生成 4.35 tok/s
+#   q8_0 必须配 flash attention 才跑得起来，而 CPU 上的 FA 会拖慢 prefill，
+#   同一台机器差 2.3 倍 —— 任务第一步 322 秒，大半耗在这。
+#   所以改成「精度优先」：只要 f16 装得下（哪怕 context 小一档），就用 f16；
+#   q8_0 只在 f16 连 4096 都装不下时才当保底，并明确提示慢。
 $best = $plans | Where-Object { $_.Fits -and $_.Context -le $ctxCap } |
-        Sort-Object @{ Expression = 'Context'; Descending = $true },
-                    @{ Expression = { switch ($_.KVType) { 'f16' {3} 'q8_0' {2} 'q4_0' {1} } }; Descending = $true } |
+        Sort-Object @{ Expression = { switch ($_.KVType) { 'f16' {3} 'q8_0' {2} 'q4_0' {1} } }; Descending = $true },
+                    @{ Expression = 'Context'; Descending = $true } |
         Select-Object -First 1
 
 # 配置值不在候选档里（比如用户写了 5000 但候选只有 5120/4096）时，
@@ -202,8 +214,8 @@ $best = $plans | Where-Object { $_.Fits -and $_.Context -le $ctxCap } |
 # 差得不多的话，取大的那个实测更接近用户意图。
 if (-not $best) {
     $best = $plans | Where-Object { $_.Fits } |
-            Sort-Object @{ Expression = 'Context'; Descending = $true },
-                        @{ Expression = { switch ($_.KVType) { 'f16' {3} 'q8_0' {2} 'q4_0' {1} } }; Descending = $true } |
+            Sort-Object @{ Expression = { switch ($_.KVType) { 'f16' {3} 'q8_0' {2} 'q4_0' {1} } }; Descending = $true },
+                        @{ Expression = 'Context'; Descending = $true } |
             Select-Object -First 1
 }
 
@@ -296,6 +308,9 @@ $startArgs = @(
 if ($best.KVType -ne 'f16') {
     $startArgs += @('-ctk', $best.KVType, '-ctv', $best.KVType)
 }
+# flash attention 必须显式给：默认 auto 在 CPU 后端会开，开了就慢一半。
+# 实测 -d 2048 深度 prefill：fa off 36.2 tok/s，fa auto 15.8 tok/s。
+if ($best.KVType -eq 'f16') { $startArgs += @('-fa', 'off') } else { $startArgs += @('-fa', 'auto') }
 
 $argLine = ($startArgs | ForEach-Object { if ($_ -match '[\s\\]') { '"' + $_ + '"' } else { $_ } }) -join ' '
 

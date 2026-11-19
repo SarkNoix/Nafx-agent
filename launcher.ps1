@@ -139,6 +139,11 @@ if (-not (Test-AiUp)) {
         }
         if ($ctk -and $ctk -ne 'f16') { $argList += @('-ctk', $ctk) }
         if ($ctv -and $ctv -ne 'f16') { $argList += @('-ctv', $ctv) }
+        # f16 KV 必须显式关掉 flash attention。
+        # CPU 后端下 -fa auto 会真的打开，一打开 prefill 就从 36 掉到 16 tok/s
+        # （实测 llama-bench -p 1024 -d 2048：fa off 36.15 / fa auto 15.79）。
+        # 只有用户明确写 on 才放行。
+        if (($ctk -eq 'f16' -or -not $ctk) -and $fa -ne 'on') { $fa = 'off' }
         if ($fa -in @('on','off','auto')) { $argList += @('-fa', $fa) }
     } catch { }
 
