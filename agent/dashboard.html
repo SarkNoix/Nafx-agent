@@ -298,6 +298,50 @@ html[data-theme="dsh"]{background:#f2f4f7}
 /* 对话区留白放宽一档，长消息不顶边 */
 [data-theme="dsh"] .thread,[data-theme="dsh-dark"] .thread{padding:22px 26px 12px}
 
+/* ---------- 实时进度渲染（第四轮）----------
+   核心诉求：模型输出的时候要「同时」看到进度 —— 它现在写到第几步、
+   正在干什么、离收尾还有多远，而不是盯着一坨原始 JSON 流。
+   三件套：任务卡里的步骤进度条 / 正在进行中的虚拟步骤行 /
+   输出行的语义化标签 + 字数计数。 */
+
+/* 步骤进度条：贴在任务卡头部下沿，step/maxSteps 按比例涨 */
+.live-progress{height:3px;background:var(--panel2);overflow:hidden}
+.live-progress i{display:block;height:100%;width:0;
+  background:var(--accent);opacity:.75;
+  transition:width .5s ease-out;border-radius:0 2px 2px 0}
+.live-box.done .live-progress i{opacity:.45}
+[data-theme="dsh"] .live-progress,[data-theme="dsh-dark"] .live-progress{background:#f0f2f5}
+[data-theme="dsh"] .live-progress i,[data-theme="dsh-dark"] .live-progress i{background:#4d6bfe}
+
+/* 正在进行中的一步：spinner + 人话文案，呼吸光晕提示「这步还没完」。
+   agent 只在步骤完成后才把记录写进 state.steps，所以这一行是
+   面板从 state.phase 现场派生的虚拟行 —— 让用户在等待的几十秒里
+   也能看到「它此刻正在写 write_file」，而不是干瞪眼。 */
+.step.live-row{border:1px solid var(--line);border-radius:10px;background:var(--panel2);
+  margin:0 0 8px;padding:0;overflow:hidden;
+  animation:livePulse 1.6s ease-in-out infinite}
+@keyframes livePulse{
+  0%,100%{box-shadow:0 0 0 0 transparent}
+  50%{box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent)}}
+.step.live-row .step-act{padding:7px 10px}
+.step.live-row .spinner{margin:0 2px}
+.step.live-row .live-tool{font-size:11.5px;color:var(--accent);font-weight:500}
+.step.live-row .live-arg{color:var(--dim);font-size:11.5px;
+  flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+[data-theme="dsh"] .step.live-row,[data-theme="dsh-dark"] .step.live-row{
+  background:#f7f9ff;border-color:#dfe6fb}
+[data-theme="dsh"] .step.live-row .live-tool,[data-theme="dsh-dark"] .step.live-row .live-tool{color:#4d6bfe}
+[data-theme="dsh"] .step.live-row .live-arg,[data-theme="dsh-dark"] .step.live-row .live-arg{color:#878c96}
+
+/* 内嵌输出行：标签跟流类型走（正在回答 / 正在生成工具调用），
+   右侧实时字数 —— 模型写字的「体感速度」一眼可见 */
+.live-stream .ls-count{font-size:10.5px;color:var(--faint);
+  font-family:ui-monospace,Consolas,monospace;flex-shrink:0}
+[data-theme="dsh"] .live-stream .ls-count,[data-theme="dsh-dark"] .live-stream .ls-count{color:#a0a5af}
+.live-stream .ls-label{color:var(--dim);font-size:11.5px}
+[data-theme="dsh"] .live-stream .ls-label,[data-theme="dsh-dark"] .live-stream .ls-label{color:#878c96}
+
+
 /* 抽屉整体拉起（收起侧边栏）：全主题可用，拉起后侧栏整个让位给对话区 */
 .side-collapse{display:inline-block;padding:5px 9px}
 body.drawer-collapsed .side{display:none}
@@ -611,7 +655,8 @@ main{position:relative;z-index:1;flex:1;display:flex;min-height:0}
 .gb-it{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
 .gb-it svg{width:11px;height:11px;stroke:currentColor;fill:none;
   stroke-width:2;stroke-linecap:round;stroke-linejoin:round;opacity:.7}
-.gb-it b{color:var(--fg);font-weight:600}
+.gb-it b{color:var(--fg);font-weight:600;font-family:ui-monospace,Consolas,monospace;
+  font-size:11px}
 .gb-sep{width:1px;height:10px;background:var(--line2);flex-shrink:0}
 .gb-run{color:var(--run)}
 
@@ -3292,34 +3337,122 @@ function liveBox(st){
       (st.status==='done' ? '✓' : '×') + '</span>';
 
   var body = (st.plan ? '<div class="sect">' + planHtml(st.plan) + '</div>' : '') +
-             (sh ? '<div class="steps">' + sh + '</div>' : '');
+             (sh ? '<div class="steps">' + sh + '</div>' : '<div class="steps"></div>');
 
   if (!active){
+    var finPct = st.maxSteps ? Math.min(100, Math.round((st.step||0) / st.maxSteps * 100)) : 0;
     return '<div class="live-box done">' +
       '<div class="live-head foldable" onclick="toggleLive(this)">' + icon +
       taskLabel(st.task) +
       '<span class="step-sec">' + (STATUS_TEXT[st.status]||st.status) + ' · ' +
       (st.step||0) + ' 步 · ' + fmtTime(st.elapsed) + '</span>' +
       '<span class="fold-arrow">▸</span></div>' +
+      '<div class="live-progress"><i style="width:' + finPct + '%"></i></div>' +
       '<div class="live-body" style="display:none">' + body + '</div></div>';
   }
+
+  // 进行中的一步：agent 只在步骤做完才把它写进 state.steps，
+  // 等待的那几十秒里这行就是唯一能看到「它此刻在干什么」的地方。
+  // 文字由 updateLiveProgress 每 350ms 刷新，这里只搭骨架。
+  var liveRow = '<div class="step live-row"><div class="step-act"><div class="row">' +
+    '<span class="spinner"></span>' +
+    '<span class="live-tool">…</span>' +
+    '<span class="live-arg"></span>' +
+    '<span class="step-sec live-sec" style="margin-left:auto"></span>' +
+    '</div></div></div>';
+  var pct = st.maxSteps ? Math.min(100, Math.round((st.step||0) / st.maxSteps * 100)) : 0;
 
   return '<div class="live-box">' +
     '<div class="live-head">' + icon +
     taskLabel(st.task) +
     '<span class="step-sec">' + esc(st.phase||'') + ' · ' + (st.step||0) + '/' + (st.maxSteps||0) +
     ' · ' + fmtTime(st.elapsed) + '</span></div>' +
+    '<div class="live-progress"><i style="width:' + pct + '%"></i></div>' +
     body +
+    liveRow +
     /* 内嵌模型输出（DSH）：实时吐字直接长在任务卡里。
        悬浮窗（#streamOut）在 DSH 下退役，这里就是它的替身 ——
-       renderStream 会同时往两处写，切主题时内容无缝跟着走。 */
+       renderStream 会同时往两处写，切主题时内容无缝跟着走。
+       标签跟流类型走（renderStream 更新），右侧实时字数。 */
     '<div class="live-stream">' +
     '<div class="ls-row" onclick="toggleInlineStream(event)">' +
     '<span class="ls-label">模型输出</span>' +
+    '<span class="ls-count"></span>' +
     '<span class="ls-fold">展开</span></div>' +
     '<div class="ls-body"><span class="ls-txt"></span><span class="st-caret">▍</span></div>' +
     '</div>' +
     '</div>';
+}
+
+/* ---------- 实时进度刷新（快通道）----------
+   renderFlow 的签名判断刻意不含 step/phase（带上的话整块对话区每 350ms
+   重建一次，全在闪）。代价是：运行中步骤列表和进度条永远停在
+   上一次全量重建的样子 —— 用户只能干看模型输出流。
+   这个函数补上快通道：只动 live-box 里的几个小节点，
+   每轮 diff，内容没变就不写（避免无谓重排）。 */
+function liveStepInfo(st){
+  /* 从 state.phase 派生「正在进行中的一步」的人话文案。
+     agent 的 phase 有三类：
+       生成中：正在写 write_file · 300 字 / 正在想 · 120 字
+       连接中：正在连接模型… / 正在准备请求…
+       执行中：编辑文件 / 跑命令 / 读取文件（toolPhrase 的短动词） */
+  var ph = String(st.phase || '');
+  var m = ph.match(/^正在写\s+(\S+)/);
+  if (m){
+    var mm = ph.match(/(\d+)\s*字/);
+    var arg = mm ? ('已写 ' + mm[1] + ' 字') : '';
+    // 工具名转人话，没有映射就显示原名
+    var phrase = toolPhrase(m[1], '');
+    if (phrase === m[1]) phrase = '生成 ' + m[1] + ' 参数';
+    return { tool: phrase, arg: arg };
+  }
+  if (/^正在想/.test(ph)) return { tool: '思考中', arg: (function(){ var mm = ph.match(/(\d+)\s*字/); return mm ? ('已写 ' + mm[1] + ' 字') : ''; })() };
+  if (/正在连接|正在准备/.test(ph)) return { tool: ph.replace(/…$/, ''), arg: '' };
+  if (ph) return { tool: ph + '…', arg: '' };
+  return { tool: '准备下一步…', arg: '' };
+}
+
+function updateLiveProgress(st){
+  if (!st || st.status !== 'running') return;
+  // :not(.done) —— 消息流里可能躺着好几张旧任务的 done 卡，
+  // querySelector('.live-box') 会拿到第一张旧卡，把进度写进死人卡里，
+  // 正在跑的卡反而一直不更新。
+  var lb = thread.querySelector('.live-box:not(.done)');
+  if (!lb) return;
+
+  // ① 进度条：step/maxSteps
+  var pct = st.maxSteps ? Math.min(100, Math.round((st.step||0) / st.maxSteps * 100)) : 0;
+  var pi = lb.querySelector('.live-progress i');
+  if (pi && pi.getAttribute('data-p') !== String(pct)){
+    pi.style.width = pct + '%';
+    pi.setAttribute('data-p', String(pct));
+  }
+
+  // ② 已完成步骤列表：只看条数，变了才重建（重建只在每步完成时发生一次）
+  var steps = st.steps || [];
+  var sc = lb.querySelector('.steps');
+  if (sc && sc.children.length !== steps.length){
+    var h = '';
+    for (var j = 0; j < steps.length; j++) h += stepHtml(steps[j]);
+    sc.innerHTML = h;
+  }
+
+  // ③ 进行中的虚拟行：每轮只改 textContent，不重建（重建会让 spinner 重启动画）
+  var lv = lb.querySelector('.step.live-row');
+  if (lv){
+    var info = liveStepInfo(st);
+    var lt = lv.querySelector('.live-tool');
+    if (lt && lt.textContent !== info.tool) lt.textContent = info.tool;
+    var la = lv.querySelector('.live-arg');
+    if (la && la.textContent !== info.arg) la.textContent = info.arg;
+    var ls = lv.querySelector('.live-sec');
+    var wantSec = '第 ' + ((st.step||0) + 1) + ' 步';
+    if (ls && ls.textContent !== wantSec) ls.textContent = wantSec;
+  }
+
+  // ④ 有新步骤落下来时把画面跟到底部（只有本来就在底部才跟，不打扰往上翻的人）
+  var nearBottom = (thread.scrollHeight - thread.scrollTop - thread.clientHeight) < 140;
+  if (nearBottom) thread.scrollTop = thread.scrollHeight;
 }
 
 /* 任务标题。自主模式派出来的任务带 [自主] 前缀，
@@ -3486,6 +3619,19 @@ function renderStream(){
   if (inl) {
     if (inl.firstChild) inl.firstChild.nodeValue = shown;
     else inl.appendChild(document.createTextNode(shown));
+  }
+  // 内嵌输出行的标签跟流类型走：写正文时是「正在回答」，
+  // 写工具参数时是「正在生成工具调用」—— 用户不用去读半截 JSON
+  // 也能知道模型此刻在写什么。右侧同步刷新累计字数。
+  var lbl = document.querySelector('.live-stream .ls-label');
+  if (lbl) {
+    var wantLbl = (streamKind === 'tool') ? '正在生成工具调用' : '正在回答';
+    if (lbl.textContent !== wantLbl) lbl.textContent = wantLbl;
+  }
+  var cnt = document.querySelector('.live-stream .ls-count');
+  if (cnt) {
+    var wantCnt = streamText.length > 0 ? (streamText.length + ' 字') : '';
+    if (cnt.textContent !== wantCnt) cnt.textContent = wantCnt;
   }
   var ib = document.querySelector('.live-stream');
   if (ib && ib.classList.contains('open')) {
@@ -3837,7 +3983,7 @@ function renderFlow(sess, st){
     }
     // 签名不变时，liveBox 里「第几步 / 当前阶段」还是会变，
     // 单独把它的头部文字换掉，不重建整块（整块重建就是闪的根源）。
-    var lbHead = thread.querySelector('.live-box .step-sec');
+    var lbHead = thread.querySelector('.live-box:not(.done) .step-sec');
     if (lbHead && st) {
       // 不能用 esc()：它产出的 &lt; 这类实体塞给 textContent 后，
       // 下次读回来是原始字符，两者永远不相等 —— 于是每次轮询都重设一次，
@@ -3845,6 +3991,10 @@ function renderFlow(sess, st){
       var want = (st.phase||'') + ' · ' + (st.step||0) + '/' + (st.maxSteps||0) + ' · ' + fmtTime(st.elapsed);
       if (lbHead.textContent !== want) lbHead.textContent = want;
     }
+    // 实时进度：步骤列表 / 进度条 / 进行中的一步，全在这条快通道里刷新。
+    // 原来这些只能等「签名变化」的全量重建 —— 任务跑起来用户就只看得到
+    // 原始输出流，步骤是十几秒一批才蹦出来的。
+    updateLiveProgress(st);
     // 快照也要跟着更新：下次判断「前缀有没有变」用的是它，
     // 这里不更新的话，快照会一直停在上一次全量重建时的内容。
     window.__sessSnap = arr.map(function(m){ return String(m.content || ''); });
@@ -4160,7 +4310,10 @@ var tickN = 0;
 
 function tick(){
   tickN++;
-  var slow = (tickN % 8 === 1);   // 每 8 轮做一次慢活
+  // 每 8 轮做一次慢活；任务在跑时加一档：每 3 轮（约 1 秒）也拉一次 session ——
+  // 模型的 say / note 要等 session.jsonl 落盘才能上屏，3.6 秒一次
+  // 用户会觉得「它做完了半天面板还不显示」。空闲时保持 8 轮不折腾。
+  var slow = (tickN % 8 === 1) || (window.__lastBusy && tickN % 3 === 1);
 
   var jobs = [fetchJson('/api/state')];
   if (slow) {
@@ -4194,6 +4347,7 @@ function tick(){
       if (slow) { loadTools(); loadFiles(); checkAsk(); }
 
       var busy = (st && st.status === 'running');
+      window.__lastBusy = busy;
       // 回合在跑 → 浮窗一直亮着。
       // 之前靠 .stream-out:empty 自动隐藏，模型思考的几十秒里一个字都不吐，
       // 浮窗就消失了 —— 用户以为它挂了。现在只看 status，不看有没有内容。
