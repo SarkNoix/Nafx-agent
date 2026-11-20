@@ -386,6 +386,15 @@ html[data-theme="dsh-dark"] .step.live-row{animation:liveBreathDark 2.8s ease-in
 /* 消息进场：稍慢半拍 + 减速曲线，比 .22s ease-out 温和 */
 .msg{animation:msgIn .3s cubic-bezier(.32,.72,0,1)}
 
+/* ---------- 信息层级微调（第七轮）----------
+   ① 时间戳从「和名字同浓」降一档：名字是主标识，时间是辅助信息。
+   ② 步骤耗时统一走 fmtTime（172.3s → 2m52s），和任务卡头部一致。
+   ③ 折叠箭头提一档亮度，让人看得出这里能点开。 */
+.msg .who-ts{color:var(--faint);font-size:.92em;letter-spacing:.2px;margin-left:1px;font-weight:400}
+[data-theme="dsh"] .msg .who,[data-theme="dsh-dark"] .msg .who{color:var(--dim)}
+.fold-arrow{color:var(--dim);opacity:.85}
+
+
 
 
 /* 抽屉整体拉起（收起侧边栏）：全主题可用，拉起后侧栏整个让位给对话区 */
@@ -3184,7 +3193,7 @@ function msgBubble(m, idx){
     '<button data-op="raw" data-i="' + idx + '">原输出</button>' +
     '</div>';
   return '<div class="' + cls + '"><div class="wrap"><div class="bubble">' +
-    '<div class="who">' + who + (m.ts ? ' · ' + esc(m.ts) : '') + '</div>' +
+    '<div class="who">' + who + (m.ts ? '<span class="who-ts"> · ' + esc(m.ts) + '</span>' : '') + '</div>' +
     fmtMsg(content) + files + '</div>' + ops +
     '<pre class="raw-out hide"></pre></div></div>';
 }
@@ -3280,7 +3289,7 @@ function stepHtml(s){
     '<span class="step-tool' + (bad?' bad':'') + '" title="工具 ' + esc(tool) + '">' +
     '<span class="ti">' + toolIcon(tool) + '</span>' + esc(phrase) + '</span>' +
     (arg ? '<span class="step-arg">' + esc(arg) + '</span>' : '') +
-    '<span class="step-sec" style="margin-left:auto">' + Number(s.sec||0).toFixed(1) + 's</span>' +
+    '<span class="step-sec" style="margin-left:auto">' + fmtTime(s.sec) + '</span>' +
     '</div></div>';
 
   // ③ 返回了什么
