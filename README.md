@@ -188,34 +188,34 @@ data 目录里有几个文件
 
 | 文件 | 怎么启动 | 用途 |
 |---|---|---|
-| `config.json` | 双击 `Nafx.bat` | 默认，开箱即用 |
-| `config.self.json` | 双击 `Nafx 我的配置.bat` | **给自己用的**，参数更激进 |
+| `config.json` | 双击 `Nafx.bat` | 默认，开箱即用，按保守假设写 |
+| `config.self.json` | 双击 `Nafx 我的配置.bat` | 个人配置**模板**，默认值与 `config.json` 对齐，只放宽单条命令超时和输出上限 |
 
-**为什么不合并成一个**：默认配置要照顾别人机器（内存未知、权限保守）。你自己机器什么情况你最清楚，可以放开。
+**为什么不合并成一个**：默认配置要照顾别人的机器（内存未知、权限保守）。个人配置留给你按自己的机器放开，
+模板里只预置了两个安全项——单条命令 45 秒（默认 30）、一次工具输出 1200 字符（默认 800），其余保持默认。
 
 **`config.self.json` 里能改什么**：
 
 ```json
 {
-  "maxTokens": 700,        // 默认 500，给长了不容易截断工具参数
-  "maxSteps": 40,          // 默认 30
-  "stepTimeoutSeconds": 240,   // 默认 180，慢机器会误判超时
-  "maxOutputChars": 1200,  // 默认 800，一次多看些输出
-  "temperature": 0.25,     // 默认 0.3，更低更稳
-  "allowAdmin": true,      // 默认 false，自己用直接开
-  "personalPrompt": "..."  // ← 这个最有意思
+  "runTimeoutSeconds": 45,  // 默认 30，长命令（findstr / robocopy）不容易被截断
+  "maxOutputChars": 1200,   // 默认 800，一次多看些输出
+  "temperature": 0.25,      // 默认 0.3，更低更稳
+  "allowAdmin": false,      // 默认 false。要开就在面板里临时提权，别写死在配置里
+  "personalPrompt": ""      // ← 这个最有意思，下面说
 }
 ```
 
 **`personalPrompt` 是什么**：
 
-一段话，会追加到系统提示词末尾。写你自己的习惯，模型每次都知道：
+一段话，会追加到系统提示词末尾。写你自己的习惯，模型每次都知道。模板里留空，填了才生效；
+里面写相对路径（如 `workspace`），不要写本机绝对路径——这份文件是公开仓库的一部分：
 
 ```json
-"personalPrompt": "这台机器是我自己的，工作区在 E:\\Nafx\\workspace。\n我经常做的事：数文件、算订单金额、找重复文件、压缩打包。\n拿不准的时候先问，别猜。"
+"personalPrompt": "回答用中文。拿不准的时候先问，别猜。\n常用工作区：workspace。"
 ```
 
-运行时日志里会显示 `带上个人指令（79 字符）`，能确认生效了。
+运行时日志里会显示 `带上个人指令（xx 字符）`，能确认生效了。
 
 **换配置启动的原理**：`launcher.ps1` 和 `monitor.ps1` 都支持 `-ConfigFile` 参数，`agent.ps1` 从环境变量 `NAFX_CONFIG` 读。想加第三套配置，复制一份改个名字就行。
 
@@ -611,6 +611,11 @@ mod/brief-mode.mod.json   极简模式：回答一句话，200 token 封顶
 哪些能用、哪些不能用、缺了会报什么错、怎么自己验证，全在单独一份：
 **[工具与能力边界.md](工具与能力边界.md)**。
 
+**⑥ GPU 模式要自己准备运行时。** 面板「设置 → 模型编译方式」有 CPU / GPU 两档，仓库只带 CPU 版 `llama\`。
+选 GPU 前要把 CUDA 版 llama.cpp 解压到 `llama-gpu\`（里面要有 `llama-server.exe` 和配套 dll），
+再点「初始化」——这一步只做检测，不会下载也不会编译；没放文件就点，会直接报
+「没找到 llama-gpu\llama-server.exe」。
+
 ---
 
 ## 性能调优笔记（踩过的坑，别重复踩）
@@ -653,14 +658,19 @@ Nafx 会按任务类型只发 4-8 个相关工具，不是全发 50 个。没匹
 ```
 Nafx/
 ├── Nafx.bat              启动（双击这个）
+├── Nafx 我的配置.bat       启动（用个人配置模板）
 ├── 切换模型.bat           换模型
 ├── 停止服务.bat           全停
 ├── 自检.bat              看哪里不对
 ├── config.json           配置（带中文说明）
+├── config.self.json      个人配置模板（留空 personalPrompt，不写本机路径）
 ├── 工具与能力边界.md      哪些工具要装东西、能干什么、限制在哪（**先看这个**）
 ├── launcher.ps1          启动模型服务
 ├── monitor.ps1           面板服务
 ├── switch-model.ps1      换模型的逻辑
+├── docs/
+│   ├── 交接报告.md        给后续维护者的踩坑记录
+│   └── 优化说明_20261119.md  逐轮改动与实测数据
 ├── agent/
 │   ├── agent.ps1         主循环
 │   ├── tools.ps1         56 个工具的实现
@@ -685,9 +695,10 @@ Nafx/
 ├── stop-mod-editor.bat   停止编辑器
 ├── skills/               24 个技能
 ├── train/                自动训练器
-├── workspace/            工作目录（模型只能动这里）
+├── workspace/            工作目录（模型默认只能动这里）
 ├── models/               模型放这儿（.gguf，要自己下）
-└── llama/                llama.cpp 运行时
+├── llama/                llama.cpp 运行时（CPU 版，随仓库分发）
+└── llama-gpu/            GPU 版运行时（**不随仓库分发**，自己放 CUDA 版进来）
 ```
 
 ---

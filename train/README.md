@@ -7,7 +7,7 @@
 
 ## 一、怎么跑
 
-在 `E:\Nafx\train\` 目录下打开 PowerShell：
+在项目根下的 `train\` 目录里打开 PowerShell：
 
 ```powershell
 # 完整训练：刷到 95 分，最多 3 轮
@@ -55,7 +55,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File train.ps1 -NoTune
 
 ### 1. 工作区隔离（重要）
 
-训练**绝对不会碰**你的真实工作区（`E:\Nafx\workspace`）。
+训练**绝对不会碰**你的真实工作区（项目里的 `workspace`）。
 
 - 每道题开始前，把整个沙箱 `train\sandbox\` 清空重建
 - 只在训练期间把 `config.json` 的 `workspace` 指向沙箱

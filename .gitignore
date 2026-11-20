@@ -1,4 +1,4 @@
-﻿# 模型文件太大，不进仓库
+# 模型文件太大，不进仓库
 models/*.gguf
 
 # 运行时产生的东西
@@ -32,3 +32,15 @@ workspace/test/
 
 # 开发期整包备份
 /_backup_*/
+
+# 个人配置文件与调参备份
+config.json.bak
+config.self.json.bak
+
+# GPU 运行时（CUDA 版 llama.cpp，按机器自己放，约 50 MB+）
+/llama-gpu/
+
+# 工作区数据目录：只留仓库自带的两个示例，其余测试产物一律不提交
+workspace/data/*
+!workspace/data/orders.jsonl
+!workspace/data/smoke-test.txt

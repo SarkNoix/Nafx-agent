@@ -85,7 +85,7 @@ Write-Output 'coder-mode 已加载'
 
 1. 点 **「下载 mod 文件」**（或按 `Ctrl+S`）
 2. 浏览器存一个 `你填的id.mod.json`
-3. **放进这个目录**（`E:\Nafx\mod\`）
+3. **放进这个目录**（项目根下的 `mod\`）
 4. 跑个任务，看 `agent/logs/run_*.txt` 里有没有：
 
 ```

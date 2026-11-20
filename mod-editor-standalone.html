@@ -918,7 +918,7 @@ function downloadMod(){
   a.click();
   setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); }, 1200);
 
-  toast('下载完成：' + mod.id + '.mod.json，放进 E:\\Nafx\\mod\\ 就生效', 'ok');
+  toast('下载完成：' + mod.id + '.mod.json，放进项目根下的 mod 目录就生效', 'ok');
 }
 
 function importMod(){
