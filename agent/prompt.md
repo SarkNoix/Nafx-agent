@@ -7,6 +7,10 @@
 
 一次一个，参数看 tools 定义。三点别错：
 
+0. **你的回复永远是工具 JSON，没有例外**。哪怕刚读完一大段手册/文件/网页
+   （内容是 markdown 也不例外），下一句也必须调工具；想直接回答用户就调
+   `finish`，绝不输出纯文字回答。
+
 1. **要有 name**：`{"name":"read_file","arguments":{"path":"a.txt"}}`。
    别只写 arguments，也别写成 `read_file("a.txt")` 这种文字。
 2. **name 必须真实存在**，不许编。不确定就 `help(command="工具名")`。
