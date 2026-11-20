@@ -2205,9 +2205,12 @@ $target = [Math]::Min($targetByBudget, [Math]::Max($targetByShare, 1400))
     # 省 60 tok，赔 96 秒，完全是亏的。
     #
     # 所以：小超（≤150 tok）不动工具，带着跑；真要砍，砍完至少得腾出 200 tok。
+    # ⚠ 实测「查 icacls」回归：工具被前几步砍到恰好剩 6 个时，-gt 6 不成立，
+    #   超限 750 tok 也一个不砍，硬发超 n_ctx 的请求 → llama 400 → 任务残缺收尾。
+    #   改成 -gt 2：留两个工具（含 finish）就允许砍，砍不出 200 tok 才放弃。
     $roomForTools = $ctxLimit - $histTok - $mt0
     $overflowTok = $toolsTokNow - $roomForTools
-    if ($overflowTok -gt 150 -and @($script:ActiveFlowTools).Count -gt 6) {
+    if ($overflowTok -gt 150 -and @($script:ActiveFlowTools).Count -gt 2) {
         $before = @($script:ActiveFlowTools).Count
         $trimmed = Trim-ToolsToBudget -Names $script:ActiveFlowTools -Budget $roomForTools
         if (@($trimmed).Count -lt $before) {
@@ -2223,7 +2226,7 @@ $target = [Math]::Min($targetByBudget, [Math]::Max($targetByShare, 1400))
             }
         }
     } elseif ($overflowTok -gt 0) {
-        Write-Log ("  [省上下文] 小超 $([int]$overflowTok) tok（≤150），不砍工具，保护 KV 缓存")
+        Write-Log ("  [省上下文] 超 $([int]$overflowTok) tok 但工具已到下限（≤2 个）不砍，带着跑")
     }
 
     # ---- 精简/裁剪都做完了，现在才写真实用量 ----
