@@ -2406,6 +2406,72 @@ html[data-theme="dsh-dark"]{
 }
 .thread::-webkit-scrollbar-thumb:hover,.side::-webkit-scrollbar-thumb:hover{background:var(--dim)}
 .thread::-webkit-scrollbar-track,.side::-webkit-scrollbar-track{background:transparent}
+
+/* ============================================================
+   第九轮 · 细节打磨（2026-11-20）
+   目标：不换风格，只把「看起来别扭」的地方收干净。
+   ① 完成后的任务卡还拖着一条跑满的蓝线 → 收掉
+   ② 消息 / 任务卡 / 命令条宽度不齐 → 统一到 900px 中线
+   ③ 数字列不对齐 → 等宽字体 + tabular-nums
+   ④ 上下文条、图例、发送按钮、系统信息入口 → 统一圆角与层次
+   ============================================================ */
+
+/* ① 完成态不再画进度线，只留状态文字 */
+.live-box.done .live-progress{display:none}
+
+/* ② 对话区统一一条基准列，和底部输入区同宽 */
+.thread .msg,
+.thread .live-box,
+.thread .chips{max-width:900px;margin-left:auto;margin-right:auto}
+.composer .cmdbar,
+.composer .answer-box{max-width:900px;margin-left:auto;margin-right:auto}
+/* 豆包两套主题保留自带的 860px 一栏 */
+[data-theme="dsh"] .thread .msg,[data-theme="dsh-dark"] .thread .msg,
+[data-theme="dsh"] .thread .live-box,[data-theme="dsh-dark"] .thread .live-box,
+[data-theme="dsh"] .thread .chips,[data-theme="dsh-dark"] .thread .chips,
+[data-theme="dsh"] .cmdbar,[data-theme="dsh-dark"] .cmdbar,
+[data-theme="dsh"] .answer-box,[data-theme="dsh-dark"] .answer-box{max-width:860px}
+
+/* ③ 所有指标数字等宽，扫一眼就能对齐比较 */
+.hbar,.cfg-cell b,.gauge-label span:last-child,.ctx-total-head b,
+.ctx-legend,.live-head,.genbar{font-variant-numeric:tabular-nums}
+.cfg-cell b,.gauge-label span:last-child,.ctx-total-head b{font-family:ui-monospace,Consolas,"Courier New",monospace}
+
+/* ④ 顶栏：状态数字和右侧按钮高低一致 */
+.hbar{align-items:center;gap:15px}
+header .ghost{height:29px;padding:0 11px;display:inline-flex;align-items:center}
+.theme-switch{margin:0 2px}
+.theme-switch button{padding:4px 9px;letter-spacing:.02em}
+
+/* ⑤ 侧栏卡片：内边距和格子缝隙统一，视觉上对齐 */
+.side-block{padding:13px 13px 12px}
+.cfg-grid{gap:6px}
+.cfg-cell{padding:8px 9px}
+
+/* ⑥ 上下文条：圆头、分段之间留一线，图例更整齐 */
+.ctx-bar{height:7px;border-radius:99px;overflow:hidden}
+.ctx-seg:first-child{border-radius:99px 0 0 99px}
+.ctx-legend{gap:12px 14px}
+.ctx-legend i{width:7px;height:7px;border-radius:2px;margin-right:4px;vertical-align:middle}
+
+/* ⑦ 发送键：用主题色渐变，主操作更明确一点 */
+button.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));
+  box-shadow:0 2px 10px rgba(90,130,240,.26)}
+button.primary:hover{filter:brightness(1.06);box-shadow:0 4px 16px rgba(90,130,240,.34)}
+button.primary:active{transform:translateY(1px)}
+
+/* ⑧ 底部说明弱化成注脚 */
+.composer .hint{opacity:.72;letter-spacing:.02em}
+
+/* ⑨ 系统信息入口：安静的圆形按钮，别抢发送键的注意力 */
+#sysBtn{width:36px;height:36px;border-radius:50%;font-size:15px;
+  display:grid;place-items:center;opacity:.68;background:var(--panel2);
+  border:1px solid var(--line);transition:opacity .18s,border-color .18s,color .18s}
+#sysBtn:hover{opacity:1;border-color:var(--accent);color:var(--accent)}
+
+/* ⑩ 键盘可达性：所有可聚焦控件统一焦点环 */
+button:focus-visible,textarea:focus-visible,input[type="text"]:focus-visible,
+select:focus-visible,#sysBtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 </style>
 </head>
 <body>
@@ -2437,11 +2503,11 @@ html[data-theme="dsh-dark"]{
   <button id="btnSide" class="ghost side-toggle">面板</button>
   <button id="btnDrawer" class="ghost side-collapse" title="收起 / 展开侧边栏">‹</button>
   <div class="theme-switch">
-    <button data-theme-btn="light">浅色</button>
-    <button data-theme-btn="dark">深色</button>
-    <button data-theme-btn="glass">液态玻璃</button>
-    <button data-theme-btn="dsh">ATC UI</button>
-    <button data-theme-btn="dsh-dark">ATC 深</button>
+    <button data-theme-btn="light" title="浅色：最朴素的白底">浅色</button>
+    <button data-theme-btn="dark" title="深色：基础深色">深色</button>
+    <button data-theme-btn="glass" title="液态玻璃：半透明毛玻璃">玻璃</button>
+    <button data-theme-btn="dsh" title="豆包风浅色：平铺消息、无气泡">豆包</button>
+    <button data-theme-btn="dsh-dark" title="ATC 深色：默认推荐">ATC</button>
   </div>
   <button id="btnModel" class="ghost">模型</button>
   <button id="btnQueue" class="ghost">队列</button>
