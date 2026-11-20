@@ -3242,6 +3242,8 @@ function toolPhrase(tool, arg){
     case 'copy_file':                       return '复制了文件';
     case 'delete_file': case 'remove':      return '删除了文件';
     case 'unzip':                           return '解压了文件';
+    case 'note':                            return '播报进度';
+    case 'answer':                          return '回答你';
     case 'finish':                          return '完成任务';
     default: return t || '?';
   }
