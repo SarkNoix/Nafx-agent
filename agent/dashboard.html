@@ -341,6 +341,52 @@ html[data-theme="dsh"]{background:#f2f4f7}
 .live-stream .ls-label{color:var(--dim);font-size:11.5px}
 [data-theme="dsh"] .live-stream .ls-label,[data-theme="dsh-dark"] .live-stream .ls-label{color:#878c96}
 
+/* ---------- 动画柔化（第六轮）：自然、柔和 ----------
+   统一原则：进出用减速曲线 cubic-bezier(.32,.72,0,1)（iOS 式，
+   快起缓停），循环用 ease-in-out 慢呼吸，不做过冲回弹、
+   不做硬脉冲。时长普遍放慢一档，让动效「融」进画面。 */
+
+/* 抽屉滑入：.18s ease-out 太急，改 iOS 式减速 */
+.drawer{transition:transform .32s cubic-bezier(.32,.72,0,1)}
+[data-theme="dsh"] .drawer{transition:transform .3s cubic-bezier(.32,.72,0,1)}
+[data-theme="dsh-dark"] .drawer{transition:transform .3s cubic-bezier(.32,.72,0,1)}
+/* 系统面板（∑）：去掉弹簧过冲，淡入 + 轻微上浮 */
+#sysPanel{transition:opacity .28s cubic-bezier(.32,.72,0,1),transform .28s cubic-bezier(.32,.72,0,1)}
+[data-theme="dsh"] #sysPanel,[data-theme="dsh-dark"] #sysPanel{
+  transition:opacity .26s cubic-bezier(.32,.72,0,1),transform .26s cubic-bezier(.32,.72,0,1)}
+/* 等回答框：同样去掉过冲 */
+.answer-box{animation:abIn .32s cubic-bezier(.32,.72,0,1)}
+
+/* 活动行呼吸：光晕扩散（box-shadow 脉冲）改成交底色轻轻呼吸，
+   慢一倍，余光能感到「它在动」但不抢视线 */
+.step.live-row{animation:liveBreath 2.8s ease-in-out infinite}
+@keyframes liveBreath{0%,100%{background:var(--panel2)}50%{background:var(--panel3)}}
+@keyframes liveBreathDsh{0%,100%{background:#f7f9ff;border-color:#e6ebfb}50%{background:#eef2fd;border-color:#dbe3fb}}
+[data-theme="dsh"] .step.live-row{animation:liveBreathDsh 2.8s ease-in-out infinite}
+@keyframes liveBreathDark{0%,100%{background:#171b26;border-color:#263041}50%{background:#1b2130;border-color:#2e3a55}}
+html[data-theme="dsh-dark"] .step.live-row{animation:liveBreathDark 2.8s ease-in-out infinite}
+[data-theme="dsh-dark"] .step.live-row .live-tool{color:#8fa4ff}
+[data-theme="dsh-dark"] .step.live-row .live-arg{color:#9aa1ad}
+
+/* spinner：转速降下来，匀速转比快转看着稳 */
+.spinner{animation:spin 1.2s linear infinite}
+/* 顶栏状态点：呼吸放慢一档，明暗差收小 */
+.dot.running{animation:pulse 2s ease-in-out infinite}
+/* 打字光标：step-end 硬闪改柔和渐隐渐现 */
+.st-caret{animation:blinkSoft 1.15s ease-in-out infinite}
+@keyframes blinkSoft{0%,100%{opacity:1}50%{opacity:.15}}
+
+/* 进度条：加长缓动，步数变化时像液体一样涨过去 */
+.live-progress i{transition:width .9s cubic-bezier(.22,.61,.36,1)}
+
+/* 新步骤落卡：fade + 4px 上浮，只有最新一行动（旧行不重放） */
+.live-box .steps .step:last-child{animation:stepIn .32s cubic-bezier(.32,.72,0,1)}
+@keyframes stepIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+/* 消息进场：稍慢半拍 + 减速曲线，比 .22s ease-out 温和 */
+.msg{animation:msgIn .3s cubic-bezier(.32,.72,0,1)}
+
+
 
 /* 抽屉整体拉起（收起侧边栏）：全主题可用，拉起后侧栏整个让位给对话区 */
 .side-collapse{display:inline-block;padding:5px 9px}
