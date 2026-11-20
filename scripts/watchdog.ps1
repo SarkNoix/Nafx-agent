@@ -4,21 +4,33 @@
 #  问题：面板（monitor.ps1）偶尔会退出，用户看到的就是"面板突然没了"。
 #  用户得手动重开，中间那段时间什么都看不到。
 #
-#  这个脚本每 10 秒检查一次 8090 端口。
-#    - 端口在监听 → 什么都不做
-#    - 端口没了   → 拉起来
-#    - 连续拉起失败 3 次 → 记日志并放弃（别死循环刷进程）
+#  这个脚本做两件事：
+#    1) 每 10 秒检查一次 8090 端口
+#         - 端口在监听 → 什么都不做
+#         - 端口没了   → 拉起来
+#         - 连续拉起失败 3 次 → 记日志并放弃（别死循环刷进程）
+#    2) 每 60 秒看一眼内存（8GB 机器上这个比面板挂掉更常见）
+#         - llama-server 常驻内存 >= 5600 MB，或可用内存 < 400 MB（且 llama 占着 2500 MB 以上）
+#           （5120 context + f16 时 llama 正常就吃 4600-4800 MB，别把阈值压到 4500，会误杀）
+#         - 连续 2 次超阈值、且没有任务在跑 → 只重启 llama-server，面板不动
+#         - 重启后 15 分钟内不再重启（冷却，避免来回折腾）
+#       MemCheckSec = 0 可以关掉内存部分，只留原来的面板守护。
 #
-#  只做这一件事，故意写得很简单 —— 看门狗自己挂掉比面板挂掉更糟。
+#  只做这两件事，故意写得很简单 —— 看门狗自己挂掉比面板挂掉更糟。
 #
-#  用法（不带参数就守护 8090）：
+#  用法（不带参数就守护 8090，并开启内存监控）：
 #    powershell -File scripts\watchdog.ps1
 #    powershell -File scripts\watchdog.ps1 -Port 8090 -IntervalSec 10
+#    powershell -File scripts\watchdog.ps1 -MemCheckSec 0      # 只看面板，不看内存
 # ============================================================
 
 param(
     [int]$Port = 8090,
-    [int]$IntervalSec = 10
+    [int]$IntervalSec = 10,
+    [int]$MemCheckSec = 60,
+    [int]$LlamaMaxMB = 5600,
+    [int]$FreeMinMB = 400,
+    [int]$MemCooldownSec = 900
 )
 
 $ErrorActionPreference = 'SilentlyContinue'
@@ -45,11 +57,111 @@ function Test-Panel {
     return $false
 }
 
+# --- 模型端口（重启后要等 /health，从 config.json 读）---
+$ModelHost = '127.0.0.1'
+$ModelPort = 8080
+try {
+    $cfgW = Get-Content (Join-Path $Root 'config.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($cfgW.host) { $ModelHost = [string]$cfgW.host }
+    if ($cfgW.port) { $ModelPort = [int]$cfgW.port }
+} catch { }
+
+function Get-MemState {
+    $m = [pscustomobject]@{ FreeMB = 0; LlamaMB = 0; LlamaCount = 0 }
+    try {
+        $m.FreeMB = [math]::Round((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory / 1024)
+    } catch { }
+    $procs = @(Get-Process llama-server -ErrorAction SilentlyContinue)
+    $m.LlamaCount = $procs.Count
+    if ($procs.Count -gt 0) {
+        $m.LlamaMB = [math]::Round((($procs | Measure-Object WorkingSet64 -Sum).Sum) / 1MB)
+    }
+    return $m
+}
+
+# 有任务在跑就别重启模型，不然任务会半路死
+function Test-Busy {
+    $sf = Join-Path $Root 'agent\state.json'
+    if (-not (Test-Path $sf)) { return $false }
+    try {
+        $s = Get-Content $sf -Raw -Encoding UTF8 | ConvertFrom-Json
+        $ph = [string]$s.phase
+        if ($ph -like '正在*' -or $ph -like '第 *') { return $true }
+        $st = [string]$s.status
+        if ($st -eq 'running' -or $st -eq 'queued' -or $st -eq 'busy') { return $true }
+    } catch { }
+    return $false
+}
+
+# 只重启模型服务：kill llama-server → launcher -NoBrowser 拉起 → 等 /health
+# 面板和配置都不动，也不会再多开一个浏览器窗口
+function Restart-Llama {
+    WLog '内存超阈值，重启 llama-server'
+    Get-Process llama-server -ErrorAction SilentlyContinue | ForEach-Object {
+        try { $_.Kill() } catch { }
+    }
+    Start-Sleep -Seconds 3
+    $launcher = Join-Path $Root 'launcher.ps1'
+    if (-not (Test-Path $launcher)) {
+        WLog '找不到 launcher.ps1，放弃重启'
+        return $false
+    }
+    try {
+        Start-Process -FilePath 'powershell.exe' `
+            -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-File', $launcher, '-NoBrowser') `
+            -WindowStyle Hidden
+    } catch {
+        WLog ('重启失败：' + $_.Exception.Message)
+        return $false
+    }
+    $healthUrl = 'http://' + $ModelHost + ':' + $ModelPort + '/health'
+    for ($i = 0; $i -lt 40; $i++) {
+        Start-Sleep -Seconds 3
+        try {
+            if ((Invoke-WebRequest -Uri $healthUrl -UseBasicParsing -TimeoutSec 3).StatusCode -eq 200) {
+                WLog 'llama-server 已恢复'
+                return $true
+            }
+        } catch { }
+    }
+    WLog 'llama-server 重启后 120 秒仍未就绪'
+    return $false
+}
+
 WLog ("看门狗启动，守护端口 $Port，每 $IntervalSec 秒检查一次")
 
 $failStreak = 0
+$lastMemCheck = Get-Date
+$lastMemRestart = [datetime]::MinValue
+$memStreak = 0
 
 while ($true) {
+
+    # --- 内存闸门：每 MemCheckSec 秒看一次，连续 2 次超阈值才动手 ---
+    if ($MemCheckSec -gt 0 -and ((Get-Date) - $lastMemCheck).TotalSeconds -ge $MemCheckSec) {
+        $lastMemCheck = Get-Date
+        $m = Get-MemState
+        $overByLlama = ($m.LlamaMB -ge $LlamaMaxMB)
+        $overByFree  = ($m.FreeMB -lt $FreeMinMB -and $m.LlamaMB -ge 2500)
+        if ($overByLlama -or $overByFree) {
+            $memStreak++
+            if ($overByLlama) { $why = 'llama 占用过大' } else { $why = '可用内存过低' }
+            WLog ('内存告警（' + $why + '）：llama ' + $m.LlamaMB + ' MB，可用 ' + $m.FreeMB + ' MB，第 ' + $memStreak + ' 次')
+            if ($memStreak -ge 2 -and $m.LlamaCount -gt 0) {
+                if (((Get-Date) - $lastMemRestart).TotalSeconds -lt $MemCooldownSec) {
+                    WLog '冷却期内，先不重启'
+                } elseif (Test-Busy) {
+                    WLog '有任务在跑，跳过本次重启'
+                } else {
+                    if (Restart-Llama) { $lastMemRestart = Get-Date }
+                    $memStreak = 0
+                }
+            }
+        } else {
+            $memStreak = 0
+        }
+    }
+
     if (Test-Panel) {
         $failStreak = 0
         Start-Sleep -Seconds $IntervalSec
