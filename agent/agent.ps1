@@ -546,6 +546,18 @@ function Get-ToolNamesFor {
     }
 }
 
+function Get-ExtraToolsByTask {
+    param([string]$TaskText)
+    # 任务里明说了要干什么，就把对应工具塞进候选。
+    # 走流程模板时也照样补 —— 模板工具表是静态的，上一轮就漏过 unzip。
+    # 新加的三个工具（2026-11-20）：HTTP 请求 / 读 PDF / 完成提醒。
+    $need = @()
+    if ($TaskText -match 'http|https|接口|api|API|状态码|请求.*(地址|网址|链接|服务)|curl|调.*接口') { $need += 'http_request' }
+    if ($TaskText -match 'pdf|PDF') { $need += 'pdf_read' }
+    if ($TaskText -match '提醒|弹窗|通知|做完.*(叫|喊|告诉)|完成.*(叫|喊|告诉)') { $need += 'notify' }
+    return $need
+}
+
 function Get-ToolsJsonFor {
     param([string[]]$Names)
     if (-not $Names -or $Names.Count -eq 0) { return $ToolsSchemaRaw }
@@ -1682,6 +1694,7 @@ try {
             #
             # 这里按任务文本里的关键词硬塞，不管走哪个流程都不会漏。
             $needTools = @()
+            $needTools += @(Get-ExtraToolsByTask -TaskText $TaskText)
             if ($TaskText -match '解压|解开|提取出来|unzip|extract') { $needTools += 'unzip' }
             if ($TaskText -match '压缩|打包|zip 起来|生成.*\.zip' -and $TaskText -notmatch '解压') { $needTools += 'zip_list' }
             if ($TaskText -match 'zip|压缩包|归档包') { $needTools += 'zip_list' }
@@ -1716,6 +1729,13 @@ try {
         #    把 write_file 砍掉，模型只好 run_cmd echo > 绕，写出路径错的空文件。
         # 现在按意图发 10-13 个，既不缺必需品，也不会一上来就顶满。
         $defaultTools = Get-ToolNamesFor -Intent $intent -TaskText $TaskText
+        # 关键词补工具也走一遍：默认集是静态的，读 PDF / 请求接口 / 完成提醒都不在里面。
+        $extraTools = @(Get-ExtraToolsByTask -TaskText $TaskText |
+                        Where-Object { $_ -and $script:ToolSchemaMap.ContainsKey($_) -and $defaultTools -notcontains $_ })
+        if ($extraTools.Count -gt 0) {
+            $defaultTools = @($defaultTools) + $extraTools
+            Write-Log ("  按任务关键词补了工具：" + ($extraTools -join ','))
+        }
         $script:ActiveFlowToolCount = @($defaultTools).Count
         $script:ActiveFlowTools = @($defaultTools)
         $dflt = Get-ToolsJsonWithFinish -Names @($defaultTools)

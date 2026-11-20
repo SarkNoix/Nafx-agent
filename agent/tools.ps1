@@ -830,6 +830,218 @@ function Invoke-AiTool {
                 return ("现在是 " + $d.ToString('yyyy年M月d日') + " " + $wk + " " + $d.ToString('HH:mm:ss'))
             }
 
+            'http_request' {
+                # 通用 HTTP 请求。web_fetch 只能抓网页正文、web_search 只能搜，
+                # 想调接口（POST JSON、带自定义 header）以前只能写脚本绕。
+                $url = ([string]$Action.url).Trim()
+                if ([string]::IsNullOrWhiteSpace($url)) { throw '要给 url' }
+                if ($url -notmatch '^https?://') { $url = 'https://' + $url }
+                if ($url -notmatch '^https?://') { throw "只支持 http/https，收到：$url" }
+
+                $method = ([string]$Action.method).Trim().ToUpperInvariant()
+                if (-not $method) { $method = 'GET' }
+                if ($method -notin @('GET','POST','PUT','DELETE','PATCH','HEAD')) {
+                    throw "method 只能 GET/POST/PUT/DELETE/PATCH/HEAD，收到：$method"
+                }
+
+                $timeout = [int]$Action.timeout
+                if ($timeout -le 0) { $timeout = 20 }
+                if ($timeout -gt 60) { $timeout = 60 }
+
+                # headers 支持 JSON 对象字符串，例如 {"Authorization":"Bearer xx"}
+                $headers = @{}
+                if ($Action.headers) {
+                    $h = $Action.headers
+                    if ($h -is [string]) {
+                        if (-not [string]::IsNullOrWhiteSpace($h)) { $h = $h | ConvertFrom-Json }
+                        else { $h = $null }
+                    }
+                    if ($h) {
+                        foreach ($p in $h.PSObject.Properties) { $headers[[string]$p.Name] = [string]$p.Value }
+                    }
+                }
+
+                $reqBody = [string]$Action.body
+                $ct = [string]$Action.contentType
+                if (-not $ct -and $reqBody) { $ct = 'application/json; charset=utf-8' }
+
+                $invokeArgs = @{
+                    Uri = $url; Method = $method; TimeoutSec = $timeout; UseBasicParsing = $true
+                }
+                if ($headers.Count -gt 0) { $invokeArgs.Headers = $headers }
+                if ($reqBody) { $invokeArgs.Body = $reqBody }
+                if ($ct -and $reqBody) { $invokeArgs.ContentType = $ct }
+
+                $code = 0; $text = ''; $ctype = ''
+                try {
+                    $resp = Invoke-WebRequest @invokeArgs
+                    $code = [int]$resp.StatusCode
+                    $text = [string]$resp.Content
+                    try { $ctype = [string]$resp.Headers['Content-Type'] } catch { }
+                } catch {
+                    # 4xx/5xx 在 PS 5.1 里也是抛异常，响应体要从异常里捞出来，
+                    # 否则模型只能看到一句「远程服务器返回错误」，不知道错在哪。
+                    $wr = $null
+                    try { $wr = $_.Exception.Response } catch { }
+                    if ($wr -and $wr.StatusCode) {
+                        $code = [int]$wr.StatusCode
+                        try {
+                            $sr = New-Object System.IO.StreamReader($wr.GetResponseStream())
+                            $text = $sr.ReadToEnd()
+                            $sr.Dispose()
+                        } catch { $text = [string]$_.Exception.Message }
+                    } else {
+                        throw ("请求失败：" + $_.Exception.Message + "。检查 url、网络或 timeout")
+                    }
+                }
+
+                if ([string]::IsNullOrEmpty($text)) { $text = '（响应体为空）' }
+                $outText = $text
+                if ($outText.Length -gt $script:MaxOutput) {
+                    $outText = $outText.Substring(0, $script:MaxOutput) + "`n...[已截断，共 $($text.Length) 字符]"
+                }
+                $head = "HTTP $code $method $url"
+                if ($ctype) { $head += "（$ctype）" }
+                return ($head + "`n" + $outText)
+            }
+
+            'pdf_read' {
+                # 读 PDF 文本。底层用 python 的 pypdf（纯解析、不渲染），
+                # 没有就明确报错，别让模型以为读到了空文件。
+                $full = Resolve-AiPath $Action.path
+                if (-not (Test-Path -LiteralPath $full)) { throw "不存在：$($Action.path)" }
+                if ((Test-Path -LiteralPath $full -PathType Container)) { throw "$($Action.path) 是目录，不是 PDF" }
+                if ($full -notmatch '(?i)\.pdf$') { throw "这不是 PDF 文件（看 $($Action.path) 的后缀）。其他文本直接 read_file" }
+
+                $pages = ([string]$Action.pages).Trim()
+                $maxChars = [int]$Action.maxChars
+                if ($maxChars -le 0) { $maxChars = 1500 }
+                if ($maxChars -gt 4000) { $maxChars = 4000 }
+
+                # 挑 python：PATH 上的 python 不一定能用 ——
+                # agent 是 launcher 早就起着的进程，PATH 是启动那一刻的快照，
+                # 里面可能是个没装 pypdf 的解释器，甚至是个别名壳。
+                # 所以逐个试，谁 import pypdf 成功就用谁。
+                $py = $null
+                $cands = @()
+                foreach ($cand in @('python', 'python3', 'python.exe')) {
+                    $c = Get-Command $cand -ErrorAction SilentlyContinue
+                    if ($c -and $c.Source) { $cands += $c.Source }
+                }
+                # 常见安装位置兜底（含豆包沙箱自带的那份 python）
+                $patterns = @(
+                    (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python*\python.exe'),
+                    (Join-Path $env:LOCALAPPDATA 'Doubao\User Data\sandbox_runtime\bases\*\python\python.exe'),
+                    'C:\Python*\python.exe',
+                    (Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps\python.exe')
+                )
+                foreach ($p in $patterns) {
+                    try { $cands += @(Get-ChildItem -Path $p -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }) } catch { }
+                }
+                $seen = @{}
+                foreach ($cand in $cands) {
+                    if (-not $cand -or $seen.ContainsKey($cand)) { continue }
+                    $seen[$cand] = $true
+                    try {
+                        & $cand -c 'import pypdf' 2>$null | Out-Null
+                        if ($LASTEXITCODE -eq 0) { $py = $cand; break }
+                    } catch { }
+                }
+                if (-not $py) {
+                    throw '没找到能用的 python（需要 python + pypdf）。文本文件用 read_file；要装的话：python -m pip install pypdf'
+                }
+
+                $tmpPy = Join-Path $env:TEMP ('nafx_pdf_' + [Guid]::NewGuid().ToString('N').Substring(0,8) + '.py')
+                $pySrc = @'
+import sys, json
+try:
+    from pypdf import PdfReader
+except Exception:
+    from PyPDF2 import PdfReader
+path, rng, maxc = sys.argv[1], sys.argv[2], int(sys.argv[3])
+r = PdfReader(path)
+n = len(r.pages)
+if rng and rng.lower() != "all":
+    if "-" in rng:
+        a, b = rng.split("-", 1)
+        sel = list(range(max(0, int(a) - 1), min(n, int(b))))
+    else:
+        i = int(rng) - 1
+        sel = [i] if 0 <= i < n else []
+else:
+    sel = list(range(min(n, 8)))
+out, total, shown, cut = [], 0, [], False
+for i in sel:
+    try:
+        t = (r.pages[i].extract_text() or "").strip()
+    except Exception:
+        t = ""
+    if not t:
+        continue
+    piece = "--- 第 %d 页 ---\n%s" % (i + 1, t)
+    if total + len(piece) > maxc:
+        piece = piece[: max(0, maxc - total)]
+        if piece:
+            out.append(piece)
+            shown.append(i + 1)
+        total = maxc
+        cut = True
+        break
+    out.append(piece)
+    shown.append(i + 1)
+    total += len(piece)
+print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut}, ensure_ascii=False))
+'@
+                [IO.File]::WriteAllText($tmpPy, $pySrc, (New-Object Text.UTF8Encoding($false)))
+                try {
+                    $raw = & $py $tmpPy $full $pages $maxChars 2>&1 | Out-String
+                } finally {
+                    Remove-Item -LiteralPath $tmpPy -Force -ErrorAction SilentlyContinue
+                }
+                $raw = $raw.Trim()
+                $obj = $null
+                try { $obj = $raw | ConvertFrom-Json } catch { }
+                if (-not $obj) {
+                    # 只回最后一行（真正的异常原因），别把整段 Traceback 塞给模型 ——
+                    # 上一版就是因为 Traceback 太长，模型只看到第一行，判断不出问题。
+                    $reason = @($raw -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -Last 1)
+                    throw ("PDF 解析失败：" + $reason + "。可能是加密/扫描件/缺 pypdf")
+                }
+                $nPages = [int]$obj.pages
+                $shownArr = @($obj.shown)
+                $shownTxt = if ($shownArr.Count -gt 0) { '第 ' + ($shownArr -join '、') + ' 页' } else { '（这些页没有可提取的文字，可能是扫描件）' }
+                $bodyTxt = [string]$obj.text
+                if ($obj.cut) { $bodyTxt += "`n…[达到字数上限 $maxChars 字符，换 pages 参数读后面的页]" }
+                return ("PDF 共 $nPages 页；已读 " + $shownTxt + "：`n" + $bodyTxt)
+            }
+
+            'notify' {
+                # 系统托盘气泡提醒。长任务跑完不用一直盯着面板。
+                $title = ([string]$Action.title).Trim()
+                if ([string]::IsNullOrWhiteSpace($title)) { $title = 'Nafx' }
+                $msg = [string]$Action.message
+                if ([string]::IsNullOrWhiteSpace($msg)) { throw '要给 message（提醒内容）' }
+                $msg = $msg.Substring(0, [Math]::Min($msg.Length, 250))
+                Add-Type -AssemblyName System.Windows.Forms
+                Add-Type -AssemblyName System.Drawing
+                $icon = $null
+                try {
+                    $icon = New-Object System.Windows.Forms.NotifyIcon
+                    $icon.Icon = [System.Drawing.SystemIcons]::Information
+                    $icon.Visible = $true
+                    $icon.BalloonTipTitle = $title
+                    $icon.BalloonTipText = $msg
+                    $icon.BalloonTipIcon = [System.Windows.Forms.ToolTipIcon]::Info
+                    $icon.ShowBalloonTip(5000)
+                    Start-Sleep -Milliseconds 5500
+                } catch {
+                    throw ("弹提醒失败：" + $_.Exception.Message)
+                } finally {
+                    if ($icon) { try { $icon.Dispose() } catch { } }
+                }
+                return "已弹提醒：$title — $msg"
+            }
+
             'zip_list' {
                 # 不解压，先看压缩包里有什么
                 $full = Resolve-AiPath $Action.path

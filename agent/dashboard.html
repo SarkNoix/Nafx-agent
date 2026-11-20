@@ -2340,7 +2340,73 @@ html[data-theme="dsh-dark"]{
 [data-theme="dsh-dark"] .step .step-obs-wrap{background:transparent}
 [data-theme="dsh-dark"] .side input[type="text"],
 [data-theme="dsh-dark"] .side select{background:#10131a;color:#e8eaee}
-[data-theme="dsh-dark"] .cmdchip{background:#16181d;border-color:#262a31;color:#9aa1ad}</style>
+[data-theme="dsh-dark"] .cmdchip{background:#16181d;border-color:#262a31;color:#9aa1ad}
+
+/* ============================================================
+   UI 第九批：呼吸感（间距 / 层级 / 条形柔化）
+   全部走变量，不写死颜色，五个主题一起生效。
+   ============================================================ */
+
+/* 1) 数字一律等宽：步数、token、耗时不随位数左右跳 */
+.hbar b,.ctx-total-head b,.gauge-label span:last-child,.cfg-cell b,
+.who-ts,.step-sec,.live b{font-variant-numeric:tabular-nums}
+
+/* 2) 侧栏：卡片之间多留一点气，标题抬一档亮度好扫读 */
+.side{gap:14px!important}
+.side h3,.side-block h3{color:var(--dim)}
+.side-block{padding:14px 15px}
+
+/* 3) 上下文条：细一点、圆一点，存在感收住 */
+.ctx-bar{height:6px;border-radius:99px;gap:2px}
+.ctx-seg{border-radius:99px}
+.ctx-legend i{width:7px;height:7px;border-radius:99px}
+.gauge{margin:12px 0 0}
+.gauge-bar{height:5px;border-radius:99px}
+.gauge-fill{border-radius:99px;transition:width .55s cubic-bezier(.32,.72,0,1)}
+
+/* 4) 主题胶囊：松一点，选中态给个极浅的影 */
+.theme-switch{gap:4px}
+.theme-switch button{padding:5px 12px;border-radius:99px}
+.theme-switch button.on{box-shadow:0 1px 3px rgba(0,0,0,.07)}
+
+/* 5) 空状态：标题和说明分层，chip 更松 */
+.empty h1{letter-spacing:1.2px}
+.empty p{opacity:.9;line-height:1.75}
+.chips{gap:10px;margin-top:26px}
+.chip{padding:9px 17px;background:var(--panel2)}
+.chip:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(0,0,0,.07)}
+
+/* 6) 侧栏底部操作：从「散字」变成有边界的四个格子 */
+.side-actions{gap:8px!important;padding-top:15px}
+.side-actions button{
+  background:var(--panel3);border:1px solid var(--line);
+  border-radius:10px!important;color:var(--dim);
+}
+.side-actions button:hover{background:var(--panel2);border-color:var(--line2);color:var(--fg)}
+.side-actions button.danger{opacity:.82}
+.side-actions button.danger:hover{border-color:var(--err);color:var(--err);background:var(--err-bg);opacity:1}
+/* DSH 主题原本把这里做成扁平列表，四个动作看着像散落的字；
+   这里改回 2×2 格子，仍是低对比，但不飘。 */
+[data-theme="dsh"] .side-actions button,
+[data-theme="dsh-dark"] .side-actions button{
+  background:var(--panel3);border:1px solid var(--line);border-radius:10px;
+  color:var(--dim);text-align:center;justify-content:center;
+}
+[data-theme="dsh"] .side-actions button:hover,
+[data-theme="dsh-dark"] .side-actions button:hover{
+  background:var(--panel2);border-color:var(--line2);color:var(--fg);
+}
+[data-theme="dsh"] .side-actions button.danger,
+[data-theme="dsh-dark"] .side-actions button.danger{color:#c04a4a}
+
+/* 7) 滚动条轻一点，别抢眼 */
+.thread::-webkit-scrollbar,.side::-webkit-scrollbar{width:8px}
+.thread::-webkit-scrollbar-thumb,.side::-webkit-scrollbar-thumb{
+  background:var(--line2);border-radius:99px;
+}
+.thread::-webkit-scrollbar-thumb:hover,.side::-webkit-scrollbar-thumb:hover{background:var(--dim)}
+.thread::-webkit-scrollbar-track,.side::-webkit-scrollbar-track{background:transparent}
+</style>
 </head>
 <body>
 
@@ -3055,10 +3121,10 @@ var TOOL_GROUPS = [
   { g:'文件', names:['write_file','read_file','read_lines','list_dir','append_file','replace_in_file','set_line','make_dir','delete_path','move_path','copy_path','file_info','find_files','hash_file','zip_list','unzip'] },
   { g:'查找', names:['grep_file','search_text'] },
   { g:'执行', names:['run_cmd','run_ps','run_ps1','run_bat','run_js','run_python'] },
-  { g:'系统', names:['sys_info','ps','kill_process','open_app','clipboard','env_get','install','now','date_calc','unit_convert'] },
+  { g:'系统', names:['sys_info','ps','kill_process','open_app','clipboard','env_get','install','now','date_calc','unit_convert','notify'] },
   { g:'数据', names:['skill','write_skill','json_format','csv_preview'] },
-  { g:'网络', names:['web_search','web_fetch','download_file'] },
-  { g:'查询', names:['syshelp','help','win_doc','project_doc'] },
+  { g:'网络', names:['web_search','web_fetch','download_file','http_request'] },
+  { g:'查询', names:['syshelp','help','win_doc','project_doc','pdf_read'] },
   { g:'流程', names:['plan','say','rethink','learn','finish'] }
 ];
 
@@ -3223,6 +3289,7 @@ var TOOL_ICONS = {
   web_search:   '🌐', web_fetch: '🔗', download_file: '⬇️',
   sys_info:     '🖥️', env_get: '⚙️', ps: '📊', kill_process: '⛔', now: '🕐',
   syshelp:      '📘', help: '📘', win_doc: '📘', project_doc: '📘',
+  http_request: '🌐', pdf_read: '📄', notify: '🔔',
   finish:       '✅', say: '💬', rethink: '🔁', plan: '📋',
   skill:        '🧩', write_skill: '🧩', json_format: '🔧', csv_preview: '📊',
   hash_file:    '🔐', file_info: 'ℹ️', diff_files: '📑', zip_list: '🗜️',
@@ -3252,6 +3319,9 @@ function toolPhrase(tool, arg){
     case 'delete_file': case 'remove':      return '删除了文件';
     case 'unzip':                           return '解压了文件';
     case 'note':                            return '播报进度';
+    case 'http_request':                    return '请求了接口';
+    case 'pdf_read':                        return '读取了 PDF';
+    case 'notify':                          return '提醒了你';
     case 'answer':                          return '回答你';
     case 'finish':                          return '完成任务';
     default: return t || '?';
