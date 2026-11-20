@@ -10,9 +10,9 @@
 #         - 端口没了   → 拉起来
 #         - 连续拉起失败 3 次 → 记日志并放弃（别死循环刷进程）
 #    2) 每 60 秒看一眼内存（8GB 机器上这个比面板挂掉更常见）
-#         - llama-server 常驻内存 >= 5600 MB，或可用内存 < 400 MB（且 llama 占着 2500 MB 以上）
-#           （5120 context + f16 时 llama 正常就吃 4600-4800 MB，别把阈值压到 4500，会误杀）
-#         - 连续 2 次超阈值、且没有任务在跑 → 只重启 llama-server，面板不动
+#         - llama-server 常驻内存 >= 5600 MB → 连续 2 次超阈值、且没有任务在跑，就只重启 llama-server
+#           （5120 context + f16 时 llama 正常就吃 4600-4900 MB，所以阈值不能低于 5000，会误杀）
+#         - 可用内存 < 400 MB 但 llama 没超标 → 只记一条日志（这句大概率是浏览器吃掉的，重启模型没用）
 #         - 重启后 15 分钟内不再重启（冷却，避免来回折腾）
 #       MemCheckSec = 0 可以关掉内存部分，只留原来的面板守护。
 #
@@ -133,20 +133,22 @@ WLog ("看门狗启动，守护端口 $Port，每 $IntervalSec 秒检查一次")
 $failStreak = 0
 $lastMemCheck = Get-Date
 $lastMemRestart = [datetime]::MinValue
+$lastLowFreeLog = [datetime]::MinValue
 $memStreak = 0
 
 while ($true) {
 
     # --- 内存闸门：每 MemCheckSec 秒看一次，连续 2 次超阈值才动手 ---
+    # 只有 llama 自己变大才重启它：重启只是把 llama 拉回 4.6-4.9 GB 的基线。
+    # 如果可用内存低、但 llama 没超标，重启没用（省下的内存会被浏览器/system 吃掉），只记日志。
     if ($MemCheckSec -gt 0 -and ((Get-Date) - $lastMemCheck).TotalSeconds -ge $MemCheckSec) {
         $lastMemCheck = Get-Date
         $m = Get-MemState
         $overByLlama = ($m.LlamaMB -ge $LlamaMaxMB)
-        $overByFree  = ($m.FreeMB -lt $FreeMinMB -and $m.LlamaMB -ge 2500)
-        if ($overByLlama -or $overByFree) {
+        $lowFreeButNormalLlama = ($m.FreeMB -lt $FreeMinMB -and $m.LlamaMB -lt 5000)
+        if ($overByLlama) {
             $memStreak++
-            if ($overByLlama) { $why = 'llama 占用过大' } else { $why = '可用内存过低' }
-            WLog ('内存告警（' + $why + '）：llama ' + $m.LlamaMB + ' MB，可用 ' + $m.FreeMB + ' MB，第 ' + $memStreak + ' 次')
+            WLog ('内存告警（llama 占用 ' + $m.LlamaMB + ' MB，超过 ' + $LlamaMaxMB + '，可用 ' + $m.FreeMB + ' MB），第 ' + $memStreak + ' 次')
             if ($memStreak -ge 2 -and $m.LlamaCount -gt 0) {
                 if (((Get-Date) - $lastMemRestart).TotalSeconds -lt $MemCooldownSec) {
                     WLog '冷却期内，先不重启'
@@ -158,6 +160,10 @@ while ($true) {
                 }
             }
         } else {
+            if ($lowFreeButNormalLlama -and ((Get-Date) - $lastLowFreeLog).TotalSeconds -ge 600) {
+                $lastLowFreeLog = Get-Date
+                WLog ('可用内存只有 ' + $m.FreeMB + ' MB，但 llama 占用正常（' + $m.LlamaMB + ' MB），不重启；建议关掉多余浏览器窗口')
+            }
             $memStreak = 0
         }
     }
