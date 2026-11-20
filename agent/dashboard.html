@@ -2439,7 +2439,7 @@ html[data-theme="dsh-dark"]{
 
 /* ④ 顶栏：状态数字和右侧按钮高低一致 */
 .hbar{align-items:center;gap:15px}
-header .ghost{height:29px;padding:0 11px;display:inline-flex;align-items:center}
+header .ghost{height:29px;padding:0 11px;align-items:center}
 .theme-switch{margin:0 2px}
 .theme-switch button{padding:4px 9px;letter-spacing:.02em}
 
@@ -2472,6 +2472,14 @@ button.primary:active{transform:translateY(1px)}
 /* ⑩ 键盘可达性：所有可聚焦控件统一焦点环 */
 button:focus-visible,textarea:focus-visible,input[type="text"]:focus-visible,
 select:focus-visible,#sysBtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ⑪ 窄屏顶栏：按钮文字不竖着断，顶栏不够宽就折成两行 */
+header button,
+header .theme-switch button{white-space:nowrap}
+@media(max-width:1000px){
+  header{height:auto;min-height:54px;flex-wrap:wrap;padding:8px 12px;row-gap:8px}
+  .hbar{display:none}
+}
 </style>
 </head>
 <body>
@@ -2500,14 +2508,14 @@ select:focus-visible,#sysBtn:focus-visible{outline:2px solid var(--accent);outli
     <span id="hQueue">—</span>
   </div>
   <div class="spacer"></div>
-  <button id="btnSide" class="ghost side-toggle">面板</button>
+  <button id="btnSide" class="ghost side-toggle" title="展开侧栏">☰</button>
   <button id="btnDrawer" class="ghost side-collapse" title="收起 / 展开侧边栏">‹</button>
   <div class="theme-switch">
     <button data-theme-btn="light" title="浅色：最朴素的白底">浅色</button>
     <button data-theme-btn="dark" title="深色：基础深色">深色</button>
     <button data-theme-btn="glass" title="液态玻璃：半透明毛玻璃">玻璃</button>
-    <button data-theme-btn="dsh" title="豆包风浅色：平铺消息、无气泡">豆包</button>
-    <button data-theme-btn="dsh-dark" title="ATC 深色：默认推荐">ATC</button>
+    <button data-theme-btn="dsh" title="ATC：豆包风浅色，平铺消息、无气泡">ATC</button>
+    <button data-theme-btn="dsh-dark" title="BATC：ATC 深色，默认推荐">BATC</button>
   </div>
   <button id="btnModel" class="ghost">模型</button>
   <button id="btnQueue" class="ghost">队列</button>
