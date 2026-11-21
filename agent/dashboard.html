@@ -2693,8 +2693,14 @@ header .theme-switch button{white-space:nowrap}
 .ctx-total-head b{color:var(--fg)}
 .ctx-total-head .ctx-lim{color:var(--dim);font-weight:500}
 
-/* ⑥ 侧栏收起态：留白别装成「空卡片」，标题也淡一档 */
-.side-block.closed{padding-bottom:9px}
+/* ⑥ 侧栏收起态：只留标题一行
+   只压高度不够 —— 子元素自带的 margin（比如 .gauge 的 12px）不算在高里，
+   卡片还是会空出一截。收起后直接 display:none，盒模型彻底不参与布局；
+   展开时 JS 会先摘掉 .closed 再量高度，动画照常。 */
+.side-block.closed > *:not(h3){display:none!important}
+.side-block.closed{padding-top:7px;padding-bottom:7px;box-shadow:none}
+[data-theme="su"] .side-block.closed,
+[data-theme="mo"] .side-block.closed{padding:0}
 .side-block.closed > h3{opacity:.72}
 .side-block > h3:hover{color:var(--fg)}
 
