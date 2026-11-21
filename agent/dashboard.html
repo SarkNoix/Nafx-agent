@@ -2614,6 +2614,38 @@ header .theme-switch button{white-space:nowrap}
   header{height:auto;min-height:54px;flex-wrap:wrap;padding:8px 12px;row-gap:8px}
   .hbar{display:none}
 }
+
+/* ============================================================
+   第十轮 · 顶栏不打架 / 交互反馈（2026-11-22）
+   ① 模型名太长就省略，全名放 title
+   ② 顶栏「本地/接口」只表达来源，不再重复模型名
+   ③ 主题组前加一条细竖线，右侧两组按钮分得开
+   ④ 输入框聚焦时给一圈柔和光，而不是只换边框色
+   ⑤ 任务卡悬停轻微抬高，扫历史时知道鼠标停在哪
+   ============================================================ */
+
+/* ① 超长模型名截断，别把整条顶栏挤歪 */
+#hModel{max-width:290px;overflow:hidden}
+#hModel b{display:inline-block;max-width:225px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom}
+
+/* ③ 竖线分隔：主题胶囊是「换肤」，右边是「功能」，不该混成一排 */
+.theme-switch{position:relative}
+.theme-switch::before{
+  content:'';position:absolute;left:-8px;top:50%;
+  width:1px;height:18px;margin-top:-9px;background:var(--line2);opacity:.8;
+}
+
+/* ④ 输入框聚焦：一圈 3px 的淡主题色，安静但明确 */
+.composer textarea:focus{
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 13%,transparent);
+}
+
+/* ⑤ 任务卡悬停反馈（素/墨是透明平铺，不加深色阴影） */
+.live-box{transition:border-color .18s ease,box-shadow .18s ease}
+.live-box:hover{border-color:var(--line2);box-shadow:0 6px 20px rgba(0,0,0,.12)}
+[data-theme="su"] .thread .live-box:hover,
+[data-theme="mo"] .thread .live-box:hover{box-shadow:none}
 </style>
 </head>
 <body>
@@ -3073,7 +3105,7 @@ function renderModePill(sys){
       : '接口模式还没填 API 密钥。点一下换回本地，或去编辑 api-key.json';
   } else {
     b.className = 'mode-pill local';
-    b.textContent = '本地 · ' + (label || 'llama');
+    b.textContent = '本地 llama';
     b.title = '当前用本地 llama（离线、免费、慢）。点一下换成 DeepSeek 接口';
   }
 }
@@ -3133,14 +3165,36 @@ function applyTheme(name){
 /* DSH 抽屉重排：给每个 side-block 绑折叠，工作区默认展开。
    切回其他主题时移除 closed，恢复卡片全展开的样子。
    绑定只做一次（h3 上有标记），折叠类名随主题切换加/删。 */
+/* ---------- 侧栏折叠状态的存取 ----------
+   
+   存在 localStorage 的 nafx-side 里，形如 {"上下文占用":true,"工作区":false}，
+   值 true = 展开，false = 收起。
+   
+   为什么要带版本号：
+   这个键以前就存在，里面记的是「用户上次点成什么样」。
+   如果直接把默认值改成折叠，老用户的旧记录（大多是 true）会盖掉默认值，
+   改了等于没改 —— 用户还会以为没生效。
+   带上版本号，旧记录自动作废，所有人都从新的默认值开始。 */
+var SIDE_STATE_VER = 2;
+
 function sideKey(b){
   var h = b.querySelector('h3');
   return h ? h.textContent.trim() : ('sb' + Array.prototype.indexOf.call(b.parentElement.children, b));
 }
 function loadSideState(){
-  try { return JSON.parse(localStorage.getItem('nafx-side') || '{}') || {}; } catch(e){ return {}; }
+  try {
+    var raw = JSON.parse(localStorage.getItem('nafx-side') || '{}') || {};
+    // 版本对不上就当作没有记录 —— 用新的默认值
+    if (raw.__v !== SIDE_STATE_VER) { return {}; }
+    return raw;
+  } catch(e){ return {}; }
 }
-function saveSideState(m){ try { localStorage.setItem('nafx-side', JSON.stringify(m)); } catch(e){} }
+function saveSideState(m){
+  try {
+    m.__v = SIDE_STATE_VER;
+    localStorage.setItem('nafx-side', JSON.stringify(m));
+  } catch(e){}
+}
 /* 折叠/展开一个侧栏区块，带高度动画。
    
    为什么要 JS 测高度：CSS 没法从 auto 过渡到 0。
@@ -3222,14 +3276,17 @@ function applyDshDrawer(on){
       });
     }
     if (on){
-      // 状态从 localStorage 恢复：切走再切回、刷新页面都是原样。
-      // 没有记录的项目默认拉起（收起，点开才摊开）。
+      // 默认全部折叠 —— 侧栏十几个卡片，全展开要滚很久才看得到下面的。
+      // 用户点开过的那些记在 localStorage，下次保持原样。
+      //
+      // 注意：localStorage 里的旧记录通过 SIDE_STATE_VER 作废，
+      // 所以升级后第一次打开一定是全折叠的，不会被老记录盖掉。
       var st = loadSideState();
       var key = sideKey(b);
       if (Object.prototype.hasOwnProperty.call(st, key)){
         b.classList.toggle('closed', !st[key]);
       } else {
-        b.classList.add('closed');
+        b.classList.add('closed');   // 没记录 = 折叠
       }
     } else {
       // 切走前把当前折叠状态存下来，回来时恢复
@@ -4383,7 +4440,9 @@ function renderFlow(sess, st){
     var status = st.status || 'idle';
     dot.className = 'dot ' + status;
     $('hintStatus').textContent = (st.phase ? '· ' + st.phase : (STATUS_TEXT[status] || ''));
-    $('hModel').innerHTML = '模型 <b>' + esc(st.model||'—') + '</b>';
+    var hm = $('hModel');
+    hm.innerHTML = '模型 <b>' + esc(st.model||'—') + '</b>';
+    hm.title = '当前模型：' + (st.model || '—');
     $('hIntent').innerHTML = '意图 <b>' + (INTENT_TEXT[st.intent] || st.intent || '—') + '</b>';
     $('hSlot').innerHTML = '步骤 <b>' + (st.step||0) + '/' + (st.maxSteps||0) + '</b>';
     $('hQueue').innerHTML = '用时 <b>' + fmtTime(st.elapsed) + '</b>';
