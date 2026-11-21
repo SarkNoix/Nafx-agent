@@ -1,5 +1,5 @@
 {
-    "version":  3,
+    "version":  4,
     "note":  "每个技能是一个验证过能跑的 .ps1。模型只需要判断该用哪个，不需要自己写代码。写着「默认预览」的技能要加 -Apply 才真动手，这是保护数据。",
     "skills":  [
                    {
@@ -383,6 +383,31 @@
                                     ],
                        "params":  "-Path \u003c目录\u003e -Apply 〔必加才真移动〕",
                        "example":  "skill(command=\"archive_by_type -Path . -Apply\")"
+                   },
+                   {
+                       "name":  "health_check",
+                       "title":  "本机安全体检",
+                       "desc":  "查自己这台电脑的安全状态：开放端口、活动连接、防火墙、开机自启、账号、补丁、目录权限、磁盘。只读不修改，不联网。",
+                       "triggers":  [
+                                        "安全吗",
+                                        "有没有中毒",
+                                        "体检",
+                                        "安全检查",
+                                        "防火墙",
+                                        "开机自启",
+                                        "启动项",
+                                        "开放端口",
+                                        "被入侵",
+                                        "漏洞",
+                                        "我的电脑安全",
+                                        "电脑安全",
+                                        "查一下安全",
+                                        "有没有木马",
+                                        "是否安全",
+                                        "安全检查一下"
+                                    ],
+                       "params":  "-Section \u003cnet|boot|account|patch|perm|disk|all，默认all\u003e　-Json 只输出JSON",
+                       "example":  "skill(command=\"health_check\")"
                    }
                ]
 }

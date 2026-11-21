@@ -837,6 +837,37 @@ function Invoke-AiTool {
                 if ([string]::IsNullOrWhiteSpace($url)) { throw '要给 url' }
                 if ($url -notmatch '^https?://') { $url = 'https://' + $url }
                 if ($url -notmatch '^https?://') { throw "只支持 http/https，收到：$url" }
+                # ---- 不许打本机和内网 ----
+                #
+                # 这工具能带任意 header、任意 body，等于一个万能 HTTP 客户端。
+                # 不拦的话模型可以：
+                #   http_request(url="http://127.0.0.1:8080/props")   直连 llama 本身
+                #   http_request(url="http://192.168.1.1/admin")       扫内网设备
+                #   http_request(url="http://169.254.169.254/...")     云主机元数据
+                # 这就是 SSRF（让服务器代替攻击者访问内部资源）。
+                #
+                # 取 host 部分来判断。先剥掉协议、再剥掉端口和路径。
+                # ⚠ IPv6 带方括号（http://[::1]/），先单独抠出来再处理端口，
+                # 否则 [/:?#] 会在 IPv6 的冒号处把 host 截断成 "[", 判断失效。
+                $ssrfHost = $url -replace '^https?://', ''
+                if ($ssrfHost -match '^\[([^\]]+)\]') {
+                    $ssrfHost = $matches[1]
+                } else {
+                    $ssrfHost = $ssrfHost -replace '[/?#].*$', ''
+                    $ssrfHost = $ssrfHost -replace ':\d+$', ''
+                }
+                $ssrfHost = $ssrfHost.Trim()
+                $ssrfHit = $false
+                if ($ssrfHost -match '^(?i)(localhost|.*\.localhost|.*\.local|.*\.internal)$') { $ssrfHit = $true }
+                elseif ($ssrfHost -match '^(?i)(0\.0\.0\.0|127\.\d+\.\d+\.\d+|::1|::$)') { $ssrfHit = $true }
+                elseif ($ssrfHost -match '^10\.\d+\.\d+\.\d+$') { $ssrfHit = $true }
+                elseif ($ssrfHost -match '^192\.168\.\d+\.\d+$') { $ssrfHit = $true }
+                elseif ($ssrfHost -match '^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$') { $ssrfHit = $true }
+                elseif ($ssrfHost -match '^169\.254\.\d+\.\d+$') { $ssrfHit = $true }
+                elseif ($ssrfHost -match '^(?i)fe80:|^fc|^fd') { $ssrfHit = $true }
+                if ($ssrfHit) {
+                    throw ("不允许访问本机或内网地址（" + $ssrfHost + "）。http_request 只能访问公网。要查本机信息用 sys_info / net_stat 这些工具。")
+                }
 
                 $method = ([string]$Action.method).Trim().ToUpperInvariant()
                 if (-not $method) { $method = 'GET' }

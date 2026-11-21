@@ -1,790 +1,849 @@
 {
-  "_说明": "流程模板。核心原则：能用一条命令直接算出结果的，就直接跑，别绕。命令搞不定再查技能库。",
-  "version": 3,
-  "_优先级": "① 一条命令能解决的 → 直接 run_cmd。② 命令不方便的 → skill 查现成脚本。③ 都没有 → 自己写。多绕一步就多几十秒。",
-  "flows": [
-    {
-      "id": "count",
-      "tools": [
-        "plan",
-        "think",
-        "run_cmd",
-        "read_file",
-        "write_file",
-        "append_file",
-        "list_dir",
-        "skill",
-        "pdf_read",
-        "notify",
-        "note",
-        "finish"
-      ],
-      "name": "数数量 / 统计",
-      "match": [
-        "多少",
-        "几个",
-        "几条",
-        "几行",
-        "数量",
-        "统计",
-        "总数",
-        "一共",
-        "加起来",
-        "求和",
-        "合计",
-        "总额",
-        "总金额",
-        "总和",
-        "平均",
-        "均值",
-        "最大",
-        "最小"
-      ],
-      "goal": "拿到工具算出的真实数字，并说清这个数字是什么",
-      "suggest_tools": [
-        "skill sum_field",
-        "skill json_query",
-        "run_cmd",
-        "skill count_ext",
-        "list_dir",
-        "skill text_stats"
-      ],
-      "reject_tools": [
-        "find_duplicates",
-        "batch_rename",
-        "archive_by_date",
-        "unzip_all",
-        "write_file"
-      ],
-      "steps": [
-        {
-          "n": 1,
-          "do": "先想：能不能一条命令直接算出来？能就直接 run_cmd，别绕",
-          "need": "命令真跑过，返回里有数字"
-        },
-        {
-          "n": 2,
-          "do": "一条命令搞不定，才 skill(command=\"list\") 找现成脚本",
-          "need": "确认技能库里有没有"
-        },
-        {
-          "n": 3,
-          "do": "把工具返回的数字原样写进 finish 的 answer",
-          "need": "answer 里的数字和工具输出一致"
-        }
-      ],
-      "cheatsheet": [
-        "数某个目录有几个文件：run_cmd(dir /b \"data\" | find /c /v \"\")",
-        "数文件有几行：run_cmd(find /c /v \"\" data\\x.txt)",
-        "按扩展名分类统计：skill(count_ext -Path data)",
-        "整个目录所有文本多少行：skill(text_stats -Path data)",
-        "jsonl 有多少条：run_cmd(find /c /v \"\" data\\x.jsonl)",
-        "某字段求和：skill(sum_field -Path data\\x.jsonl -Field amount)",
-        "或者直接查字段（自动给求和/平均/最值）：skill(json_query -Path data\\x.jsonl -Pattern amount)",
-        "算日期（几天后是几号、还有几天）：date_calc(21) 或 date_calc(2026-12-25) —— 别用 run_cmd 硬算"
-      ],
-      "forbid": [
-        "没跑工具就直接报数字",
-        "数字凭印象或凭经验写",
-        "一条命令能搞定却先去查技能库（多绕一步就多几十秒）"
-      ],
-      "example": "任务：data 目录里有几个文件\n→ run_cmd(dir /b data | find /c /v \"\") 返回 2\n→ finish(answer=\"data 里有 2 个文件\")\n\n任务：订单金额加起来多少\n→ skill(sum_field -Path data/orders.jsonl -Field amount) 返回合计 7486\n→ finish(answer=\"订单金额合计 7486\")"
-    },
-    {
-      "id": "lookup",
-      "tools": [
-        "plan",
-        "think",
-        "read_file",
-        "grep_file",
-        "list_dir",
-        "web_search",
-        "web_fetch",
-        "syshelp",
-        "help",
-        "http_request",
-        "pdf_read",
-        "notify",
-        "note",
-        "finish"
-      ],
-      "name": "查东西 / 找某个值",
-      "match": [
-        "在哪",
-        "是什么",
-        "查一下",
-        "某个",
-        "谁",
-        "哪一行",
-        "内容是什么",
-        "读一下",
-        "是多少",
-        "读取",
-        "查看",
-        "显示",
-        "网页",
-        "网址",
-        "链接",
-        "下载",
-        "多大",
-        "大小",
-        "体积",
-        "占多少"
-      ],
-      "goal": "找到那个东西，把它的实际内容或位置说出来",
-      "suggest_tools": [
-        "read_file",
-        "list_dir",
-        "skill csv_query",
-        "skill search_text",
-        "run_cmd"
-      ],
-      "reject_tools": [
-        "find_duplicates",
-        "batch_rename",
-        "unzip_all"
-      ],
-      "steps": [
-        {
-          "n": 1,
-          "do": "直接读/查。知道文件就直接 read_file，不知道在哪就 list_dir 或 search_text",
-          "need": "拿到实际内容"
-        },
-        {
-          "n": 2,
-          "do": "表格里查某人的某项用 skill(csv_query -Path 表格 -Find 姓名 -Field 字段)",
-          "need": "拿到那个值"
-        },
-        {
-          "n": 3,
-          "do": "finish 说清找到的是什么，找不到也要说明找过哪里",
-          "need": "答案基于实际内容"
-        }
-      ],
-      "cheatsheet": [
-        "读文件：read_file(path=\"data/x.txt\")",
-        "看目录：list_dir(path=\"data\")",
-        "表格查某人某项：skill(csv_query -Path staff.csv -Find 张三 -Field 金额)",
-        "哪个文件里有某词：skill(search_text -Pattern 关键词 -Path .)",
-        "文件里某行：run_cmd(findstr /n \"关键词\" data\\x.txt)",
-        "目录结构：skill(tree -Path data)",
-        "表格整体统计：skill(csv_stats -Path staff.csv)",
-        "网页正文：skill(web_fetch_text -Url https://example.com -Out page.txt)"
-      ],
-      "forbid": [
-        "没读就编内容",
-        "找不到还说找到了",
-        "把整个文件原样贴进 answer"
-      ],
-      "example": "任务：张三的金额是多少\n→ skill(csv_query -Path staff.csv -Find 张三 -Field 金额)\n→ finish(answer=\"张三的金额是 1500 和 700\")"
-    },
-    {
-      "id": "create",
-      "tools": [
-        "plan",
-        "think",
-        "write_file",
-        "make_dir",
-        "read_file",
-        "delete_path",
-        "list_dir",
-        "notify",
-        "note",
-        "finish"
-      ],
-      "name": "创建文件 / 写内容",
-      "match": [
-        "创建",
-        "新建",
-        "写一个",
-        "写个",
-        "生成一个",
-        "建个",
-        "写入"
-      ],
-      "goal": "文件真的建出来了，内容对得上，并且验证过",
-      "suggest_tools": [
-        "write_file",
-        "read_file"
-      ],
-      "reject_tools": [
-        "find_duplicates",
-        "archive_by_date",
-        "batch_rename",
-        "unzip_all"
-      ],
-      "steps": [
-        {
-          "n": 1,
-          "do": "write_file 写文件，路径严格照任务给的写（任务说 x.txt 就写 x.txt，别加子目录）",
-          "need": "工具返回写入成功"
-        },
-        {
-          "n": 2,
-          "do": "验证：read_file 读回来，确认内容对",
-          "need": "读回来的内容跟要求一致"
-        },
-        {
-          "n": 3,
-          "do": "finish 说明建了什么文件、内容是什么",
-          "need": "答案里有文件名和关键内容"
-        }
-      ],
-      "cheatsheet": [
-        "写文件：write_file(path=\"hello.txt\", content=\"你好\")",
-        "读回来验证：read_file(path=\"hello.txt\")",
-        "建目录：make_dir(path=\"mydir\")"
-      ],
-      "forbid": [
-        "写完不验证",
-        "任务说 a.txt 却写到 data/a.txt",
-        "多建任务没要求的目录或文件"
-      ],
-      "example": "任务：创建 hello.txt 写入你好\n→ write_file(hello.txt, 你好)\n→ read_file(hello.txt) 确认\n→ finish"
-    },
-    {
-      "id": "modify",
-      "tools": [
-        "plan",
-        "think",
-        "read_file",
-        "grep_file",
-        "replace_in_file",
-        "set_line",
-        "diff_files",
-        "write_file",
-        "notify",
-        "note",
-        "finish"
-      ],
-      "name": "改内容 / 替换",
-      "match": [
-        "改成",
-        "修改",
-        "修改成",
-        "替换",
-        "换成",
-        "换掉",
-        "改掉",
-        "更新",
-        "删掉里面",
-        "改一下",
-        "改为"
-      ],
-      "goal": "原文改对了，没把别的部分弄坏",
-      "suggest_tools": [
-        "read_file",
-        "replace_in_file",
-        "write_file"
-      ],
-      "reject_tools": [
-        "find_duplicates",
-        "batch_rename",
-        "unzip_all"
-      ],
-      "steps": [
-        {
-          "n": 1,
-          "do": "先 read_file 读原文，确认要改的那段确实存在",
-          "need": "看到原文"
-        },
-        {
-          "n": 2,
-          "do": "用 replace_in_file 局部改（别整个重写）",
-          "need": "工具返回成功"
-        },
-        {
-          "n": 3,
-          "do": "再 read_file 确认改对了，其他部分没动",
-          "need": "看到改后的内容"
-        },
-        {
-          "n": 4,
-          "do": "finish 说明改了什么",
-          "need": "答案里说清改了哪处"
-        }
-      ],
-      "cheatsheet": [
-        "局部替换：replace_in_file(path=\"a.txt\", find=\"old\", replace=\"new\")",
-        "确认原文：read_file(path=\"a.txt\")",
-        "末尾追加：append_file(path=\"a.txt\", content=\"...\")",
-        "很多文件一起替换：skill(replace_text -Path data -Find 旧词 -Replace 新词)"
-      ],
-      "forbid": [
-        "不读原文直接整个重写",
-        "改完不验证",
-        "顺手改了任务没提到的部分"
-      ],
-      "example": "任务：把 a.txt 里的 old 改成 new\n→ read_file(a.txt)\n→ replace_in_file(a.txt, old, new)\n→ read_file(a.txt) 确认\n→ finish"
-    },
-    {
-      "id": "convert",
-      "tools": [
-        "plan",
-        "think",
-        "json_format",
-        "csv_preview",
-        "read_file",
-        "write_file",
-        "make_dir",
-        "http_request",
-        "pdf_read",
-        "notify",
-        "note",
-        "finish"
-      ],
-      "name": "格式转换",
-      "match": [
-        "转成",
-        "转换成",
-        "导出",
-        "导入",
-        "变成csv",
-        "变成json",
-        "转csv",
-        "转json"
-      ],
-      "goal": "新格式的文件生成出来，能打开，数据没丢",
-      "suggest_tools": [
-        "skill csv_to_jsonl",
-        "skill jsonl_to_csv",
-        "skill xlsx_to_csv"
-      ],
-      "reject_tools": [
-        "find_duplicates",
-        "text_stats",
-        "batch_rename"
-      ],
-      "steps": [
-        {
-          "n": 1,
-          "do": "直接调对应的转换技能（csv_to_jsonl / jsonl_to_csv / xlsx_to_csv）",
-          "need": "工具返回转换成功"
-        },
-        {
-          "n": 2,
-          "do": "确认输出文件存在、行数对得上",
-          "need": "实际查过输出文件"
-        },
-        {
-          "n": 3,
-          "do": "finish 说明转了什么、多少条、存哪了",
-          "need": "答案里有条数和路径"
-        }
-      ],
-      "cheatsheet": [
-        "csv 转 jsonl：skill(csv_to_jsonl -Path data.csv -Out data.jsonl)",
-        "jsonl 转 csv：skill(jsonl_to_csv -Path data.jsonl -Out data.csv)",
-        "xlsx 转 csv：skill(xlsx_to_csv -Path data.xlsx -Out data.csv)"
-      ],
-      "forbid": [
-        "手工拼字符串假装转换了",
-        "没确认输出文件就报成功"
-      ],
-      "example": "任务：把这个 xlsx 转成 csv\n→ skill(xlsx_to_csv -Path data.xlsx -Out data.csv)\n→ 确认 data.csv 存在\n→ finish"
-    },
-    {
-      "id": "search",
-      "tools": [
-        "plan",
-        "think",
-        "web_search",
-        "web_fetch",
-        "download_file",
-        "write_file",
-        "read_file",
-        "make_dir",
-        "http_request",
-        "pdf_read",
-        "notify",
-        "note",
-        "finish"
-      ],
-      "name": "搜索 / 找关键词",
-      "match": [
-        "搜索",
-        "搜一下",
-        "查找",
-        "哪里写了",
-        "哪个文件里",
-        "包含",
-        "含有",
-        "关键字",
-        "有没有",
-        "出现过",
-        "上网",
-        "网上",
-        "网上搜",
-        "百度",
-        "谷歌",
-        "上网搜索",
-        "网上搜索",
-        "搜索一下",
-        "上网查",
-        "网上查",
-        "联网查",
-        "在线查"
-      ],
-      "goal": "列出命中的文件和位置，没命中就明确说没找到",
-      "suggest_tools": [
-        "skill search_text",
-        "run_cmd",
-        "skill log_errors"
-      ],
-      "reject_tools": [
-        "find_duplicates",
-        "batch_rename",
-        "unzip_all"
-      ],
-      "steps": [
-        {
-          "n": 1,
-          "do": "直接搜：skill(search_text -Pattern 词 -Path 目录) 或 run_cmd(findstr /s /i \"词\" *.txt)",
-          "need": "工具返回命中结果"
-        },
-        {
-          "n": 2,
-          "do": "finish 列出命中的文件，或者说明搜了哪些地方没找到",
-          "need": "答案里有具体文件名"
-        }
-      ],
-      "cheatsheet": [
-        "全目录搜：skill(search_text -Pattern 关键词 -Path .)",
-        "只搜某类文件：skill(search_text -Pattern 关键词 -Path . -Ext .log)",
-        "cmd 版：run_cmd(findstr /s /i \"关键词\" *.txt)",
-        "日志找错误：skill(log_errors -Path app.log)",
-        "只搜一个文件：grep_file(路径, 关键词) —— 比 read_file 整读省 token"
-      ],
-      "forbid": [
-        "没搜就说找到了",
-        "只搜一个文件就下结论",
-        "把搜到的所有内容整段贴出来"
-      ],
-      "example": "任务：哪里写了 ERROR\n→ skill(search_text -Pattern ERROR -Path . -Ext .log)\n→ finish(answer=\"app.log 第 3 行有 ERROR\")"
-    },
-    {
-      "id": "build",
-      "tools": [
-        "plan",
-        "think",
-        "write_script",
-        "write_file",
-        "read_file",
-        "replace_in_file",
-        "run_ps1",
-        "make_dir",
-        "notify",
-        "note",
-        "finish"
-      ],
-      "name": "写脚本 / 做工具",
-      "match": [
-        "写个工具",
-        "写个脚本",
-        "做个",
-        "实现一个",
-        "开发",
-        "帮我写个程序"
-      ],
-      "goal": "产出一个能独立跑的 .ps1 文件，并且真的跑通了",
-      "suggest_tools": [
-        "plan",
-        "skill list",
-        "write_file",
-        "run_ps1"
-      ],
-      "reject_tools": [],
-      "steps": [
-        {
-          "n": 1,
-          "do": "think 把推理写进 content（要什么结果、分几步、每步用什么工具、怎么验收）"
-        },
-        {
-          "n": 2,
-          "do": "想一下有没有现成做法；没有就直接写"
-        },
-        {
-          "n": 3,
-          "do": "write_file 写 .ps1（带 param、错误处理）"
-        },
-        {
-          "n": 4,
-          "do": "run_ps1 用真实参数跑，看输出对不对"
-        },
-        {
-          "n": 5,
-          "do": "不对就 read_file 看代码 → replace_in_file 改 → 再跑"
-        },
-        {
-          "n": 6,
-          "do": "finish 说明文件名、怎么用、跑出什么"
-        }
-      ],
-      "cheatsheet": [
-        "write_file(path=\"tool.ps1\", content=\"param(...)...\")",
-        "run_ps1(path=\"tool.ps1\", command=\"-a 12 -b 3 -op +\")"
-      ],
-      "forbid": [
-        "写完不跑就说完成",
-        "测试里手算结果，没调用脚本自己",
-        "同一脚本原样重跑（改了才跑）"
-      ],
-      "example": "任务：写计算器\n→ write_file(calc.ps1): param($a,$b,$op); switch($op){ \"+\"{$a+$b} \"/\"{$a/$b} default{\"不支持的运算符\"} }\n→ run_ps1(calc.ps1, \"-a 12 -b 3 -op +\") ← 用真参数\n→ 输出 15 才算对"
-    },
-    {
-      "id": "organize",
-      "tools": [
-        "plan",
-        "think",
-        "find_files",
-        "move_path",
-        "copy_path",
-        "delete_path",
-        "make_dir",
-        "list_dir",
-        "write_file",
-        "zip_list",
-        "unzip",
-        "skill",
-        "notify",
-        "note",
-        "finish"
-      ],
-      "name": "整理 / 批量处理",
-      "match": [
-        "整理",
-        "分类",
-        "归类",
-        "归档",
-        "批量",
-        "重命名",
-        "改名",
-        "清理",
-        "重复",
-        "去重",
-        "一样的文件",
-        "压缩",
-        "打包",
-        "解压",
-        "zip",
-        "复制",
-        "拷贝",
-        "移动",
-        "挪到",
-        "挪进",
-        "挪出来",
-        "移到",
-        "搬到",
-        "放到",
-        "重命名",
-        "换个名字",
-        "排序",
-        "筛选",
-        "过滤",
-        "提取",
-        "合并",
-        "拼接",
-        "比较",
-        "对比",
-        "删除",
-        "删掉",
-        "大文件",
-        "小文件",
-        "多大",
-        "占用",
-        "空间",
-        "磁盘",
-        "体积"
-      ],
-      "goal": "批量操作做对了，而且没有误伤别的文件。没说清操作哪个目录、按什么整理，先 say 问一句再做",
-      "suggest_tools": [
-        "list_dir .",
-        "make_dir 脚本",
-        "move_path(src=\"a.ps1\", dst=\"脚本/a.ps1\")",
-        "move_path 一个个挪，别指望一次性挪完"
-      ],
-      "cheatsheet": [
-        "看压缩包里有什么：zip_list(包名) —— 直接列清单，不用解压",
-        "压缩打包：skill(zip_dir -Path data)  → 生成 data.zip",
-        "批量解压：skill(unzip_all -Path downloads)",
-        "找重复文件：skill(find_duplicates -Path test)",
-        "找大文件：skill(find_large -Path . -MinMB 10)",
-        "批量改名：skill(batch_rename -Path test -AddPrefix bak_)",
-        "按日期归档：skill(archive_by_date -Path downloads -Apply)",
-        "其余：dedupe_lines(重复行去重) / compare_files(比较两文件) / merge_files(合并) / clean_empty_dirs(清空目录)"
-      ],
-      "forbid": [
-        "只列目录不挪文件就说完成",
-        "同一个 find_files 反复调",
-        "把「目录已存在」当成任务完成",
-        "同一个文件挪第二次",
-        "目录名中途改来改去（定了「脚本」就一直是「脚本」，别换成 scripts 又换回 脚本）",
-        "把文件名当目录名（note.txt 不能挪进 note/）",
-        "把扩展名当目录名（staff.csv 不能挪进 data/csv）",
-        "挪动时把文件名弄丢（staff.csv 挪进 data/ 应该叫 data/staff.csv）",
-        "不预览直接动手",
-        "任务没要求删的也删",
-        "批量操作后用 list_dir 反复确认超过两次",
-        "自己编一个命令或脚本名（比如 compress.bat）去跑——工作区里没有这个文件，一定失败",
-        "命令报错或没产出，却在 finish 里说「已完成」"
-      ],
-      "reject_tools": [
-        "write_file"
-      ],
-      "steps": [
-        {
-          "n": 1,
-          "do": "先 list_dir 看清有哪些文件",
-          "need": "知道要处理哪些"
-        },
-        {
-          "n": 2,
-          "do": "照 cheatsheet 调现成技能（archive_by_type / find_duplicates / batch_rename 等）。技能名就在上面那张表里，别自己编命令名。**能用技能就别一个个手动挪**",
-          "need": "找到能用的"
-        },
-        {
-          "n": 3,
-          "do": "会用 -Apply 的技能，先不加 -Apply 预览一遍",
-          "need": "看到预览清单"
-        },
-        {
-          "n": 4,
-          "do": "确认没问题再加 -Apply 真执行",
-          "need": "工具返回实际处理数量"
-        },
-        {
-          "n": 5,
-          "do": "finish 说明动了多少个文件、动了什么",
-          "need": "答案里有数量"
-        }
-      ],
-      "example": "任务：把 test 里的重复文件找出来\n→ skill(find_duplicates -Path test)\n→ finish(answer=\"找到 2 组重复\")"
-    },
-    {
-      "id": "system",
-      "name": "看系统 / 环境",
-      "match": [
-        "内存",
-        "CPU",
-        "处理器",
-        "磁盘",
-        "硬盘",
-        "剩余空间",
-        "系统",
-        "配置",
-        "几个核",
-        "显存",
-        "显卡",
-        "环境变量",
-        "用户名",
-        "计算机名",
-        "还剩多少",
-        "剩下多少",
-        "占用多少",
-        "多大内存",
-        "怎么用",
-        "用法",
-        "怎么弄",
-        "怎么设置",
-        "怎么改",
-        "参数是什么",
-        "命令怎么",
-        "怎么做",
-        "如何用",
-        "如何使用",
-        "命令是"
-      ],
-      "tools": [
-        "plan",
-        "think",
-        "sys_info",
-        "now",
-        "syshelp",
-        "help",
-        "win_doc",
-        "notify",
-        "note",
-        "finish"
-      ],
-      "goal": "拿到真实的系统数字，别猜、别用一堆命令行拼",
-      "cheatsheet": [
-        "内存 / CPU / 磁盘：sys_info(all)，或只查一项 sys_info(mem)",
-        "环境变量：env_get(变量名)，比如 env_get(USERPROFILE)",
-        "当前时间：now()",
-        "实在要跑命令：run_ps 比 run_cmd 好（能处理对象）"
-      ],
-      "example": "任务：这台电脑内存还剩多少\r\n→ sys_info(mem) 返回\"内存共 7.85 GB，可用 1.02 GB\"\r\n→ finish(answer=\"内存共 7.85 GB，可用 1.02 GB\")"
-    },
-    {
-      "id": "append",
-      "tools": [
-        "plan",
-        "think",
-        "read_file",
-        "append_file",
-        "write_file",
-        "make_dir",
-        "notify",
-        "note",
-        "finish"
-      ],
-      "name": "往文件末尾追加内容",
-      "match": [
-        "追加",
-        "添加",
-        "加一行",
-        "加一段",
-        "补一行",
-        "续写",
-        "接着写",
-        "加上",
-        "添加内容",
-        "末尾加",
-        "尾部加"
-      ],
-      "goal": "新内容加到文件末尾，原来的内容一个字都没丢",
-      "suggest_tools": [
-        "read_file",
-        "append_file"
-      ],
-      "reject_tools": [
-        "find_duplicates",
-        "batch_rename",
-        "unzip_all"
-      ],
-      "steps": [
-        {
-          "n": 1,
-          "do": "read_file 先读原文，确认文件存在、看到现在的末尾是什么",
-          "need": "看到原文"
-        },
-        {
-          "n": 2,
-          "do": "append_file 把新内容追加到末尾（千万别用 write_file，那会整个覆盖掉）",
-          "need": "工具返回追加成功"
-        },
-        {
-          "n": 3,
-          "do": "read_file 再读回来，确认新内容在末尾、原文还在",
-          "need": "看到原文 + 新内容都在"
-        },
-        {
-          "n": 4,
-          "do": "finish 说明追加了什么",
-          "need": "答案说清追加的内容"
-        }
-      ],
-      "cheatsheet": [
-        "追加：append_file(path=\"log.txt\", content=\"任务完成\")",
-        "先看原文：read_file(path=\"log.txt\")",
-        "追加后确认：read_file(path=\"log.txt\")"
-      ],
-      "forbid": [
-        "用 write_file 整个重写（会把原文冲掉）",
-        "不读原文就追加",
-        "追加完不验证"
-      ],
-      "example": "任务：往 log.txt 末尾追加一行：任务完成\n→ read_file(log.txt)\n→ append_file(log.txt, \"任务完成\")\n→ read_file 确认\n→ finish"
-    }
-  ]
+    "_说明":  "流程模板。核心原则：能用一条命令直接算出结果的，就直接跑，别绕。命令搞不定再查技能库。",
+    "version":  3,
+    "_优先级":  "① 一条命令能解决的 → 直接 run_cmd。② 命令不方便的 → skill 查现成脚本。③ 都没有 → 自己写。多绕一步就多几十秒。",
+    "flows":  [
+                  {
+                      "id":  "security",
+                      "name":  "安全体检 / 查电脑状态",
+                      "match":  [
+                                    "安全吗",
+                                    "安全检查",
+                                    "是否安全",
+                                    "有没有中毒",
+                                    "有没有木马",
+                                    "被入侵",
+                                    "体检",
+                                    "防火墙",
+                                    "开机自启",
+                                    "启动项",
+                                    "开放端口",
+                                    "监听端口",
+                                    "电脑安全",
+                                    "本机安全",
+                                    "系统安全",
+                                    "检查安全",
+                                    "查一下安全",
+                                    "安全状况"
+                                ],
+                      "goal":  "给出这台电脑的真实安全状态：防火墙开没开、有没有可疑自启、账号有没有异常。用现成技能查，别自己拼命令。",
+                      "tools":  [
+                                    "skill",
+                                    "think",
+                                    "read_file",
+                                    "write_file",
+                                    "note",
+                                    "finish"
+                                ],
+                      "suggest_tools":  [
+                                            "skill"
+                                        ],
+                      "reject_tools":  [
+                                           "web_search",
+                                           "web_fetch",
+                                           "http_request"
+                                       ],
+                      "steps":  [
+                                    "调 skill(command=\"health_check\") 拿整体结果"
+                                ],
+                      "cheatsheet":  [
+                                         "skill(command=\"health_check\")                   全查一遍",
+                                         "skill(command=\"health_check -Section net\")      只看网络（端口/连接/防火墙）",
+                                         "skill(command=\"health_check -Section boot\")     只看开机自启",
+                                         "skill(command=\"health_check -Section account\")  只看账号",
+                                         "skill(command=\"info health_check\")              看这个技能有哪些参数"
+                                     ],
+                      "forbid":  [
+                                     "不许自己拼 Get-NetTCPConnection / netstat 命令 —— 技能已经封装好了，重复造轮子容易漏项",
+                                     "不许用 http_request 访问 127.0.0.1 或内网地址（会被拦），本机信息走 health_check",
+                                     "不许主动扫外部 IP 或端口 —— 只查自己这台机器"
+                                 ],
+                      "example":  "任务：帮我看看这台电脑的安全状况，防火墙开没开、有没有可疑的开机自启\n→ skill(command=\"health_check\")\n  （拿到结果后挑重点说：防火墙关了要提醒、启动项里陌生的要点名）\n→ finish(answer=\"查了下：防火墙三套全关，建议打开；开机自启 3 项都是正规软件；账号没有异常\")"
+                  },
+                  {
+                      "id":  "count",
+                      "tools":  [
+                                    "plan",
+                                    "think",
+                                    "run_cmd",
+                                    "read_file",
+                                    "write_file",
+                                    "append_file",
+                                    "list_dir",
+                                    "skill",
+                                    "pdf_read",
+                                    "notify",
+                                    "note",
+                                    "finish"
+                                ],
+                      "name":  "数数量 / 统计",
+                      "match":  [
+                                    "多少",
+                                    "几个",
+                                    "几条",
+                                    "几行",
+                                    "数量",
+                                    "统计",
+                                    "总数",
+                                    "一共",
+                                    "加起来",
+                                    "求和",
+                                    "合计",
+                                    "总额",
+                                    "总金额",
+                                    "总和",
+                                    "平均",
+                                    "均值",
+                                    "最大",
+                                    "最小"
+                                ],
+                      "goal":  "拿到工具算出的真实数字，并说清这个数字是什么",
+                      "suggest_tools":  [
+                                            "skill sum_field",
+                                            "skill json_query",
+                                            "run_cmd",
+                                            "skill count_ext",
+                                            "list_dir",
+                                            "skill text_stats"
+                                        ],
+                      "reject_tools":  [
+                                           "find_duplicates",
+                                           "batch_rename",
+                                           "archive_by_date",
+                                           "unzip_all",
+                                           "write_file"
+                                       ],
+                      "steps":  [
+                                    {
+                                        "n":  1,
+                                        "do":  "先想：能不能一条命令直接算出来？能就直接 run_cmd，别绕",
+                                        "need":  "命令真跑过，返回里有数字"
+                                    },
+                                    {
+                                        "n":  2,
+                                        "do":  "一条命令搞不定，才 skill(command=\"list\") 找现成脚本",
+                                        "need":  "确认技能库里有没有"
+                                    },
+                                    {
+                                        "n":  3,
+                                        "do":  "把工具返回的数字原样写进 finish 的 answer",
+                                        "need":  "answer 里的数字和工具输出一致"
+                                    }
+                                ],
+                      "cheatsheet":  [
+                                         "数某个目录有几个文件：run_cmd(dir /b \"data\" | find /c /v \"\")",
+                                         "数文件有几行：run_cmd(find /c /v \"\" data\\x.txt)",
+                                         "按扩展名分类统计：skill(count_ext -Path data)",
+                                         "整个目录所有文本多少行：skill(text_stats -Path data)",
+                                         "jsonl 有多少条：run_cmd(find /c /v \"\" data\\x.jsonl)",
+                                         "某字段求和：skill(sum_field -Path data\\x.jsonl -Field amount)",
+                                         "或者直接查字段（自动给求和/平均/最值）：skill(json_query -Path data\\x.jsonl -Pattern amount)",
+                                         "算日期（几天后是几号、还有几天）：date_calc(21) 或 date_calc(2026-12-25) —— 别用 run_cmd 硬算"
+                                     ],
+                      "forbid":  [
+                                     "没跑工具就直接报数字",
+                                     "数字凭印象或凭经验写",
+                                     "一条命令能搞定却先去查技能库（多绕一步就多几十秒）"
+                                 ],
+                      "example":  "任务：data 目录里有几个文件\n→ run_cmd(dir /b data | find /c /v \"\") 返回 2\n→ finish(answer=\"data 里有 2 个文件\")\n\n任务：订单金额加起来多少\n→ skill(sum_field -Path data/orders.jsonl -Field amount) 返回合计 7486\n→ finish(answer=\"订单金额合计 7486\")"
+                  },
+                  {
+                      "id":  "lookup",
+                      "tools":  [
+                                    "plan",
+                                    "think",
+                                    "read_file",
+                                    "grep_file",
+                                    "list_dir",
+                                    "web_search",
+                                    "web_fetch",
+                                    "syshelp",
+                                    "help",
+                                    "http_request",
+                                    "pdf_read",
+                                    "notify",
+                                    "note",
+                                    "finish"
+                                ],
+                      "name":  "查东西 / 找某个值",
+                      "match":  [
+                                    "在哪",
+                                    "是什么",
+                                    "查一下",
+                                    "某个",
+                                    "谁",
+                                    "哪一行",
+                                    "内容是什么",
+                                    "读一下",
+                                    "是多少",
+                                    "读取",
+                                    "查看",
+                                    "显示",
+                                    "网页",
+                                    "网址",
+                                    "链接",
+                                    "下载",
+                                    "多大",
+                                    "大小",
+                                    "体积",
+                                    "占多少"
+                                ],
+                      "goal":  "找到那个东西，把它的实际内容或位置说出来",
+                      "suggest_tools":  [
+                                            "read_file",
+                                            "list_dir",
+                                            "skill csv_query",
+                                            "skill search_text",
+                                            "run_cmd"
+                                        ],
+                      "reject_tools":  [
+                                           "find_duplicates",
+                                           "batch_rename",
+                                           "unzip_all"
+                                       ],
+                      "steps":  [
+                                    {
+                                        "n":  1,
+                                        "do":  "直接读/查。知道文件就直接 read_file，不知道在哪就 list_dir 或 search_text",
+                                        "need":  "拿到实际内容"
+                                    },
+                                    {
+                                        "n":  2,
+                                        "do":  "表格里查某人的某项用 skill(csv_query -Path 表格 -Find 姓名 -Field 字段)",
+                                        "need":  "拿到那个值"
+                                    },
+                                    {
+                                        "n":  3,
+                                        "do":  "finish 说清找到的是什么，找不到也要说明找过哪里",
+                                        "need":  "答案基于实际内容"
+                                    }
+                                ],
+                      "cheatsheet":  [
+                                         "读文件：read_file(path=\"data/x.txt\")",
+                                         "看目录：list_dir(path=\"data\")",
+                                         "表格查某人某项：skill(csv_query -Path staff.csv -Find 张三 -Field 金额)",
+                                         "哪个文件里有某词：skill(search_text -Pattern 关键词 -Path .)",
+                                         "文件里某行：run_cmd(findstr /n \"关键词\" data\\x.txt)",
+                                         "目录结构：skill(tree -Path data)",
+                                         "表格整体统计：skill(csv_stats -Path staff.csv)",
+                                         "网页正文：skill(web_fetch_text -Url https://example.com -Out page.txt)"
+                                     ],
+                      "forbid":  [
+                                     "没读就编内容",
+                                     "找不到还说找到了",
+                                     "把整个文件原样贴进 answer"
+                                 ],
+                      "example":  "任务：张三的金额是多少\n→ skill(csv_query -Path staff.csv -Find 张三 -Field 金额)\n→ finish(answer=\"张三的金额是 1500 和 700\")"
+                  },
+                  {
+                      "id":  "create",
+                      "tools":  [
+                                    "plan",
+                                    "think",
+                                    "write_file",
+                                    "make_dir",
+                                    "read_file",
+                                    "delete_path",
+                                    "list_dir",
+                                    "notify",
+                                    "note",
+                                    "finish"
+                                ],
+                      "name":  "创建文件 / 写内容",
+                      "match":  [
+                                    "创建",
+                                    "新建",
+                                    "写一个",
+                                    "写个",
+                                    "生成一个",
+                                    "建个",
+                                    "写入"
+                                ],
+                      "goal":  "文件真的建出来了，内容对得上，并且验证过",
+                      "suggest_tools":  [
+                                            "write_file",
+                                            "read_file"
+                                        ],
+                      "reject_tools":  [
+                                           "find_duplicates",
+                                           "archive_by_date",
+                                           "batch_rename",
+                                           "unzip_all"
+                                       ],
+                      "steps":  [
+                                    {
+                                        "n":  1,
+                                        "do":  "write_file 写文件，路径严格照任务给的写（任务说 x.txt 就写 x.txt，别加子目录）",
+                                        "need":  "工具返回写入成功"
+                                    },
+                                    {
+                                        "n":  2,
+                                        "do":  "验证：read_file 读回来，确认内容对",
+                                        "need":  "读回来的内容跟要求一致"
+                                    },
+                                    {
+                                        "n":  3,
+                                        "do":  "finish 说明建了什么文件、内容是什么",
+                                        "need":  "答案里有文件名和关键内容"
+                                    }
+                                ],
+                      "cheatsheet":  [
+                                         "写文件：write_file(path=\"hello.txt\", content=\"你好\")",
+                                         "读回来验证：read_file(path=\"hello.txt\")",
+                                         "建目录：make_dir(path=\"mydir\")"
+                                     ],
+                      "forbid":  [
+                                     "写完不验证",
+                                     "任务说 a.txt 却写到 data/a.txt",
+                                     "多建任务没要求的目录或文件"
+                                 ],
+                      "example":  "任务：创建 hello.txt 写入你好\n→ write_file(hello.txt, 你好)\n→ read_file(hello.txt) 确认\n→ finish"
+                  },
+                  {
+                      "id":  "modify",
+                      "tools":  [
+                                    "plan",
+                                    "think",
+                                    "read_file",
+                                    "grep_file",
+                                    "replace_in_file",
+                                    "set_line",
+                                    "diff_files",
+                                    "write_file",
+                                    "notify",
+                                    "note",
+                                    "finish"
+                                ],
+                      "name":  "改内容 / 替换",
+                      "match":  [
+                                    "改成",
+                                    "修改",
+                                    "修改成",
+                                    "替换",
+                                    "换成",
+                                    "换掉",
+                                    "改掉",
+                                    "更新",
+                                    "删掉里面",
+                                    "改一下",
+                                    "改为"
+                                ],
+                      "goal":  "原文改对了，没把别的部分弄坏",
+                      "suggest_tools":  [
+                                            "read_file",
+                                            "replace_in_file",
+                                            "write_file"
+                                        ],
+                      "reject_tools":  [
+                                           "find_duplicates",
+                                           "batch_rename",
+                                           "unzip_all"
+                                       ],
+                      "steps":  [
+                                    {
+                                        "n":  1,
+                                        "do":  "先 read_file 读原文，确认要改的那段确实存在",
+                                        "need":  "看到原文"
+                                    },
+                                    {
+                                        "n":  2,
+                                        "do":  "用 replace_in_file 局部改（别整个重写）",
+                                        "need":  "工具返回成功"
+                                    },
+                                    {
+                                        "n":  3,
+                                        "do":  "再 read_file 确认改对了，其他部分没动",
+                                        "need":  "看到改后的内容"
+                                    },
+                                    {
+                                        "n":  4,
+                                        "do":  "finish 说明改了什么",
+                                        "need":  "答案里说清改了哪处"
+                                    }
+                                ],
+                      "cheatsheet":  [
+                                         "局部替换：replace_in_file(path=\"a.txt\", find=\"old\", replace=\"new\")",
+                                         "确认原文：read_file(path=\"a.txt\")",
+                                         "末尾追加：append_file(path=\"a.txt\", content=\"...\")",
+                                         "很多文件一起替换：skill(replace_text -Path data -Find 旧词 -Replace 新词)"
+                                     ],
+                      "forbid":  [
+                                     "不读原文直接整个重写",
+                                     "改完不验证",
+                                     "顺手改了任务没提到的部分"
+                                 ],
+                      "example":  "任务：把 a.txt 里的 old 改成 new\n→ read_file(a.txt)\n→ replace_in_file(a.txt, old, new)\n→ read_file(a.txt) 确认\n→ finish"
+                  },
+                  {
+                      "id":  "convert",
+                      "tools":  [
+                                    "plan",
+                                    "think",
+                                    "json_format",
+                                    "csv_preview",
+                                    "read_file",
+                                    "write_file",
+                                    "make_dir",
+                                    "http_request",
+                                    "pdf_read",
+                                    "notify",
+                                    "note",
+                                    "finish"
+                                ],
+                      "name":  "格式转换",
+                      "match":  [
+                                    "转成",
+                                    "转换成",
+                                    "导出",
+                                    "导入",
+                                    "变成csv",
+                                    "变成json",
+                                    "转csv",
+                                    "转json"
+                                ],
+                      "goal":  "新格式的文件生成出来，能打开，数据没丢",
+                      "suggest_tools":  [
+                                            "skill csv_to_jsonl",
+                                            "skill jsonl_to_csv",
+                                            "skill xlsx_to_csv"
+                                        ],
+                      "reject_tools":  [
+                                           "find_duplicates",
+                                           "text_stats",
+                                           "batch_rename"
+                                       ],
+                      "steps":  [
+                                    {
+                                        "n":  1,
+                                        "do":  "直接调对应的转换技能（csv_to_jsonl / jsonl_to_csv / xlsx_to_csv）",
+                                        "need":  "工具返回转换成功"
+                                    },
+                                    {
+                                        "n":  2,
+                                        "do":  "确认输出文件存在、行数对得上",
+                                        "need":  "实际查过输出文件"
+                                    },
+                                    {
+                                        "n":  3,
+                                        "do":  "finish 说明转了什么、多少条、存哪了",
+                                        "need":  "答案里有条数和路径"
+                                    }
+                                ],
+                      "cheatsheet":  [
+                                         "csv 转 jsonl：skill(csv_to_jsonl -Path data.csv -Out data.jsonl)",
+                                         "jsonl 转 csv：skill(jsonl_to_csv -Path data.jsonl -Out data.csv)",
+                                         "xlsx 转 csv：skill(xlsx_to_csv -Path data.xlsx -Out data.csv)"
+                                     ],
+                      "forbid":  [
+                                     "手工拼字符串假装转换了",
+                                     "没确认输出文件就报成功"
+                                 ],
+                      "example":  "任务：把这个 xlsx 转成 csv\n→ skill(xlsx_to_csv -Path data.xlsx -Out data.csv)\n→ 确认 data.csv 存在\n→ finish"
+                  },
+                  {
+                      "id":  "search",
+                      "tools":  [
+                                    "plan",
+                                    "think",
+                                    "web_search",
+                                    "web_fetch",
+                                    "download_file",
+                                    "write_file",
+                                    "read_file",
+                                    "make_dir",
+                                    "http_request",
+                                    "pdf_read",
+                                    "notify",
+                                    "note",
+                                    "finish"
+                                ],
+                      "name":  "搜索 / 找关键词",
+                      "match":  [
+                                    "搜索",
+                                    "搜一下",
+                                    "查找",
+                                    "哪里写了",
+                                    "哪个文件里",
+                                    "包含",
+                                    "含有",
+                                    "关键字",
+                                    "有没有",
+                                    "出现过",
+                                    "上网",
+                                    "网上",
+                                    "网上搜",
+                                    "百度",
+                                    "谷歌",
+                                    "上网搜索",
+                                    "网上搜索",
+                                    "搜索一下",
+                                    "上网查",
+                                    "网上查",
+                                    "联网查",
+                                    "在线查"
+                                ],
+                      "goal":  "列出命中的文件和位置，没命中就明确说没找到",
+                      "suggest_tools":  [
+                                            "skill search_text",
+                                            "run_cmd",
+                                            "skill log_errors"
+                                        ],
+                      "reject_tools":  [
+                                           "find_duplicates",
+                                           "batch_rename",
+                                           "unzip_all"
+                                       ],
+                      "steps":  [
+                                    {
+                                        "n":  1,
+                                        "do":  "直接搜：skill(search_text -Pattern 词 -Path 目录) 或 run_cmd(findstr /s /i \"词\" *.txt)",
+                                        "need":  "工具返回命中结果"
+                                    },
+                                    {
+                                        "n":  2,
+                                        "do":  "finish 列出命中的文件，或者说明搜了哪些地方没找到",
+                                        "need":  "答案里有具体文件名"
+                                    }
+                                ],
+                      "cheatsheet":  [
+                                         "全目录搜：skill(search_text -Pattern 关键词 -Path .)",
+                                         "只搜某类文件：skill(search_text -Pattern 关键词 -Path . -Ext .log)",
+                                         "cmd 版：run_cmd(findstr /s /i \"关键词\" *.txt)",
+                                         "日志找错误：skill(log_errors -Path app.log)",
+                                         "只搜一个文件：grep_file(路径, 关键词) —— 比 read_file 整读省 token"
+                                     ],
+                      "forbid":  [
+                                     "没搜就说找到了",
+                                     "只搜一个文件就下结论",
+                                     "把搜到的所有内容整段贴出来"
+                                 ],
+                      "example":  "任务：哪里写了 ERROR\n→ skill(search_text -Pattern ERROR -Path . -Ext .log)\n→ finish(answer=\"app.log 第 3 行有 ERROR\")"
+                  },
+                  {
+                      "id":  "build",
+                      "tools":  [
+                                    "plan",
+                                    "think",
+                                    "write_script",
+                                    "write_file",
+                                    "read_file",
+                                    "replace_in_file",
+                                    "run_ps1",
+                                    "make_dir",
+                                    "notify",
+                                    "note",
+                                    "finish"
+                                ],
+                      "name":  "写脚本 / 做工具",
+                      "match":  [
+                                    "写个工具",
+                                    "写个脚本",
+                                    "做个",
+                                    "实现一个",
+                                    "开发",
+                                    "帮我写个程序"
+                                ],
+                      "goal":  "产出一个能独立跑的 .ps1 文件，并且真的跑通了",
+                      "suggest_tools":  [
+                                            "plan",
+                                            "skill list",
+                                            "write_file",
+                                            "run_ps1"
+                                        ],
+                      "reject_tools":  [
+
+                                       ],
+                      "steps":  [
+                                    {
+                                        "n":  1,
+                                        "do":  "think 把推理写进 content（要什么结果、分几步、每步用什么工具、怎么验收）"
+                                    },
+                                    {
+                                        "n":  2,
+                                        "do":  "想一下有没有现成做法；没有就直接写"
+                                    },
+                                    {
+                                        "n":  3,
+                                        "do":  "write_file 写 .ps1（带 param、错误处理）"
+                                    },
+                                    {
+                                        "n":  4,
+                                        "do":  "run_ps1 用真实参数跑，看输出对不对"
+                                    },
+                                    {
+                                        "n":  5,
+                                        "do":  "不对就 read_file 看代码 → replace_in_file 改 → 再跑"
+                                    },
+                                    {
+                                        "n":  6,
+                                        "do":  "finish 说明文件名、怎么用、跑出什么"
+                                    }
+                                ],
+                      "cheatsheet":  [
+                                         "write_file(path=\"tool.ps1\", content=\"param(...)...\")",
+                                         "run_ps1(path=\"tool.ps1\", command=\"-a 12 -b 3 -op +\")"
+                                     ],
+                      "forbid":  [
+                                     "写完不跑就说完成",
+                                     "测试里手算结果，没调用脚本自己",
+                                     "同一脚本原样重跑（改了才跑）"
+                                 ],
+                      "example":  "任务：写计算器\n→ write_file(calc.ps1): param($a,$b,$op); switch($op){ \"+\"{$a+$b} \"/\"{$a/$b} default{\"不支持的运算符\"} }\n→ run_ps1(calc.ps1, \"-a 12 -b 3 -op +\") ← 用真参数\n→ 输出 15 才算对"
+                  },
+                  {
+                      "id":  "organize",
+                      "tools":  [
+                                    "plan",
+                                    "think",
+                                    "find_files",
+                                    "move_path",
+                                    "copy_path",
+                                    "delete_path",
+                                    "make_dir",
+                                    "list_dir",
+                                    "write_file",
+                                    "zip_list",
+                                    "unzip",
+                                    "skill",
+                                    "notify",
+                                    "note",
+                                    "finish"
+                                ],
+                      "name":  "整理 / 批量处理",
+                      "match":  [
+                                    "整理",
+                                    "分类",
+                                    "归类",
+                                    "归档",
+                                    "批量",
+                                    "重命名",
+                                    "改名",
+                                    "清理",
+                                    "重复",
+                                    "去重",
+                                    "一样的文件",
+                                    "压缩",
+                                    "打包",
+                                    "解压",
+                                    "zip",
+                                    "复制",
+                                    "拷贝",
+                                    "移动",
+                                    "挪到",
+                                    "挪进",
+                                    "挪出来",
+                                    "移到",
+                                    "搬到",
+                                    "放到",
+                                    "重命名",
+                                    "换个名字",
+                                    "排序",
+                                    "筛选",
+                                    "过滤",
+                                    "提取",
+                                    "合并",
+                                    "拼接",
+                                    "比较",
+                                    "对比",
+                                    "删除",
+                                    "删掉",
+                                    "大文件",
+                                    "小文件",
+                                    "多大",
+                                    "占用",
+                                    "空间",
+                                    "磁盘",
+                                    "体积"
+                                ],
+                      "goal":  "批量操作做对了，而且没有误伤别的文件。没说清操作哪个目录、按什么整理，先 say 问一句再做",
+                      "suggest_tools":  [
+                                            "list_dir .",
+                                            "make_dir 脚本",
+                                            "move_path(src=\"a.ps1\", dst=\"脚本/a.ps1\")",
+                                            "move_path 一个个挪，别指望一次性挪完"
+                                        ],
+                      "cheatsheet":  [
+                                         "看压缩包里有什么：zip_list(包名) —— 直接列清单，不用解压",
+                                         "压缩打包：skill(zip_dir -Path data)  → 生成 data.zip",
+                                         "批量解压：skill(unzip_all -Path downloads)",
+                                         "找重复文件：skill(find_duplicates -Path test)",
+                                         "找大文件：skill(find_large -Path . -MinMB 10)",
+                                         "批量改名：skill(batch_rename -Path test -AddPrefix bak_)",
+                                         "按日期归档：skill(archive_by_date -Path downloads -Apply)",
+                                         "其余：dedupe_lines(重复行去重) / compare_files(比较两文件) / merge_files(合并) / clean_empty_dirs(清空目录)"
+                                     ],
+                      "forbid":  [
+                                     "只列目录不挪文件就说完成",
+                                     "同一个 find_files 反复调",
+                                     "把「目录已存在」当成任务完成",
+                                     "同一个文件挪第二次",
+                                     "目录名中途改来改去（定了「脚本」就一直是「脚本」，别换成 scripts 又换回 脚本）",
+                                     "把文件名当目录名（note.txt 不能挪进 note/）",
+                                     "把扩展名当目录名（staff.csv 不能挪进 data/csv）",
+                                     "挪动时把文件名弄丢（staff.csv 挪进 data/ 应该叫 data/staff.csv）",
+                                     "不预览直接动手",
+                                     "任务没要求删的也删",
+                                     "批量操作后用 list_dir 反复确认超过两次",
+                                     "自己编一个命令或脚本名（比如 compress.bat）去跑——工作区里没有这个文件，一定失败",
+                                     "命令报错或没产出，却在 finish 里说「已完成」"
+                                 ],
+                      "reject_tools":  [
+                                           "write_file"
+                                       ],
+                      "steps":  [
+                                    {
+                                        "n":  1,
+                                        "do":  "先 list_dir 看清有哪些文件",
+                                        "need":  "知道要处理哪些"
+                                    },
+                                    {
+                                        "n":  2,
+                                        "do":  "照 cheatsheet 调现成技能（archive_by_type / find_duplicates / batch_rename 等）。技能名就在上面那张表里，别自己编命令名。**能用技能就别一个个手动挪**",
+                                        "need":  "找到能用的"
+                                    },
+                                    {
+                                        "n":  3,
+                                        "do":  "会用 -Apply 的技能，先不加 -Apply 预览一遍",
+                                        "need":  "看到预览清单"
+                                    },
+                                    {
+                                        "n":  4,
+                                        "do":  "确认没问题再加 -Apply 真执行",
+                                        "need":  "工具返回实际处理数量"
+                                    },
+                                    {
+                                        "n":  5,
+                                        "do":  "finish 说明动了多少个文件、动了什么",
+                                        "need":  "答案里有数量"
+                                    }
+                                ],
+                      "example":  "任务：把 test 里的重复文件找出来\n→ skill(find_duplicates -Path test)\n→ finish(answer=\"找到 2 组重复\")"
+                  },
+                  {
+                      "id":  "system",
+                      "name":  "看系统 / 环境",
+                      "match":  [
+                                    "内存",
+                                    "CPU",
+                                    "处理器",
+                                    "磁盘",
+                                    "硬盘",
+                                    "剩余空间",
+                                    "系统",
+                                    "配置",
+                                    "几个核",
+                                    "显存",
+                                    "显卡",
+                                    "环境变量",
+                                    "用户名",
+                                    "计算机名",
+                                    "还剩多少",
+                                    "剩下多少",
+                                    "占用多少",
+                                    "多大内存",
+                                    "怎么用",
+                                    "用法",
+                                    "怎么弄",
+                                    "怎么设置",
+                                    "怎么改",
+                                    "参数是什么",
+                                    "命令怎么",
+                                    "怎么做",
+                                    "如何用",
+                                    "如何使用",
+                                    "命令是"
+                                ],
+                      "tools":  [
+                                    "plan",
+                                    "think",
+                                    "sys_info",
+                                    "now",
+                                    "syshelp",
+                                    "help",
+                                    "win_doc",
+                                    "notify",
+                                    "note",
+                                    "finish"
+                                ],
+                      "goal":  "拿到真实的系统数字，别猜、别用一堆命令行拼",
+                      "cheatsheet":  [
+                                         "内存 / CPU / 磁盘：sys_info(all)，或只查一项 sys_info(mem)",
+                                         "环境变量：env_get(变量名)，比如 env_get(USERPROFILE)",
+                                         "当前时间：now()",
+                                         "实在要跑命令：run_ps 比 run_cmd 好（能处理对象）"
+                                     ],
+                      "example":  "任务：这台电脑内存还剩多少\r\n→ sys_info(mem) 返回\"内存共 7.85 GB，可用 1.02 GB\"\r\n→ finish(answer=\"内存共 7.85 GB，可用 1.02 GB\")"
+                  },
+                  {
+                      "id":  "append",
+                      "tools":  [
+                                    "plan",
+                                    "think",
+                                    "read_file",
+                                    "append_file",
+                                    "write_file",
+                                    "make_dir",
+                                    "notify",
+                                    "note",
+                                    "finish"
+                                ],
+                      "name":  "往文件末尾追加内容",
+                      "match":  [
+                                    "追加",
+                                    "添加",
+                                    "加一行",
+                                    "加一段",
+                                    "补一行",
+                                    "续写",
+                                    "接着写",
+                                    "加上",
+                                    "添加内容",
+                                    "末尾加",
+                                    "尾部加"
+                                ],
+                      "goal":  "新内容加到文件末尾，原来的内容一个字都没丢",
+                      "suggest_tools":  [
+                                            "read_file",
+                                            "append_file"
+                                        ],
+                      "reject_tools":  [
+                                           "find_duplicates",
+                                           "batch_rename",
+                                           "unzip_all"
+                                       ],
+                      "steps":  [
+                                    {
+                                        "n":  1,
+                                        "do":  "read_file 先读原文，确认文件存在、看到现在的末尾是什么",
+                                        "need":  "看到原文"
+                                    },
+                                    {
+                                        "n":  2,
+                                        "do":  "append_file 把新内容追加到末尾（千万别用 write_file，那会整个覆盖掉）",
+                                        "need":  "工具返回追加成功"
+                                    },
+                                    {
+                                        "n":  3,
+                                        "do":  "read_file 再读回来，确认新内容在末尾、原文还在",
+                                        "need":  "看到原文 + 新内容都在"
+                                    },
+                                    {
+                                        "n":  4,
+                                        "do":  "finish 说明追加了什么",
+                                        "need":  "答案说清追加的内容"
+                                    }
+                                ],
+                      "cheatsheet":  [
+                                         "追加：append_file(path=\"log.txt\", content=\"任务完成\")",
+                                         "先看原文：read_file(path=\"log.txt\")",
+                                         "追加后确认：read_file(path=\"log.txt\")"
+                                     ],
+                      "forbid":  [
+                                     "用 write_file 整个重写（会把原文冲掉）",
+                                     "不读原文就追加",
+                                     "追加完不验证"
+                                 ],
+                      "example":  "任务：往 log.txt 末尾追加一行：任务完成\n→ read_file(log.txt)\n→ append_file(log.txt, \"任务完成\")\n→ read_file 确认\n→ finish"
+                  }
+              ]
 }
