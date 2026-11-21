@@ -299,6 +299,40 @@ html[data-theme="mo"]{background:#0f1115}
      JS 在动画期间会用行内样式临时压住，动画结束清掉就回到这里。 */
   max-height:none;
 }
+
+/* ---------- 折叠：所有主题通用 ----------
+   
+   以前这些规则只写在素/墨主题下，切到深色/浅色/玻璃时，
+   JS 加的 .closed 类完全没有 CSS 配合 —— 点了没反应，
+   而之前留下的行内 max-height:0px 又让内容变成空白。
+   
+   现在不分主题：任何主题下折叠都工作。
+   颜色相关的（opacity）放这儿也不会冲突，因为它跟配色无关。 */
+[data-theme]:not([data-theme="su"]):not([data-theme="mo"]) .side-block > *:not(h3){
+  overflow:hidden;
+  transition:max-height .28s cubic-bezier(.32,.72,0,1),
+             opacity .2s ease;
+}
+[data-theme]:not([data-theme="su"]):not([data-theme="mo"]) .side-block.closed > *:not(h3){
+  opacity:0; pointer-events:none;
+}
+[data-theme]:not([data-theme="su"]):not([data-theme="mo"]) .side-block.closed > *:not(h3):not([style*="max-height"]){
+  max-height:0;
+}
+[data-theme]:not([data-theme="su"]):not([data-theme="mo"]) .side-block:not(.closed) > *:not(h3):not([style*="max-height"]){
+  max-height:none;
+}
+/* 折叠箭头：所有主题都转 */
+.side-block > h3{ cursor:pointer; user-select:none; }
+.side-block.closed > h3::after{ transform:rotate(0deg); }
+[data-theme]:not([data-theme="su"]):not([data-theme="mo"]) .side-block > h3::after{
+  content:"▸"; font-size:10px; color:var(--faint); margin-left:auto;
+  transform:rotate(90deg);
+  transition:transform .26s cubic-bezier(.34,1.56,.64,1);
+}
+[data-theme]:not([data-theme="su"]):not([data-theme="mo"]) .side-block.closed > h3::after{
+  transform:rotate(0deg);
+}
 [data-theme="su"] .side-block > .quote,[data-theme="mo"] .side-block > .quote{display:none}
 [data-theme="su"] .side-actions,[data-theme="mo"] .side-actions{display:flex;flex-direction:column;gap:4px;
   border:none;padding:8px 2px 0;margin-top:8px;border-top:1px solid #eef0f3}
@@ -2659,6 +2693,11 @@ header .theme-switch button{white-space:nowrap}
 .ctx-total-head b{color:var(--fg)}
 .ctx-total-head .ctx-lim{color:var(--dim);font-weight:500}
 
+/* ⑥ 侧栏收起态：留白别装成「空卡片」，标题也淡一档 */
+.side-block.closed{padding-bottom:9px}
+.side-block.closed > h3{opacity:.72}
+.side-block > h3:hover{color:var(--fg)}
+
 /* ⑤ 任务卡悬停反馈（素/墨是透明平铺，不加深色阴影） */
 .live-box{transition:border-color .18s ease,box-shadow .18s ease}
 .live-box:hover{border-color:var(--line2);box-shadow:0 6px 20px rgba(0,0,0,.12)}
@@ -3193,7 +3232,7 @@ function applyTheme(name){
    如果直接把默认值改成折叠，老用户的旧记录（大多是 true）会盖掉默认值，
    改了等于没改 —— 用户还会以为没生效。
    带上版本号，旧记录自动作废，所有人都从新的默认值开始。 */
-var SIDE_STATE_VER = 2;
+var SIDE_STATE_VER = 3;
 
 function sideKey(b){
   var h = b.querySelector('h3');
@@ -3277,9 +3316,17 @@ function applyDshDrawer(on){
   for (var i=0;i<blocks.length;i++){
     var b = blocks[i];
     var h = b.querySelector('h3');
+
+    /* 折叠对所有主题都开放。
+       
+       原来只在素/墨主题下绑定，切到深色/浅色/玻璃就点不动了，
+       而且之前折叠留下的行内 max-height:0px 还挂着 ——
+       切过去就是一片空白，用户还以为是坏了。
+       
+       现在无论哪个主题都绑，也都清理行内残留。 */
     if (h && !h.getAttribute('data-dsh-bound')){
+      h.setAttribute('data-dsh-bound', '1');
       h.addEventListener('click', function(){
-        if (!atcTheme()) return;
         var blk = this.parentElement;
         foldBlock(blk);
         // 折叠状态立刻落盘：换主题、刷新、重启都不丢
@@ -3288,18 +3335,28 @@ function applyDshDrawer(on){
         saveSideState(st);
       });
     }
+
+    // 不管当前哪个主题，先把行内残留清掉 ——
+    // 这是「切主题后内容空白」的直接原因。
+    for (var c2=0; c2<b.children.length; c2++){
+      var ch = b.children[c2];
+      if (ch.tagName.toLowerCase() !== 'h3' && ch.style.maxHeight){
+        ch.style.maxHeight = '';
+        ch.style.transition = '';
+      }
+    }
+
     if (on){
-      // 默认全部折叠 —— 侧栏十几个卡片，全展开要滚很久才看得到下面的。
-      // 用户点开过的那些记在 localStorage，下次保持原样。
-      //
-      // 注意：localStorage 里的旧记录通过 SIDE_STATE_VER 作废，
-      // 所以升级后第一次打开一定是全折叠的，不会被老记录盖掉。
+      /* 默认展开。
+         之前默认折叠，打开面板一堆空卡片、只剩标题，看着像内容丢了。
+         折起来这件事应该是用户自己点的，不是我们替他决定。
+         只有明确记成 false 的那些才收起。 */
       var st = loadSideState();
       var key = sideKey(b);
       if (Object.prototype.hasOwnProperty.call(st, key)){
         b.classList.toggle('closed', !st[key]);
       } else {
-        b.classList.add('closed');   // 没记录 = 折叠
+        b.classList.remove('closed');
       }
     } else {
       // 切走前把当前折叠状态存下来，回来时恢复
