@@ -1,1229 +1,1407 @@
 [
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "write_file",
-                         "description":  "写文件。新建或整个覆盖。改某一行用 set_line，末尾追加用 append_file，别用 write_file 覆盖整个文件。",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "path":  {
-                                                                            "type":  "string",
-                                                                            "description":  "文件路径（相对工作区，如 data/x.txt）"
-                                                                        },
-                                                               "content":  {
-                                                                               "type":  "string",
-                                                                               "description":  "文件内容 / 要写的东西"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "path",
-                                                             "content"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "read_file",
-                         "description":  "读整个文件的内容。只看某几行用 read_lines，找关键词用 grep_file，都别用它硬读大文件。",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "path":  {
-                                                                            "type":  "string",
-                                                                            "description":  "文件路径（相对工作区，如 data/x.txt）"
-                                                                        }
-                                                           },
-                                            "required":  [
-                                                             "path"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "list_dir",
-                         "description":  "列出目录里有哪些文件和子目录。**列表就是答案，列完别再挨个 read_file 去确认存在。**",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "path":  {
-                                                                            "type":  "string",
-                                                                            "description":  "文件路径（相对工作区，如 data/x.txt）"
-                                                                        }
-                                                           },
-                                            "required":  [
-                                                             "path"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "hash_file",
-                         "description":  "算文件哈希。判断两个文件是否完全一样用这个，比 compare_files 更细",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "path":  {
-                                                                            "type":  "string",
-                                                                            "description":  "文件路径（相对工作区，如 data/x.txt）"
-                                                                        },
-                                                               "command":  {
-                                                                               "type":  "string",
-                                                                               "description":  "算法，可留空默认 sha256"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "path"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "read_lines",
-                         "description":  "读文件的指定行范围。比 read_file 省 token，只需要几行时用它。",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "path":  {
-                                                                            "type":  "string",
-                                                                            "description":  "文件路径（相对工作区，如 data/x.txt）"
-                                                                        },
-                                                               "command":  {
-                                                                               "type":  "string",
-                                                                               "description":  "从第几行开始，比如 1"
-                                                                           },
-                                                               "content":  {
-                                                                               "type":  "string",
-                                                                               "description":  "读多少行，默认 40，最多 200"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "path",
-                                                             "command"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "sys_info",
-                         "description":  "看 CPU 核数、内存、磁盘空间。问机器配置用这个，别 run_cmd wmic",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "command":  {
-                                                                               "type":  "string",
-                                                                               "description":  "cpu / mem / disk / all，可留空默认 all"
-                                                                           }
-                                                           },
-                                            "required":  [
-
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "clipboard",
-                         "description":  "读写剪贴板。command 填 get 或 set；set 时正文放 content",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "command":  {
-                                                                               "type":  "string",
-                                                                               "description":  "get 或 set"
-                                                                           },
-                                                               "content":  {
-                                                                               "type":  "string",
-                                                                               "description":  "set 时写什么"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "command"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "now",
-                         "description":  "看当前日期和时间。问「今天几号」「现在几点」必须用它，别猜（模型不知道今天是什么日子）",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-
-                                                           },
-                                            "required":  [
-
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "zip_list",
-                         "description":  "不解压先看压缩包里有什么。支持 zip/docx/xlsx/pptx",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "path":  {
-                                                                            "type":  "string",
-                                                                            "description":  "文件路径（相对工作区，如 data/x.txt）"
-                                                                        }
-                                                           },
-                                            "required":  [
-                                                             "path"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "diff_files",
-                         "description":  "两个文件逐行比，说清哪几行不一样。command 填第二个文件",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "path":  {
-                                                                            "type":  "string",
-                                                                            "description":  "第一个文件"
-                                                                        },
-                                                               "command":  {
-                                                                               "type":  "string",
-                                                                               "description":  "第二个文件"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "path",
-                                                             "command"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "json_format",
-                         "description":  "美化或压缩 JSON。command 填 pretty（缩进）或 compact（一行）",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "path":  {
-                                                                            "type":  "string",
-                                                                            "description":  "文件路径（相对工作区，如 data/x.txt）"
-                                                                        },
-                                                               "command":  {
-                                                                               "type":  "string",
-                                                                               "description":  "pretty 或 compact"
-                                                                           },
-                                                               "content":  {
-                                                                               "type":  "string",
-                                                                               "description":  "填 1 表示写回文件，留空只显示"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "path"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "csv_preview",
-                         "description":  "先看 CSV 长什么样：列名 + 前几行。command 填看几行（默认 8）",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "path":  {
-                                                                            "type":  "string",
-                                                                            "description":  "文件路径（相对工作区，如 data/x.txt）"
-                                                                        },
-                                                               "command":  {
-                                                                               "type":  "string",
-                                                                               "description":  "看几行，默认 8"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "path"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "date_calc",
-                         "description":  "算日期。command 填天数（3=三天后，-7=七天前）或日期（2024-01-01，算距今多少天）",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "command":  {
-                                                                               "type":  "string",
-                                                                               "description":  "天数或日期"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "command"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "download_file",
-                         "description":  "把网址上的文件下载到本地。path 填网址，command 填存到哪（留空用原文件名）",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "path":  {
-                                                                            "type":  "string",
-                                                                            "description":  "http 或 https 网址"
-                                                                        },
-                                                               "command":  {
-                                                                               "type":  "string",
-                                                                               "description":  "存到哪，可留空"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "path"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "env_get",
-                         "description":  "看环境变量。command 填变量名（留空列常用的几个）",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "command":  {
-                                                                               "type":  "string",
-                                                                               "description":  "变量名，可留空"
-                                                                           }
-                                                           },
-                                            "required":  [
-
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "open_app",
-                         "description":  "打开程序或文件。command 填 notepad / calc / explorer / mspaint / taskmgr，或完整路径",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "command":  {
-                                                                               "type":  "string",
-                                                                               "description":  "程序名或路径"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "command"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "kill_process",
-                         "description":  "结束进程。command 填进程名（如 notepad）或 PID。系统进程会被拒绝",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "command":  {
-                                                                               "type":  "string",
-                                                                               "description":  "进程名或 PID"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "command"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "run_python",
-                         "description":  "跑 Python。path 给 .py 文件，或 content 直接给代码。算复杂的东西比 PowerShell 顺手",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "path":  {
-                                                                            "type":  "string",
-                                                                            "description":  ".py 文件路径，可留空"
-                                                                        },
-                                                               "content":  {
-                                                                               "type":  "string",
-                                                                               "description":  "直接写代码，可留空"
-                                                                           }
-                                                           },
-                                            "required":  [
-
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "write_script",
-                         "description":  "写 .ps1 脚本并立刻运行，一次调用拿到输出。**参数要在 command 里传**，脚本有 param() 时漏了 command 会跑出空结果。",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "path":  {
-                                                                            "type":  "string",
-                                                                            "description":  "脚本路径，以 .ps1 结尾"
-                                                                        },
-                                                               "content":  {
-                                                                               "type":  "string",
-                                                                               "description":  "脚本内容"
-                                                                           },
-                                                               "command":  {
-                                                                               "type":  "string",
-                                                                               "description":  "运行参数，可留空"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "path",
-                                                             "content"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "write_skill",
-                         "description":  "把一套做法写成技能说明文档，以后能查。path 填技能名，content 填 markdown 说明",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "path":  {
-                                                                            "type":  "string",
-                                                                            "description":  "技能名，如 clean_logs"
-                                                                        },
-                                                               "content":  {
-                                                                               "type":  "string",
-                                                                               "description":  "markdown 说明"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "path",
-                                                             "content"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "project_doc",
-                         "description":  "查 Nafx 自己的文档：架构 / 工具 / 流程。command 填主题",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "command":  {
-                                                                               "type":  "string",
-                                                                               "description":  "架构 / 工具 / 流程，可留空看全部"
-                                                                           }
-                                                           },
-                                            "required":  [
-
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "unit_convert",
-                         "description":  "单位换算。command 写 100 km to miles、30 c to f、1 gb to mb",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "command":  {
-                                                                               "type":  "string",
-                                                                               "description":  "换算表达式"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "command"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "replace_in_file",
-                         "description":  "把文件里的一段文字替换成另一段。改文件里某句话用它；改整行用 set_line。",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "path":  {
-                                                                            "type":  "string",
-                                                                            "description":  "文件路径（相对工作区，如 data/x.txt）"
-                                                                        },
-                                                               "find":  {
-                                                                            "type":  "string",
-                                                                            "description":  "要找的原文"
-                                                                        },
-                                                               "replace":  {
-                                                                               "type":  "string",
-                                                                               "description":  "替换成什么"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "path",
-                                                             "find",
-                                                             "replace"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "set_line",
-                         "description":  "改文件的第 N 行。用户说「把第 N 行改成 X」时用它。",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "path":  {
-                                                                            "type":  "string",
-                                                                            "description":  "文件路径（相对工作区，如 data/x.txt）"
-                                                                        },
-                                                               "command":  {
-                                                                               "type":  "string",
-                                                                               "description":  "行号，比如 4"
-                                                                           },
-                                                               "content":  {
-                                                                               "type":  "string",
-                                                                               "description":  "新内容"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "path",
-                                                             "command",
-                                                             "content"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "append_file",
-                         "description":  "往文件末尾追加内容，不动原有内容。用户说「追加 / 加一行 / 补一段」时用它。",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "path":  {
-                                                                            "type":  "string",
-                                                                            "description":  "文件路径（相对工作区，如 data/x.txt）"
-                                                                        },
-                                                               "content":  {
-                                                                               "type":  "string",
-                                                                               "description":  "文件内容 / 要写的东西"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "path",
-                                                             "content"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "make_dir",
-                         "description":  "建目录（含多级，如 a/b/c 一次建好）。写文件到新目录时 write_file 会自动建父目录，不用先跑这个。",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "path":  {
-                                                                            "type":  "string",
-                                                                            "description":  "文件路径（相对工作区，如 data/x.txt）"
-                                                                        }
-                                                           },
-                                            "required":  [
-                                                             "path"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "find_files",
-                         "description":  "按文件名或通配符找文件（如 *.txt）。找\"哪些文件叫这个名\"用它。",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "path":  {
-                                                                            "type":  "string",
-                                                                            "description":  "从哪个目录找"
-                                                                        },
-                                                               "command":  {
-                                                                               "type":  "string",
-                                                                               "description":  "通配符，如 *.txt 或 *.jsonl"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "path",
-                                                             "command"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "file_info",
-                         "description":  "看文件大小、修改时间、是否只读。问「多大」用这个，别 run_cmd dir",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "path":  {
-                                                                            "type":  "string",
-                                                                            "description":  "文件路径（相对工作区，如 data/x.txt）"
-                                                                        }
-                                                           },
-                                            "required":  [
-                                                             "path"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "move_path",
-                         "description":  "移动或重命名文件/目录。path=源，command=目标（如 脚本\\calc.ps1）。归类时把文件挪进目录用这个，不要用 write_file 新建",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "path":  {
-                                                                            "type":  "string",
-                                                                            "description":  "源路径"
-                                                                        },
-                                                               "command":  {
-                                                                               "type":  "string",
-                                                                               "description":  "目标路径，如 b.txt 或 脚本\\calc.ps1"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "path",
-                                                             "command"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "copy_path",
-                         "description":  "复制文件或目录，原文件保留（要移动用 move_path）。源填 path，目标填 command。",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "path":  {
-                                                                            "type":  "string",
-                                                                            "description":  "源路径"
-                                                                        },
-                                                               "command":  {
-                                                                               "type":  "string",
-                                                                               "description":  "目标路径，可以只给目录（保留原文件名）"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "path",
-                                                             "command"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "grep_file",
-                         "description":  "在文件里搜关键词，只返回匹配的行。找\"某段文字在哪\"用它，别整个读进来。",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "path":  {
-                                                                            "type":  "string",
-                                                                            "description":  "文件路径（相对工作区，如 data/x.txt）"
-                                                                        },
-                                                               "command":  {
-                                                                               "type":  "string",
-                                                                               "description":  "要找的关键词"
-                                                                           },
-                                                               "content":  {
-                                                                               "type":  "string",
-                                                                               "description":  "上下文行数，1-5，可留空"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "path",
-                                                             "command"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "delete_path",
-                         "description":  "删除文件或目录，不可逆。删之前会先问你，不会直接删。要删东西一律用这个，别用 run_cmd 调 del/rmdir。",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "path":  {
-                                                                            "type":  "string",
-                                                                            "description":  "要删的文件或目录（相对工作区，如 data/x.txt）"
-                                                                        }
-                                                           },
-                                            "required":  [
-                                                             "path"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "run_cmd",
-                         "description":  "跑一条 Windows cmd 命令。一条命令能做完就别写脚本；要算数或处理对象改用 run_ps。",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "command":  {
-                                                                               "type":  "string",
-                                                                               "description":  "命令或参数文本"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "command"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "run_ps",
-                         "description":  "跑 PowerShell 命令。要算数、处理对象、正则、JSON 用这个；普通文件操作别用它",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "command":  {
-                                                                               "type":  "string",
-                                                                               "description":  "命令或参数文本"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "command"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "run_ps1",
-                         "description":  "跑一个 .ps1 脚本文件。要写脚本就用 write_script（写+跑一步完成），别拆成两步。",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "path":  {
-                                                                            "type":  "string",
-                                                                            "description":  "文件路径（相对工作区，如 data/x.txt）"
-                                                                        },
-                                                               "command":  {
-                                                                               "type":  "string",
-                                                                               "description":  "命令或参数文本"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "path"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "run_bat",
-                         "description":  "运行 .bat / .cmd 批处理脚本。跑 .ps1 用 run_ps1，跑单条命令用 run_cmd，别混。",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "path":  {
-                                                                            "type":  "string",
-                                                                            "description":  "批处理文件路径（相对工作区，如 scripts/run.bat）"
-                                                                        },
-                                                               "command":  {
-                                                                               "type":  "string",
-                                                                               "description":  "传给批处理的参数，留空就不带"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "path"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "run_js",
-                         "description":  "跑 .js 脚本（Windows 自带 JScript，不用装 Node）",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "path":  {
-                                                                            "type":  "string",
-                                                                            "description":  "文件路径（相对工作区，如 data/x.txt）"
-                                                                        },
-                                                               "command":  {
-                                                                               "type":  "string",
-                                                                               "description":  "命令或参数文本"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "path"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "skill",
-                         "description":  "现成技能。常见活儿（统计/找重复/转格式/求和/压缩）先来这儿找，别自己写。command 写 list 看全部",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "command":  {
-                                                                               "type":  "string",
-                                                                               "description":  "命令或参数文本"
-                                                                           }
-                                                           },
-                                            "required":  [
-
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "help",
-                         "description":  "查内置手册和工具详情。问「XX 怎么用」时先试这个。",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "command":  {
-                                                                               "type":  "string",
-                                                                               "description":  "主题或工具名"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "command"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "syshelp",
-                         "description":  "查 Windows 命令的参数和用法。问「XX 命令怎么用 / XX 有哪些参数」时用这个，别去翻本地文件。",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "command":  {
-                                                                               "type":  "string",
-                                                                               "description":  "命令名，如 robocopy / xcopy"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "command"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "win_doc",
-                         "description":  "查微软官方文档。命令的用法、参数记不清时用它，比凭记忆答准。",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "command":  {
-                                                                               "type":  "string",
-                                                                               "description":  "要查的命令名，如 Get-ChildItem"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "command"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "web_search",
-                         "description":  "上网搜索。**凡是问你不知道的事实（今年/最新/谁得了奖/多少钱/什么版本），必须先搜，不许凭记忆猜。** 搜完拿到结果再说；搜不到就如实说搜不到，别编。",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "command":  {
-                                                                               "type":  "string",
-                                                                               "description":  "要搜索的关键词，别写整句话"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "command"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "web_fetch",
-                         "description":  "打开一个网址读正文。web_search 给了链接、要看详情时用它。path 填完整 http(s) 链接。",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "path":  {
-                                                                            "type":  "string",
-                                                                            "description":  "完整网址，如 https://example.com"
-                                                                        }
-                                                           },
-                                            "required":  [
-                                                             "path"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "rethink",
-                         "description":  "走偏了重来。把当前几步的推理清空，重新想 —— 用在发现自己方向错了、或者连续几次同一个工具都失败的时候。",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "reason":  {
-                                                                              "type":  "string",
-                                                                              "description":  "为什么要重来，一句话。写清楚哪里错了，重想的时候能看到"
-                                                                          }
-                                                           },
-                                            "required":  [
-                                                             "reason"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "think",
-                         "description":  "先想清楚再动手。**新任务的第一个动作必须是这个。**把推理写进 content：要什么结果、分几步、这步为什么这么做。**这是给自己看的，用户看不到** —— 要跟用户说话用 note。控制在 150 字以内，别写长篇分析。",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "content":  {
-                                                                               "type":  "string",
-                                                                               "description":  "你的推理，100 字以内，写在这里"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "content"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "plan",
-                         "description":  "列计划：把要做的事拆成几步，每步写清用什么工具、产出什么。复杂任务的第一步就该调它，之后每完成一步在 think 里对照着走。",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "steps":  {
-                                                                             "type":  "string",
-                                                                             "description":  "任务清单，一步一行"
-                                                                         }
-                                                           },
-                                            "required":  [
-                                                             "steps"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "say",
-                         "description":  "问用户。只在真的缺信息、猜不出来的时候用 —— 会卡住等你回答。进度播报用 note，别用这个。",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "message":  {
-                                                                               "type":  "string",
-                                                                               "description":  "要问用户的话。说清楚缺什么、为什么要问，一句话讲完"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "message"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "learn",
-                         "description":  "记教训。path=任务关键词 find=踩的坑 replace=正确做法",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "path":  {
-                                                                            "type":  "string",
-                                                                            "description":  "文件路径（相对工作区，如 data/x.txt）"
-                                                                        },
-                                                               "find":  {
-                                                                            "type":  "string",
-                                                                            "description":  "要找的原文"
-                                                                        },
-                                                               "replace":  {
-                                                                               "type":  "string",
-                                                                               "description":  "替换成什么"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "find"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "unzip",
-                         "description":  "解压压缩包（zip / tar / gz / 7z / rar）。先看压缩包里有什么用 zip_list，别直接解。",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "path":  {
-                                                                            "type":  "string",
-                                                                            "description":  "压缩包路径（相对工作区，如 data.zip）"
-                                                                        },
-                                                               "command":  {
-                                                                               "type":  "string",
-                                                                               "description":  "解压到哪个目录，留空就解到同名文件夹"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "path"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "ps",
-                         "description":  "看进程。command 写 memory 或留空=按内存排序",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "command":  {
-                                                                               "type":  "string",
-                                                                               "description":  "命令或参数文本"
-                                                                           }
-                                                           },
-                                            "required":  [
-
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "install",
-                         "description":  "用winget装软件。command 写 search 关键词 只搜索",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "command":  {
-                                                                               "type":  "string",
-                                                                               "description":  "命令或参数文本"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "command"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "finish",
-                         "description":  "收尾并给答案。**是工具不是文字**，要在 tool_calls 里调，别直接输出 \"finish(...)\" 这行字。",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "answer":  {
-                                                                              "type":  "string",
-                                                                              "description":  "给用户的最终答案，一句话说清结果"
-                                                                          }
-                                                           },
-                                            "required":  [
-                                                             "answer"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "note",
-                         "description":  "对用户说一句话，说完立刻继续（不等待回答）。多步任务里每做完一步用它交代进度：「note.txt 挪好了，还剩 2 个 log，接着挪」。**不是问问题** —— 要问用 say。",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "content":  {
-                                                                               "type":  "string",
-                                                                               "description":  "要对用户说的话，一句，说清做了什么、接下来干什么"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "content"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "http_request",
-                         "description":  "发 HTTP 请求（GET/POST/PUT/DELETE/PATCH），可带 header 和 body，返回状态码和正文。抓网页正文用 web_fetch，搜索用 web_search，别拿这个当搜索用。",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "url":  {
-                                                                           "type":  "string",
-                                                                           "description":  "完整地址，如 https://api.example.com/v1/items"
-                                                                       },
-                                                               "method":  {
-                                                                              "type":  "string",
-                                                                              "description":  "GET（默认）/ POST / PUT / DELETE / PATCH"
-                                                                          },
-                                                               "headers":  {
-                                                                               "type":  "string",
-                                                                               "description":  "可选。JSON 对象字符串，如 {\"Authorization\":\"Bearer xxx\"}"
-                                                                           },
-                                                               "body":  {
-                                                                            "type":  "string",
-                                                                            "description":  "可选。请求正文；POST JSON 时直接传 JSON 字符串"
-                                                                        },
-                                                               "contentType":  {
-                                                                                   "type":  "string",
-                                                                                   "description":  "可选。默认 application/json（有 body 时）"
-                                                                               },
-                                                               "timeout":  {
-                                                                               "type":  "number",
-                                                                               "description":  "可选。超时秒数，默认 20，最大 60"
-                                                                           }
-                                                           },
-                                            "required":  [
-                                                             "url"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "pdf_read",
-                         "description":  "读 PDF 里的文字，按页取。默认读前 8 页、最多 1500 字符；要后面的页用 pages 指定（如 \"3\"、\"1-5\"、\"all\"）。扫描件/加密件读不出文字会明确说。",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "path":  {
-                                                                            "type":  "string",
-                                                                            "description":  "PDF 文件路径（相对工作区）"
-                                                                        },
-                                                               "pages":  {
-                                                                             "type":  "string",
-                                                                             "description":  "可选。如 \"3\" 读第3页、\"1-5\" 读1到5页、\"all\" 读全部（仍受 maxChars 限制）"
-                                                                         },
-                                                               "maxChars":  {
-                                                                                "type":  "number",
-                                                                                "description":  "可选。最多返回多少字符，默认 1500，上限 4000"
-                                                                            }
-                                                           },
-                                            "required":  [
-                                                             "path"
-                                                         ]
-                                        }
-                     }
-    },
-    {
-        "type":  "function",
-        "function":  {
-                         "name":  "notify",
-                         "description":  "弹系统提醒（Windows 托盘气泡）。长任务快做完时提醒用户回来看，别每一步都弹。",
-                         "parameters":  {
-                                            "type":  "object",
-                                            "properties":  {
-                                                               "message":  {
-                                                                               "type":  "string",
-                                                                               "description":  "提醒内容，一句话说清什么好了"
-                                                                           },
-                                                               "title":  {
-                                                                             "type":  "string",
-                                                                             "description":  "可选。标题，默认 Nafx"
-                                                                         }
-                                                           },
-                                            "required":  [
-                                                             "message"
-                                                         ]
-                                        }
-                     }
+  {
+    "type": "function",
+    "function": {
+      "name": "write_file",
+      "description": "写文件。新建或整个覆盖。改某一行用 set_line，末尾追加用 append_file，别用 write_file 覆盖整个文件。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
+          },
+          "content": {
+            "type": "string",
+            "description": "文件内容 / 要写的东西"
+          }
+        },
+        "required": [
+          "path",
+          "content"
+        ]
+      }
     }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "read_file",
+      "description": "读整个文件的内容。只看某几行用 read_lines，找关键词用 grep_file，都别用它硬读大文件。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "list_dir",
+      "description": "列出目录里有哪些文件和子目录。**列表就是答案，列完别再挨个 read_file 去确认存在。**",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "hash_file",
+      "description": "算文件哈希。判断两个文件是否完全一样用这个，比 compare_files 更细",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
+          },
+          "command": {
+            "type": "string",
+            "description": "算法，可留空默认 sha256"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "read_lines",
+      "description": "读文件的指定行范围。比 read_file 省 token，只需要几行时用它。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
+          },
+          "command": {
+            "type": "string",
+            "description": "从第几行开始，比如 1"
+          },
+          "content": {
+            "type": "string",
+            "description": "读多少行，默认 40，最多 200"
+          }
+        },
+        "required": [
+          "path",
+          "command"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "sys_info",
+      "description": "看 CPU 核数、内存、磁盘空间。问机器配置用这个，别 run_cmd wmic",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "cpu / mem / disk / all，可留空默认 all"
+          }
+        },
+        "required": []
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "clipboard",
+      "description": "读写剪贴板。command 填 get 或 set；set 时正文放 content",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "get 或 set"
+          },
+          "content": {
+            "type": "string",
+            "description": "set 时写什么"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "now",
+      "description": "看当前日期和时间。问「今天几号」「现在几点」必须用它，别猜（模型不知道今天是什么日子）",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "zip_list",
+      "description": "不解压先看压缩包里有什么。支持 zip/docx/xlsx/pptx",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "diff_files",
+      "description": "两个文件逐行比，说清哪几行不一样。command 填第二个文件",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "第一个文件"
+          },
+          "command": {
+            "type": "string",
+            "description": "第二个文件"
+          }
+        },
+        "required": [
+          "path",
+          "command"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "json_format",
+      "description": "美化或压缩 JSON。command 填 pretty（缩进）或 compact（一行）",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
+          },
+          "command": {
+            "type": "string",
+            "description": "pretty 或 compact"
+          },
+          "content": {
+            "type": "string",
+            "description": "填 1 表示写回文件，留空只显示"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "csv_preview",
+      "description": "先看 CSV 长什么样：列名 + 前几行。command 填看几行（默认 8）",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
+          },
+          "command": {
+            "type": "string",
+            "description": "看几行，默认 8"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "date_calc",
+      "description": "算日期。command 填天数（3=三天后，-7=七天前）或日期（2024-01-01，算距今多少天）",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "天数或日期"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "download_file",
+      "description": "把网址上的文件下载到本地。path 填网址，command 填存到哪（留空用原文件名）",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "http 或 https 网址"
+          },
+          "command": {
+            "type": "string",
+            "description": "存到哪，可留空"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "env_get",
+      "description": "看环境变量。command 填变量名（留空列常用的几个）",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "变量名，可留空"
+          }
+        },
+        "required": []
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "open_app",
+      "description": "打开程序或文件。command 填 notepad / calc / explorer / mspaint / taskmgr，或完整路径",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "程序名或路径"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "kill_process",
+      "description": "结束进程。command 填进程名（如 notepad）或 PID。系统进程会被拒绝",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "进程名或 PID"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "run_python",
+      "description": "跑 Python。path 给 .py 文件，或 content 直接给代码。算复杂的东西比 PowerShell 顺手",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": ".py 文件路径，可留空"
+          },
+          "content": {
+            "type": "string",
+            "description": "直接写代码，可留空"
+          }
+        },
+        "required": []
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "write_script",
+      "description": "写 .ps1 脚本并立刻运行，一次调用拿到输出。**参数要在 command 里传**，脚本有 param() 时漏了 command 会跑出空结果。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "脚本路径，以 .ps1 结尾"
+          },
+          "content": {
+            "type": "string",
+            "description": "脚本内容"
+          },
+          "command": {
+            "type": "string",
+            "description": "运行参数，可留空"
+          }
+        },
+        "required": [
+          "path",
+          "content"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "write_skill",
+      "description": "把一套做法写成技能说明文档，以后能查。path 填技能名，content 填 markdown 说明",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "技能名，如 clean_logs"
+          },
+          "content": {
+            "type": "string",
+            "description": "markdown 说明"
+          }
+        },
+        "required": [
+          "path",
+          "content"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "project_doc",
+      "description": "查 Nafx 自己的文档：架构 / 工具 / 流程。command 填主题",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "架构 / 工具 / 流程，可留空看全部"
+          }
+        },
+        "required": []
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "unit_convert",
+      "description": "单位换算。command 写 100 km to miles、30 c to f、1 gb to mb",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "换算表达式"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "replace_in_file",
+      "description": "把文件里的一段文字替换成另一段。改文件里某句话用它；改整行用 set_line。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
+          },
+          "find": {
+            "type": "string",
+            "description": "要找的原文"
+          },
+          "replace": {
+            "type": "string",
+            "description": "替换成什么"
+          }
+        },
+        "required": [
+          "path",
+          "find",
+          "replace"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "set_line",
+      "description": "改文件的第 N 行。用户说「把第 N 行改成 X」时用它。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
+          },
+          "command": {
+            "type": "string",
+            "description": "行号，比如 4"
+          },
+          "content": {
+            "type": "string",
+            "description": "新内容"
+          }
+        },
+        "required": [
+          "path",
+          "command",
+          "content"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "append_file",
+      "description": "往文件末尾追加内容，不动原有内容。用户说「追加 / 加一行 / 补一段」时用它。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
+          },
+          "content": {
+            "type": "string",
+            "description": "文件内容 / 要写的东西"
+          }
+        },
+        "required": [
+          "path",
+          "content"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "make_dir",
+      "description": "建目录（含多级，如 a/b/c 一次建好）。写文件到新目录时 write_file 会自动建父目录，不用先跑这个。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "find_files",
+      "description": "按文件名或通配符找文件（如 *.txt）。找\"哪些文件叫这个名\"用它。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "从哪个目录找"
+          },
+          "command": {
+            "type": "string",
+            "description": "通配符，如 *.txt 或 *.jsonl"
+          }
+        },
+        "required": [
+          "path",
+          "command"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "file_info",
+      "description": "看文件大小、修改时间、是否只读。问「多大」用这个，别 run_cmd dir",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "move_path",
+      "description": "移动或重命名文件/目录。path=源，command=目标（如 脚本\\calc.ps1）。归类时把文件挪进目录用这个，不要用 write_file 新建",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "源路径"
+          },
+          "command": {
+            "type": "string",
+            "description": "目标路径，如 b.txt 或 脚本\\calc.ps1"
+          }
+        },
+        "required": [
+          "path",
+          "command"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "copy_path",
+      "description": "复制文件或目录，原文件保留（要移动用 move_path）。源填 path，目标填 command。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "源路径"
+          },
+          "command": {
+            "type": "string",
+            "description": "目标路径，可以只给目录（保留原文件名）"
+          }
+        },
+        "required": [
+          "path",
+          "command"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "grep_file",
+      "description": "在文件里搜关键词，只返回匹配的行。找\"某段文字在哪\"用它，别整个读进来。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
+          },
+          "command": {
+            "type": "string",
+            "description": "要找的关键词"
+          },
+          "content": {
+            "type": "string",
+            "description": "上下文行数，1-5，可留空"
+          }
+        },
+        "required": [
+          "path",
+          "command"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "delete_path",
+      "description": "删除文件或目录，不可逆。删之前会先问你，不会直接删。要删东西一律用这个，别用 run_cmd 调 del/rmdir。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "要删的文件或目录（相对工作区，如 data/x.txt）"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "run_cmd",
+      "description": "跑一条 Windows cmd 命令。一条命令能做完就别写脚本；要算数或处理对象改用 run_ps。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "命令或参数文本"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "run_ps",
+      "description": "跑 PowerShell 命令。要算数、处理对象、正则、JSON 用这个；普通文件操作别用它",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "命令或参数文本"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "run_ps1",
+      "description": "跑一个 .ps1 脚本文件。要写脚本就用 write_script（写+跑一步完成），别拆成两步。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
+          },
+          "command": {
+            "type": "string",
+            "description": "命令或参数文本"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "run_bat",
+      "description": "运行 .bat / .cmd 批处理脚本。跑 .ps1 用 run_ps1，跑单条命令用 run_cmd，别混。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "批处理文件路径（相对工作区，如 scripts/run.bat）"
+          },
+          "command": {
+            "type": "string",
+            "description": "传给批处理的参数，留空就不带"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "run_js",
+      "description": "跑 .js 脚本（Windows 自带 JScript，不用装 Node）",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
+          },
+          "command": {
+            "type": "string",
+            "description": "命令或参数文本"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "skill",
+      "description": "现成技能。常见活儿（统计/找重复/转格式/求和/压缩）先来这儿找，别自己写。command 写 list 看全部",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "命令或参数文本"
+          }
+        },
+        "required": []
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "help",
+      "description": "查内置手册和工具详情。问「XX 怎么用」时先试这个。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "主题或工具名"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "syshelp",
+      "description": "查 Windows 命令的参数和用法。问「XX 命令怎么用 / XX 有哪些参数」时用这个，别去翻本地文件。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "命令名，如 robocopy / xcopy"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "win_doc",
+      "description": "查微软官方文档。命令的用法、参数记不清时用它，比凭记忆答准。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "要查的命令名，如 Get-ChildItem"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "web_search",
+      "description": "上网搜索。**凡是问你不知道的事实（今年/最新/谁得了奖/多少钱/什么版本），必须先搜，不许凭记忆猜。** 搜完拿到结果再说；搜不到就如实说搜不到，别编。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "要搜索的关键词，别写整句话"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "web_fetch",
+      "description": "打开一个网址读正文。web_search 给了链接、要看详情时用它。path 填完整 http(s) 链接。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "完整网址，如 https://example.com"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "rethink",
+      "description": "走偏了重来。把当前几步的推理清空，重新想 —— 用在发现自己方向错了、或者连续几次同一个工具都失败的时候。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "description": "为什么要重来，一句话。写清楚哪里错了，重想的时候能看到"
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "think",
+      "description": "先想清楚再动手。**新任务的第一个动作必须是这个。**把推理写进 content：要什么结果、分几步、这步为什么这么做。**这是给自己看的，用户看不到** —— 要跟用户说话用 note。控制在 150 字以内，别写长篇分析。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "你的推理，100 字以内，写在这里"
+          }
+        },
+        "required": [
+          "content"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "plan",
+      "description": "列计划：把要做的事拆成几步，每步写清用什么工具、产出什么。复杂任务的第一步就该调它，之后每完成一步在 think 里对照着走。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "steps": {
+            "type": "string",
+            "description": "任务清单，一步一行"
+          }
+        },
+        "required": [
+          "steps"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "say",
+      "description": "问用户。只在真的缺信息、猜不出来的时候用 —— 会卡住等你回答。进度播报用 note，别用这个。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "description": "要问用户的话。说清楚缺什么、为什么要问，一句话讲完"
+          }
+        },
+        "required": [
+          "message"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "learn",
+      "description": "记教训。path=任务关键词 find=踩的坑 replace=正确做法",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "文件路径（相对工作区，如 data/x.txt）"
+          },
+          "find": {
+            "type": "string",
+            "description": "要找的原文"
+          },
+          "replace": {
+            "type": "string",
+            "description": "替换成什么"
+          }
+        },
+        "required": [
+          "find"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "unzip",
+      "description": "解压压缩包（zip / tar / gz / 7z / rar）。先看压缩包里有什么用 zip_list，别直接解。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "压缩包路径（相对工作区，如 data.zip）"
+          },
+          "command": {
+            "type": "string",
+            "description": "解压到哪个目录，留空就解到同名文件夹"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "ps",
+      "description": "看进程。command 写 memory 或留空=按内存排序",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "命令或参数文本"
+          }
+        },
+        "required": []
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "install",
+      "description": "用winget装软件。command 写 search 关键词 只搜索",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "命令或参数文本"
+          }
+        },
+        "required": [
+          "command"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "finish",
+      "description": "收尾并给答案。**是工具不是文字**，要在 tool_calls 里调，别直接输出 \"finish(...)\" 这行字。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "answer": {
+            "type": "string",
+            "description": "给用户的最终答案，一句话说清结果"
+          }
+        },
+        "required": [
+          "answer"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "note",
+      "description": "对用户说一句话，说完立刻继续（不等待回答）。多步任务里每做完一步用它交代进度：「note.txt 挪好了，还剩 2 个 log，接着挪」。**不是问问题** —— 要问用 say。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "description": "要对用户说的话，一句，说清做了什么、接下来干什么"
+          }
+        },
+        "required": [
+          "content"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "http_request",
+      "description": "发 HTTP 请求（GET/POST/PUT/DELETE/PATCH），可带 header 和 body，返回状态码和正文。抓网页正文用 web_fetch，搜索用 web_search，别拿这个当搜索用。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "完整地址，如 https://api.example.com/v1/items"
+          },
+          "method": {
+            "type": "string",
+            "description": "GET（默认）/ POST / PUT / DELETE / PATCH"
+          },
+          "headers": {
+            "type": "string",
+            "description": "可选。JSON 对象字符串，如 {\"Authorization\":\"Bearer xxx\"}"
+          },
+          "body": {
+            "type": "string",
+            "description": "可选。请求正文；POST JSON 时直接传 JSON 字符串"
+          },
+          "contentType": {
+            "type": "string",
+            "description": "可选。默认 application/json（有 body 时）"
+          },
+          "timeout": {
+            "type": "number",
+            "description": "可选。超时秒数，默认 20，最大 60"
+          }
+        },
+        "required": [
+          "url"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "pdf_read",
+      "description": "读 PDF 里的文字，按页取。默认读前 8 页、最多 1500 字符；要后面的页用 pages 指定（如 \"3\"、\"1-5\"、\"all\"）。扫描件/加密件读不出文字会明确说。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "PDF 文件路径（相对工作区）"
+          },
+          "pages": {
+            "type": "string",
+            "description": "可选。如 \"3\" 读第3页、\"1-5\" 读1到5页、\"all\" 读全部（仍受 maxChars 限制）"
+          },
+          "maxChars": {
+            "type": "number",
+            "description": "可选。最多返回多少字符，默认 1500，上限 4000"
+          }
+        },
+        "required": [
+          "path"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "notify",
+      "description": "弹系统提醒（Windows 托盘气泡）。长任务快做完时提醒用户回来看，别每一步都弹。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "description": "提醒内容，一句话说清什么好了"
+          },
+          "title": {
+            "type": "string",
+            "description": "可选。标题，默认 Nafx"
+          }
+        },
+        "required": [
+          "message"
+        ]
+      }
+    }
+  },
+  {
+    "function": {
+      "name": "net_http",
+      "parameters": {
+        "required": [
+          "url"
+        ],
+        "properties": {
+          "save": {
+            "description": "可选：把响应体存成文件名（存到 workspace\\net）",
+            "type": "string"
+          },
+          "timeout": {
+            "description": "超时秒数，默认 15，最多 60",
+            "type": "integer"
+          },
+          "body": {
+            "description": "请求体文本；有 body 且没给 contentType 时默认 application/json",
+            "type": "string"
+          },
+          "url": {
+            "description": "完整地址，如 http://127.0.0.1:8090/api/health",
+            "type": "string"
+          },
+          "insecure": {
+            "description": "true = 接受自签证书（只用于本机 https 调试）",
+            "type": "boolean"
+          },
+          "headers": {
+            "description": "请求头 JSON 字符串，如 {\"Content-Type\":\"application/json\"}",
+            "type": "string"
+          },
+          "maxBody": {
+            "description": "正文最多回多少字符，默认 4000",
+            "type": "integer"
+          },
+          "contentType": {
+            "description": "Content-Type，可省略",
+            "type": "string"
+          },
+          "method": {
+            "description": "GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS，默认 GET",
+            "type": "string"
+          },
+          "proxy": {
+            "type": "string",
+            "description": "可选：走本机调试代理，如 http://127.0.0.1:8899（配合 net_proxy 看请求日志/按规则改请求）"
+          }
+        },
+        "type": "object"
+      },
+      "description": "发一条 HTTP 请求并看真实响应（允许本机 127.0.0.1 和内网，专门调自己的服务）。返回状态码、耗时、响应头、正文；正文过长会截断。要抓包/改请求用 net_capture / net_proxy。"
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "name": "net_capture",
+      "parameters": {
+        "properties": {
+          "proto": {
+            "description": "tcp / udp / icmp，可省略",
+            "type": "string"
+          },
+          "file": {
+            "description": "可选：输出文件名（.etl/.pcapng，存到 workspace\\net）",
+            "type": "string"
+          },
+          "pktSize": {
+            "description": "每个包记录多少字节，默认 128（看头部够用；要 payload 就调大）",
+            "type": "integer"
+          },
+          "ip": {
+            "description": "只抓这个 IP 的包",
+            "type": "string"
+          },
+          "port": {
+            "description": "只抓这个端口（本机或对端），如 8090",
+            "type": "integer"
+          },
+          "seconds": {
+            "description": "抓多少秒，默认 5，最多 30",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "description": "用系统自带 pktmon 抓包 N 秒（要管理员权限），可按端口/IP/协议过滤。返回抓到的包数、出现最多的流、pcapng 路径（可直接用 Wireshark 打开）。抓完自动停，不留后台。"
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "name": "net_proxy",
+      "parameters": {
+        "required": [
+          "action"
+        ],
+        "properties": {
+          "rules": {
+            "description": "规则 JSON（对象或字符串）：{\"rules\":[{\"name\":\"mock健康检查\",\"url\":\"/api/health\",\"action\":\"mock\",\"status\":200,\"body\":\"{\\\"ok\\\":true}\"},{\"name\":\"加调试头\",\"url\":\"/api/\",\"setHeaders\":{\"X-Debug\":\"1\"}},{\"name\":\"拦删除\",\"method\":\"DELETE\",\"urlRegex\":\"/api/\",\"action\":\"block\"}]}",
+            "type": "string"
+          },
+          "clear": {
+            "description": "log 时顺便清空日志",
+            "type": "boolean"
+          },
+          "action": {
+            "description": "start=启动 / stop=停止 / status=状态 / rules=设规则 / log=看最近请求 / clear=清日志",
+            "type": "string"
+          },
+          "port": {
+            "description": "监听端口，默认 8899",
+            "type": "integer"
+          },
+          "limit": {
+            "description": "log：看最近几条，默认 10",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "description": "本机 HTTP 调试代理（只监听 127.0.0.1）：拦截并记录请求、按规则改写请求头/目标地址/请求体、直接返回模拟响应、或拦截返回 403。HTTPS 只做隧道不解密。action=start/stop/status/rules/log/clear。规则每次请求重读，改完不用重启。rules 传 JSON 字符串，形如 {\"rules\":[{\"name\":\"m\",\"url\":\"/api\",\"action\":\"mock\",\"status\":200,\"headers\":{\"X-Mock\":\"1\"},\"body\":\"ok\"}]}；action 可为 mock/block，不写则转发并用 setHeaders/removeHeaders/replaceUrl/bodyReplace 改。"
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "name": "net_send",
+      "parameters": {
+        "required": [
+          "port",
+          "data"
+        ],
+        "properties": {
+          "port": {
+            "description": "目标端口（必填，1-65535）",
+            "type": "integer"
+          },
+          "hex": {
+            "description": "true = data 按十六进制解析，如 48 65 6C 6C 6F",
+            "type": "boolean"
+          },
+          "host": {
+            "description": "目标主机，默认 127.0.0.1",
+            "type": "string"
+          },
+          "proto": {
+            "description": "tcp 或 udp，默认 tcp",
+            "type": "string"
+          },
+          "waitMs": {
+            "description": "发完等回复多少毫秒，默认 1500，最多 10000",
+            "type": "integer"
+          },
+          "count": {
+            "description": "重复发几次，默认 1，最多 20",
+            "type": "integer"
+          },
+          "data": {
+            "description": "要发的内容（文本）；hex=true 时写十六进制",
+            "type": "string"
+          },
+          "intervalMs": {
+            "description": "每次之间间隔毫秒",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "description": "直接发 TCP 或 UDP 数据包（文本或十六进制），并等一会儿读回复。返回发送/接收字节数、耗时、收到的文本片段。适合测试自定义协议、端口服务、发一个裸请求。"
+    },
+    "type": "function"
+  },
+  {
+    "function": {
+      "name": "net_ports",
+      "parameters": {
+        "properties": {
+          "port": {
+            "description": "只看这个端口（TCP/UDP 都看）；不给就列全部监听端口",
+            "type": "integer"
+          },
+          "limit": {
+            "description": "最多列多少条，默认 20",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "description": "看本机端口：谁在监听、端口被哪个进程占用、指定端口的连接状态。排查「端口被占用 / 服务到底起没起」时先用它。"
+    },
+    "type": "function"
+  }
 ]

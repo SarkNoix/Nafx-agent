@@ -29,6 +29,13 @@ try {
     if (Test-Path $webMod) { . $webMod; $script:WebReady = $true }
 } catch { $script:WebReady = $false }
 
+# 网络调试工具（抓包 / 代理 / 发包 / 端口）单独一个模块
+$script:NetReady = $false
+try {
+    $netMod = Join-Path $script:ToolDir 'nettools.ps1'
+    if (Test-Path $netMod) { . $netMod; $script:NetReady = $true }
+} catch { $script:NetReady = $false }
+
 function Set-AiRoot {
     param(
         [string]$Path,
@@ -934,6 +941,31 @@ function Invoke-AiTool {
                 $head = "HTTP $code $method $url"
                 if ($ctype) { $head += "（$ctype）" }
                 return ($head + "`n" + $outText)
+            }
+
+            'net_http' {
+                if (-not $script:NetReady) { throw '网络工具模块 nettools.ps1 没加载成功。' }
+                return (Invoke-NetHttp $Action)
+            }
+
+            'net_capture' {
+                if (-not $script:NetReady) { throw '网络工具模块 nettools.ps1 没加载成功。' }
+                return (Invoke-NetCapture $Action)
+            }
+
+            'net_proxy' {
+                if (-not $script:NetReady) { throw '网络工具模块 nettools.ps1 没加载成功。' }
+                return (Invoke-NetProxy $Action)
+            }
+
+            'net_send' {
+                if (-not $script:NetReady) { throw '网络工具模块 nettools.ps1 没加载成功。' }
+                return (Invoke-NetSend $Action)
+            }
+
+            'net_ports' {
+                if (-not $script:NetReady) { throw '网络工具模块 nettools.ps1 没加载成功。' }
+                return (Invoke-NetPorts $Action)
             }
 
             'pdf_read' {

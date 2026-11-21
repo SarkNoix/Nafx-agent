@@ -604,7 +604,13 @@ function Get-ExtraToolsByTask {
     if ($TaskText -match 'http|https|接口|api|API|状态码|请求.*(地址|网址|链接|服务)|curl|调.*接口') { $need += 'http_request' }
     if ($TaskText -match 'pdf|PDF') { $need += 'pdf_read' }
     if ($TaskText -match '提醒|弹窗|通知|做完.*(叫|喊|告诉)|完成.*(叫|喊|告诉)') { $need += 'notify' }
-    return $need
+    # 网络调试：抓包 / 拦截改包 / 发裸包 / 查端口。一次最多补两三个，别把上下文顶爆。
+    if ($TaskText -match '抓包|抓流量|抓.{0,12}包|pcap|pktmon|wireshark') { $need += 'net_capture'; $need += 'net_ports' }
+    if ($TaskText -match '拦截|改包|改请求|重写请求|代理|mock|proxy') { $need += 'net_proxy'; $need += 'net_http' }
+    if ($TaskText -match '发包|裸包|原始包|tcp.*(发|请求)|udp') { $need += 'net_send'; $need += 'net_ports' }
+    if ($TaskText -match '端口|监听|占用') { $need += 'net_ports' }
+    if ($TaskText -match 'net_(http|capture|proxy|send|ports)') { $need += 'net_http'; $need += 'net_proxy'; $need += 'net_ports' }
+    return ($need | Select-Object -Unique)
 }
 
 function Get-ToolsJsonFor {
