@@ -144,6 +144,39 @@ if ($lp) { $runningLlamaMB = [math]::Round($lp.WorkingSet64 / 1MB) }
 $budgetMB = [math]::Round($freeMB + $runningLlamaMB - 200)
 if ($runningLlamaMB -eq 0) { $budgetMB = $freeMB }
 
+# ---- 页面文件也算进来 ----
+#
+# 上面那个预算只数物理内存。这台机器物理只有 7.85 GB，
+# 算出来永远只能跑 4096-5120，再大就判「装不下」。
+#
+# 但 Windows 有页面文件：物理不够时把冷页换到磁盘。
+# 换页会慢（实测 think 从 62 秒变 485 秒），但不会崩 ——
+# 这比「上下文不够、任务直接 400 失败」强。
+#
+# 所以：预算 = 物理可用的基础上，再允许吃页面文件的一部分。
+# 留 6 GB 给系统自己和其它程序，剩下的才是 llama 的额度。
+$pfFreeMB = 0
+try {
+    $pf = Get-CimInstance Win32_PageFileUsage -ErrorAction SilentlyContinue
+    foreach ($p1 in @($pf)) {
+        $allocMB = [double]$p1.AllocatedBaseSize
+        $usedMB  = [double]$p1.CurrentUsage
+        $pfFreeMB += [math]::Max(0, $allocMB - $usedMB)
+    }
+} catch { }
+
+# 页面文件里留 6 GB 给系统（explorer / Defender / svchost 都要换页）
+$pfForLlamaMB = [math]::Max(0, $pfFreeMB - 6144)
+# 换页只能顶 60%：全指望换页会让整机卡到没法用
+$pfAllowMB = [math]::Round($pfForLlamaMB * 0.6)
+$budgetNoPf = $budgetMB
+$budgetMB = $budgetMB + $pfAllowMB
+
+# 上限：物理 + 页面文件的总提交额度再留 1 GB 余量
+$commitLimitMB = [math]::Round($os.TotalVirtualMemorySize / 1024)
+$hardCapMB = $commitLimitMB - 1024
+if ($budgetMB -gt $hardCapMB) { $budgetMB = $hardCapMB }
+
 # ------------------------------------------------------------
 #  2. 逐个方案试，挑能装下的最大的
 #     优先级：context 越大越好 > KV 精度越高越好
