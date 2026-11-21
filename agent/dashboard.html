@@ -260,7 +260,24 @@ html[data-theme="mo"]{background:#0f1115}
 [data-theme="su"] .side-block > h3::after,[data-theme="mo"] .side-block > h3::after{content:'▸';font-size:10px;color:var(--faint);
   transform:rotate(90deg);transition:transform .15s}
 [data-theme="su"] .side-block.closed > h3::after,[data-theme="mo"] .side-block.closed > h3::after{transform:rotate(0deg)}
-[data-theme="su"] .side-block.closed > *:not(h3),[data-theme="mo"] .side-block.closed > *:not(h3){display:none}
+/* 折叠动画：display:none 是突变的，没法过渡。
+   改用 max-height + opacity + margin 三件套，
+   高度由 JS 在切换时实测写进去（见 bindSideFold）。
+   兜底：JS 没跑或算不出高度时，0 高度 + 隐藏，至少不出错。 */
+[data-theme="su"] .side-block > *:not(h3),[data-theme="mo"] .side-block > *:not(h3){
+  overflow:hidden;
+  transition:max-height .28s cubic-bezier(.32,.72,0,1),
+             opacity .2s ease,
+             margin-top .28s cubic-bezier(.32,.72,0,1);
+}
+[data-theme="su"] .side-block.closed > *:not(h3),[data-theme="mo"] .side-block.closed > *:not(h3){
+  max-height:0 !important;opacity:0;margin-top:0 !important;pointer-events:none;
+}
+/* 展开态的高度由 JS 置为实际值；这里给个足够大的上限，
+   免得万一 JS 没跑内容被截断。 */
+[data-theme="su"] .side-block:not(.closed) > *:not(h3),[data-theme="mo"] .side-block:not(.closed) > *:not(h3){
+  opacity:1;
+}
 [data-theme="su"] .side-block > .quote,[data-theme="mo"] .side-block > .quote{display:none}
 [data-theme="su"] .side-actions,[data-theme="mo"] .side-actions{display:flex;flex-direction:column;gap:4px;
   border:none;padding:8px 2px 0;margin-top:8px;border-top:1px solid #eef0f3}
@@ -1499,6 +1516,47 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,.tool-chip:focus
   outline:2px solid var(--accent);outline-offset:2px;
 }
 
+
+/* ---------- 侧栏动画 ----------
+   收起/展开由 foldBlock() 驱动高度过渡（见 JS），这里补三个小动作：
+
+   ① 折叠箭头旋转带一点回弹 —— 纯 ease 太机械，cubic-bezier 过冲一点更自然
+   ② 标题 hover 时底色淡入（原来只有背景色突变）
+   ③ 整个侧栏区块换主题时淡入，不要硬切 */
+
+[data-theme="su"] .side-block > h3::after,[data-theme="mo"] .side-block > h3::after{
+  transition:transform .26s cubic-bezier(.34,1.56,.64,1),color .18s ease;
+}
+/* 展开时箭头朝下（转 90°），收起时朝右 */
+[data-theme="su"] .side-block.closed > h3::after,[data-theme="mo"] .side-block.closed > h3::after{
+  transform:rotate(0deg);
+}
+/* hover 时箭头颜色跟正文一致，给一点「可点」的暗示 */
+[data-theme="su"] .side-block > h3:hover::after,[data-theme="mo"] .side-block > h3:hover::after{
+  color:var(--fg);
+}
+
+/* h3 的悬停底色淡入 */
+[data-theme="su"] .side-block > h3,[data-theme="mo"] .side-block > h3{
+  transition:background .18s ease,color .18s ease;
+}
+
+/* 侧栏里的按钮统一过渡 */
+[data-theme="su"] .side-actions button,[data-theme="mo"] .side-actions button{
+  transition:background .16s ease,color .16s ease,transform .12s ease;
+}
+[data-theme="su"] .side-actions button:active,[data-theme="mo"] .side-actions button:active{
+  transform:scale(.985);
+}
+
+/* 工具小标签 / 工作区条目：出现时轻微上浮 */
+@keyframes nafx-fade-up{
+  from{opacity:0;transform:translateY(3px)}
+  to{opacity:1;transform:translateY(0)}
+}
+[data-theme="su"] .tool-chip,[data-theme="mo"] .tool-chip{
+  animation:nafx-fade-up .22s ease both;
+}
 
 /* 减少动效偏好：系统设了「减少动画」就别硬动 */
 @media(prefers-reduced-motion:reduce){
@@ -2984,21 +3042,69 @@ function loadSideState(){
   try { return JSON.parse(localStorage.getItem('nafx-side') || '{}') || {}; } catch(e){ return {}; }
 }
 function saveSideState(m){ try { localStorage.setItem('nafx-side', JSON.stringify(m)); } catch(e){} }
+/* 折叠/展开一个侧栏区块，带高度动画。
+   
+   为什么要 JS 测高度：CSS 没法从 auto 过渡到 0。
+   做法是把每个子元素当前的实际高度写进 max-height，
+   再切换 .closed —— 浏览器就有了具体的起止值，可以过渡。
+   
+   细节：
+   · 展开时先设为 0 → 下一帧设为实际高度 → 过渡结束去掉 max-height
+     （留着会限制后续内容变化，比如工具列表刷新变长）
+   · 收起时同理，从当前高度过渡到 0，结束才加 .closed 的样式
+   · 用 requestAnimationFrame 保证浏览器先渲染起始值 */
+function foldBlock(block){
+  if (!block) return;
+  var willClose = !block.classList.contains('closed');
+  var kids = [];
+  for (var i=0;i<block.children.length;i++){
+    var c = block.children[i];
+    if (c.tagName.toLowerCase() !== 'h3') kids.push(c);
+  }
+  if (kids.length === 0){ block.classList.toggle('closed', willClose); return; }
+
+  // 先量出展开态每块的完整高度
+  var heights = kids.map(function(k){
+    k.style.maxHeight = 'none';
+    var h = k.scrollHeight;
+    return h;
+  });
+
+  if (willClose){
+    // 收起：从实际高度过渡到 0
+    kids.forEach(function(k, idx){ k.style.maxHeight = heights[idx] + 'px'; });
+    void block.offsetHeight;   // 强制重排，让起始值生效
+    kids.forEach(function(k){ k.style.maxHeight = '0px'; });
+    block.classList.add('closed');
+    setTimeout(function(){
+      kids.forEach(function(k){ k.style.maxHeight = ''; });
+    }, 300);
+  } else {
+    // 展开：先去掉 closed（此时 max-height:0），再设成实际高度
+    block.classList.remove('closed');
+    kids.forEach(function(k){ k.style.maxHeight = '0px'; });
+    void block.offsetHeight;
+    kids.forEach(function(k, idx){ k.style.maxHeight = heights[idx] + 'px'; });
+    setTimeout(function(){
+      kids.forEach(function(k){ k.style.maxHeight = ''; });
+    }, 300);
+  }
+}
+
 function applyDshDrawer(on){
   var blocks = document.querySelectorAll('.side-block');
   for (var i=0;i<blocks.length;i++){
     var b = blocks[i];
     var h = b.querySelector('h3');
     if (h && !h.getAttribute('data-dsh-bound')){
-      h.setAttribute('data-dsh-bound','1');
       h.addEventListener('click', function(){
-        if (atcTheme()){
-          this.parentElement.classList.toggle('closed');
-          // 折叠状态立刻落盘：换主题、刷新、重启都不丢
-          var st = loadSideState();
-          st[sideKey(this.parentElement)] = !this.parentElement.classList.contains('closed');
-          saveSideState(st);
-        }
+        if (!atcTheme()) return;
+        var blk = this.parentElement;
+        foldBlock(blk);
+        // 折叠状态立刻落盘：换主题、刷新、重启都不丢
+        var st = loadSideState();
+        st[sideKey(blk)] = !blk.classList.contains('closed');
+        saveSideState(st);
       });
     }
     if (on){

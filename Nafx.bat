@@ -28,8 +28,17 @@ rem ---------- 3) 面板 ----------
 rem 先看是不是已经开着了，别重复启动
 powershell -NoProfile -ExecutionPolicy Bypass -Command "if (Get-NetTCPConnection -LocalPort 8090 -State Listen -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"
 if errorlevel 1 (
-    echo   [3/3] 启动面板...
-    start "" /min powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%ROOT%monitor.ps1"
+    rem 启动面板，失败自动重试。
+    rem 内存紧张时 PowerShell 进程可能申请不到内存直接退出，
+    rem 表现就是「点了没反应」。三次都起不来才报错。
+    set "PANEL_OK="
+    powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "$ok=$false; for($try=1;$try -le 3;$try++){ Start-Process -FilePath 'powershell.exe' -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-File','%ROOT%monitor.ps1' -WindowStyle Hidden; for($i=0;$i -lt 25;$i++){ Start-Sleep -Milliseconds 800; try{ $r=Invoke-WebRequest 'http://127.0.0.1:8090/' -UseBasicParsing -TimeoutSec 2; if($r.StatusCode -eq 200){$ok=$true;break} }catch{} }; if($ok){break}; Start-Sleep -Seconds 2 }; if($ok){exit 0}else{exit 1}"
+    if errorlevel 1 (
+        echo   [!] 面板三次都没起来。多半是内存不够。
+        echo       关掉浏览器或其它占内存的程序再试，或者双击 停止服务.bat 后重来。
+    ) else (
+        echo   [3/3] 面板已启动
+    )
 ) else (
     echo   [3/3] 面板已在运行
 )

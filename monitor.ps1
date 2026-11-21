@@ -10,6 +10,31 @@
 # ============================================================
 
 param([int]$Port = 0, [string]$ConfigFile = 'config.json')
+# ------------------------------------------------------------
+#  启动自检：内存够不够、模型起没起
+#  
+#  实测过一次很典型的翻车：llama 用 7168 上下文占了 4.4 GB，
+#  物理内存只剩 0.4 GB。面板是个 PowerShell 进程，启动时申请不到
+#  内存就静默退出 —— 没有报错、没有日志、什么都没有，用户只看到
+#  「面板打不开」。
+#  
+#  所以启动前先量一下：
+#    · 可用内存低于 300 MB → 等一会儿再试，最多等 20 秒
+#    · 模型端口不通 → 提示一下但不拦（面板本身还能看历史）
+#  
+#  这段只做事前提示和等待，不改变原有流程。
+# ------------------------------------------------------------
+try {
+    $freeMB = [math]::Round((Get-CimInstance Win32_OperatingSystem -ErrorAction Stop).FreePhysicalMemory / 1024)
+    if ($freeMB -lt 300) {
+        for ($wait = 1; $wait -le 10; $wait++) {
+            Start-Sleep -Milliseconds 2000
+            $freeMB = [math]::Round((Get-CimInstance Win32_OperatingSystem -ErrorAction Stop).FreePhysicalMemory / 1024)
+            if ($freeMB -ge 300) { break }
+        }
+    }
+} catch { $freeMB = -1 }
+
 
 $ErrorActionPreference = 'Stop'
 $Root      = Split-Path -Parent $MyInvocation.MyCommand.Path
