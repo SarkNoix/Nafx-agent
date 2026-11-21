@@ -1403,5 +1403,105 @@
       "description": "看本机端口：谁在监听、端口被哪个进程占用、指定端口的连接状态。排查「端口被占用 / 服务到底起没起」时先用它。"
     },
     "type": "function"
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "net_packets",
+      "description": "查看 net_capture 生成的 pcapng 里的具体数据包：列出序号/时间/五元组/长度/HTTP 首行；给 index 看单个包的完整载荷（请求行、头、body）。可按 port/proto/contains 过滤。用来定位「到底发了什么」。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string",
+            "description": "pcapng 文件名或路径，默认取 workspace\\net 里最新的"
+          },
+          "index": {
+            "type": "integer",
+            "description": "只看第 N 个包（从 1 开始），给详情"
+          },
+          "port": {
+            "type": "integer",
+            "description": "只列源/目的端口匹配的包"
+          },
+          "proto": {
+            "type": "string",
+            "description": "tcp / udp / http"
+          },
+          "contains": {
+            "type": "string",
+            "description": "载荷里包含这段文字才算"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "列表最多几条，默认 20"
+          }
+        },
+        "required": []
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "net_rewrite",
+      "description": "把抓包里某个 HTTP 请求改写（方法/URL/请求头/body），再按 TCP 重发到原目标（或指定 host/port），返回状态行、字节数和响应片段。用来验证「改了这个头/参数就通了」。只支持 HTTP 请求包，选错包会明确报错。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string",
+            "description": "pcapng 文件名/路径，默认最新"
+          },
+          "index": {
+            "type": "integer",
+            "description": "第几个包（从 1 开始）"
+          },
+          "method": {
+            "type": "string",
+            "description": "改成 GET/POST/..."
+          },
+          "replaceUrl": {
+            "type": "string",
+            "description": "改请求行里的路径/URL"
+          },
+          "setHeaders": {
+            "type": "string",
+            "description": "设置/覆盖请求头，如 X-Token: nafx-ok; Accept: application/json"
+          },
+          "removeHeaders": {
+            "type": "string",
+            "description": "删请求头，分号分隔"
+          },
+          "body": {
+            "type": "string",
+            "description": "整体替换请求 body"
+          },
+          "bodyReplace": {
+            "type": "string",
+            "description": "替换 body 片段，格式 旧=>新，多组用 ;; 分隔"
+          },
+          "host": {
+            "type": "string",
+            "description": "改发到的主机"
+          },
+          "port": {
+            "type": "integer",
+            "description": "改发到的端口"
+          },
+          "waitMs": {
+            "type": "integer",
+            "description": "等回复毫秒，默认 2000"
+          },
+          "save": {
+            "type": "string",
+            "description": "把改写后的请求存成文件"
+          }
+        },
+        "required": [
+          "index"
+        ]
+      }
+    }
   }
 ]

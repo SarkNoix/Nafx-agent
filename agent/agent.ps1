@@ -605,11 +605,13 @@ function Get-ExtraToolsByTask {
     if ($TaskText -match 'pdf|PDF') { $need += 'pdf_read' }
     if ($TaskText -match '提醒|弹窗|通知|做完.*(叫|喊|告诉)|完成.*(叫|喊|告诉)') { $need += 'notify' }
     # 网络调试：抓包 / 拦截改包 / 发裸包 / 查端口。一次最多补两三个，别把上下文顶爆。
-    if ($TaskText -match '抓包|抓流量|抓.{0,12}包|pcap|pktmon|wireshark') { $need += 'net_capture'; $need += 'net_ports' }
+    if ($TaskText -match '抓包|抓流量|抓.{0,12}包|pcap|pktmon|wireshark') { $need += 'net_capture'; $need += 'net_packets'; $need += 'net_ports' }
     if ($TaskText -match '拦截|改包|改请求|重写请求|代理|mock|proxy') { $need += 'net_proxy'; $need += 'net_http' }
     if ($TaskText -match '发包|裸包|原始包|tcp.*(发|请求)|udp') { $need += 'net_send'; $need += 'net_ports' }
     if ($TaskText -match '端口|监听|占用') { $need += 'net_ports' }
     if ($TaskText -match 'net_(http|capture|proxy|send|ports)') { $need += 'net_http'; $need += 'net_proxy'; $need += 'net_ports' }
+    if ($TaskText -match '数据包|pcapng|pcap|net_packets|哪个包|第.{1,3}个包') { $need += 'net_packets'; $need += 'net_capture' }
+    if ($TaskText -match '改包|重写|改写|重放|net_rewrite|改.*请求|请求.*改|改到.*(通过|能过)') { $need += 'net_packets'; $need += 'net_rewrite' }
     return ($need | Select-Object -Unique)
 }
 
@@ -1792,6 +1794,16 @@ try {
                 $script:ActiveFlowToolCount = $flowTools.Count
                 $script:ActiveFlowTools = $flowTools
             }
+
+            # 网络调试任务：模板给的无关工具太多（19 个），4B 模型上下文扛不住。
+            # 只留「看包 / 改包 / 抓包 / 查端口」这条链上的工具。
+            if ($TaskText -match '抓包|数据包|端口|改包|重写|重放|发包|代理|pcap|net_(packets|rewrite)') {
+                $netCore = @('plan', 'think', 'list_dir', 'read_file', 'net_ports', 'net_packets', 'net_rewrite', 'net_capture', 'net_http', 'say', 'finish')
+                $flowTools = @($netCore | Where-Object { $_ -in @('plan', 'say', 'finish') -or $script:ToolSchemaMap.ContainsKey($_) })
+                Write-Log ("  网络调试任务，工具收到 " + $flowTools.Count + " 个：" + ($flowTools -join ','))
+                $script:ActiveFlowToolCount = $flowTools.Count
+                $script:ActiveFlowTools = $flowTools
+            }
             $filtered = Get-ToolsJsonWithFinish -Names $flowTools
             if ($filtered -and $filtered.Length -gt 100) {
                 $toolsJson = $filtered
@@ -1815,6 +1827,11 @@ try {
         if ($extraTools.Count -gt 0) {
             $defaultTools = @($defaultTools) + $extraTools
             Write-Log ("  按任务关键词补了工具：" + ($extraTools -join ','))
+        }
+        if ($TaskText -match '抓包|数据包|端口|改包|重写|重放|发包|代理|pcap|net_(packets|rewrite)') {
+            $netCore = @('plan', 'think', 'list_dir', 'read_file', 'net_ports', 'net_packets', 'net_rewrite', 'net_capture', 'net_http', 'say', 'finish')
+            $defaultTools = @($netCore | Where-Object { $_ -in @('plan', 'say', 'finish') -or $script:ToolSchemaMap.ContainsKey($_) })
+            Write-Log ("  网络调试任务，工具收到 " + @($defaultTools).Count + " 个：" + (@($defaultTools) -join ','))
         }
         $script:ActiveFlowToolCount = @($defaultTools).Count
         $script:ActiveFlowTools = @($defaultTools)

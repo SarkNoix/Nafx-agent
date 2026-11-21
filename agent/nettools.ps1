@@ -180,7 +180,7 @@ function Invoke-NetCapture($Action) {
     $port = 0; try { $port = [int]$Action.port } catch { }
     $ip = ([string]$Action.ip).Trim()
     $proto = ([string]$Action.proto).Trim().ToLowerInvariant()
-    $pktSize = 128; try { if ($Action.pktSize -gt 0) { $pktSize = [int]$Action.pktSize } } catch { }
+    $pktSize = 512; try { if ($Action.pktSize -gt 0) { $pktSize = [int]$Action.pktSize } } catch { }
     if ($pktSize -lt 64) { $pktSize = 64 }
     if ($pktSize -gt 512) { $pktSize = 512 }
 
@@ -238,6 +238,10 @@ function Invoke-NetCapture($Action) {
     }
     if (Test-Path -LiteralPath $pcap) { [void]$sb.AppendLine("pcapng：$pcap（可直接拖进 Wireshark）") }
     [void]$sb.AppendLine("文本明细：$txt")
+    if ($ipCount -gt 0) {
+        [void]$sb.AppendLine('看具体包（首行、长度、载荷）：net_packets(file="' + (Split-Path -Leaf $pcap) + '")；看第 N 个：加 index=N。')
+        [void]$sb.AppendLine('改包里的 HTTP 请求再重发：net_rewrite(file="' + (Split-Path -Leaf $pcap) + '", index=N, setHeaders="X-Token: nafx-ok")。')
+    }
     return $sb.ToString().Trim()
 }
 
@@ -480,7 +484,395 @@ function Invoke-NetProxy($Action) {
 }
 
 # ------------------------------------------------------------
-# 5) net_ports：本机监听端口与连接（带进程名）
+# 5) net_packets：看抓包文件里的具体数据包（按序号 / 端口 / 协议 / 内容）
+#    6) net_rewrite：把某个包里的 HTTP 请求改写后按 TCP 重发
+# ------------------------------------------------------------
+
+function Get-NetLatestPcap {
+    $dir = Get-NetDir
+    $f = Get-ChildItem -LiteralPath $dir -Filter '*.pcapng' -File -ErrorAction SilentlyContinue |
+         Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if (-not $f) { return $null }
+    return $f.FullName
+}
+
+function Resolve-NetPcapFile($rel) {
+    if ([string]::IsNullOrWhiteSpace($rel)) {
+        $latest = Get-NetLatestPcap
+        if (-not $latest) { throw 'workspace\net 里还没有 pcapng。先用 net_capture 抓一个。' }
+        return $latest
+    }
+    $rel = ([string]$rel).Trim() -replace '/', '\'
+    $cands = @()
+    if ([IO.Path]::IsPathRooted($rel)) {
+        $cands += $rel
+    } else {
+        # 模型常把路径写成 workspace\net\x.pcapng 或 net\x.pcapng，这里都认
+        $cands += (Join-Path (Get-NetDir) $rel)
+        $cands += (Join-Path $script:AiRoot $rel)
+        $cands += (Join-Path (Get-NetDir) ([IO.Path]::GetFileName($rel)))
+    }
+    foreach ($c in $cands) {
+        if (Test-Path -LiteralPath $c) { return $c }
+    }
+    throw ("找不到抓包文件：$rel。可以直接给文件名（如 " + [IO.Path]::GetFileName($rel) + '），不给 file 就用最新一个。')
+}
+
+# 读 pcapng 里的包（SHB/IDB/EPB 三种块就够用）
+function Read-NetPcapngPackets($file) {
+    $bytes = [IO.File]::ReadAllBytes($file)
+    $o = 0
+    $pkts = @()
+    $link = 1
+    while (($o + 12) -le $bytes.Length) {
+        $type = [BitConverter]::ToUInt32($bytes, $o)
+        $len  = [BitConverter]::ToUInt32($bytes, $o + 4)
+        if ($len -lt 12 -or ($o + $len) -gt $bytes.Length) { break }
+        if ($type -eq 1) {
+            $link = [BitConverter]::ToUInt16($bytes, $o + 8)
+        } elseif ($type -eq 6) {
+            $tsHigh = [BitConverter]::ToUInt32($bytes, $o + 12)
+            $tsLow  = [BitConverter]::ToUInt32($bytes, $o + 16)
+            $capLen = [BitConverter]::ToUInt32($bytes, $o + 20)
+            if ($capLen -gt 0 -and $capLen -lt 262144 -and ($o + 28 + $capLen) -le $bytes.Length) {
+                $data = New-Object byte[] ([int]$capLen)
+                [Array]::Copy($bytes, ($o + 28), $data, 0, [int]$capLen)
+                $pkts += [pscustomobject]@{
+                    index = ($pkts.Count + 1)
+                    time  = (([double]$tsHigh * 4294967296.0 + [double]$tsLow) / 1000000.0)
+                    data  = $data
+                    link  = $link
+                }
+            }
+        }
+        $o += [int]$len
+    }
+    return $pkts
+}
+
+function Get-NetU16($b, $o) { return ((([int]$b[$o]) -shl 8) -bor ([int]$b[$o + 1])) }
+
+function ConvertTo-NetIpText([byte[]]$b, $off) {
+    if ($b.Length -lt ($off + 4)) { return '' }
+    return ("{0}.{1}.{2}.{3}" -f [int]$b[$off], [int]$b[$off + 1], [int]$b[$off + 2], [int]$b[$off + 3])
+}
+
+function Get-NetPacketDecoded($pkt) {
+    $d = $pkt.data
+    if ($d.Length -lt 20) { return $null }
+    $start = 0
+    # pktmon 的 pcapng 有时标 Ethernet 但实际是裸 IP，这里两边都兼容
+    if ($d[0] -ne 0x45 -and $d[0] -ne 0x60) {
+        if ($d.Length -ge 14) {
+            $start = 14
+            $et = (Get-NetU16 $d 12)
+            if ($et -eq 0x8100 -and $d.Length -ge 18) { $start = 18 }
+        }
+    }
+    if ($start + 20 -gt $d.Length) { return $null }
+    $ver = ([int]$d[$start]) -shr 4
+    if ($ver -ne 4 -and $ver -ne 6) { return $null }
+    $ihl = (([int]$d[$start]) -band 0x0F) * 4
+    if ($ihl -lt 20 -or ($start + $ihl) -gt $d.Length) { return $null }
+    $protoNum = [int]$d[$start + 9]
+    $proto = switch ($protoNum) { 6 { 'TCP' } 17 { 'UDP' } 1 { 'ICMP' } default { "IP($protoNum)" } }
+    $srcIp = ConvertTo-NetIpText $d ($start + 12)
+    $dstIp = ConvertTo-NetIpText $d ($start + 16)
+    $ipLen = (Get-NetU16 $d ($start + 2))
+    if ($ipLen -le 0) { $ipLen = $d.Length - $start }
+
+    $sport = 0; $dport = 0; $flags = ''; $payload = ''; $payloadLen = 0; $payloadBytes = $null
+    $l4 = $start + $ihl
+    if ($proto -eq 'TCP' -and ($l4 + 20) -le $d.Length) {
+        $sport = (Get-NetU16 $d $l4)
+        $dport = (Get-NetU16 $d ($l4 + 2))
+        $off = (([int]$d[$l4 + 12]) -shr 4) * 4
+        $f = [int]$d[$l4 + 13]
+        $flags = (@(
+            $(if ($f -band 0x02) { 'SYN' }),
+            $(if ($f -band 0x10) { 'ACK' }),
+            $(if ($f -band 0x08) { 'PSH' }),
+            $(if ($f -band 0x01) { 'FIN' }),
+            $(if ($f -band 0x04) { 'RST' })
+        ) | Where-Object { $_ }) -join ','
+        $ps = $l4 + $off
+        if ($ps -lt $d.Length) {
+            $payloadBytes = New-Object byte[] ($d.Length - $ps)
+            [Array]::Copy($d, $ps, $payloadBytes, 0, $payloadBytes.Length)
+        }
+    } elseif ($proto -eq 'UDP' -and ($l4 + 8) -le $d.Length) {
+        $sport = (Get-NetU16 $d $l4)
+        $dport = (Get-NetU16 $d ($l4 + 2))
+        $ps = $l4 + 8
+        if ($ps -lt $d.Length) {
+            $payloadBytes = New-Object byte[] ($d.Length - $ps)
+            [Array]::Copy($d, $ps, $payloadBytes, 0, $payloadBytes.Length)
+        }
+    }
+
+    $isHttpReq = $false
+    $isHttpResp = $false
+    $firstLine = ''
+    if ($payloadBytes -and $payloadBytes.Length -gt 0) {
+        $payloadLen = $payloadBytes.Length
+        $payload = [Text.Encoding]::UTF8.GetString($payloadBytes)
+        $firstLine = ($payload -split "`r?`n")[0]
+        if ($firstLine -match '^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|CONNECT|TRACE)\s+\S+\s+HTTP/1\.[01]') { $isHttpReq = $true }
+        if ($firstLine -match '^HTTP/1\.[01]\s+\d{3}') { $isHttpResp = $true }
+    }
+
+    return [pscustomobject]@{
+        index = $pkt.index; time = $pkt.time
+        proto = $proto; srcIp = $srcIp; dstIp = $dstIp
+        sport = $sport; dport = $dport; flags = $flags
+        ipLen = $ipLen; payloadLen = $payloadLen
+        payload = $payload; payloadBytes = $payloadBytes
+        firstLine = $firstLine; isHttpReq = $isHttpReq; isHttpResp = $isHttpResp
+    }
+}
+
+function Invoke-NetPackets($Action) {
+    $file = Resolve-NetPcapFile $Action.file
+    $all = @(Read-NetPcapngPackets $file)
+    if ($all.Count -eq 0) { return "文件里没解析出包：$file（可能不是 pcapng，或抓的时候 0 包）" }
+    $first = [double]$all[0].time
+
+    $idx = 0; try { if ($Action.ContainsKey('index')) { $idx = [int]$Action['index'] } } catch { }
+
+    # 单个包：给详情
+    if ($idx -gt 0) {
+        if ($idx -gt $all.Count) { throw "包里只有 $($all.Count) 个，没有 #$idx" }
+        $dec = Get-NetPacketDecoded $all[$idx - 1]
+        if (-not $dec) { throw "包 #$idx 不是 IPv4/IPv6，解析不了。" }
+        $sb = New-Object System.Text.StringBuilder
+        [void]$sb.AppendLine("包 #$idx 详情（$([IO.Path]::GetFileName($file))）")
+        [void]$sb.AppendLine(("时间：+{0:N3}s" -f ([double]$dec.time - $first)))
+        [void]$sb.AppendLine(("链路：{0}  {1}:{2} → {3}:{4}" -f $dec.proto, $dec.srcIp, $dec.sport, $dec.dstIp, $dec.dport))
+        [void]$sb.AppendLine(("长度：IP {0} B，载荷 {1} B" -f $dec.ipLen, $dec.payloadLen))
+        if ($dec.flags) { [void]$sb.AppendLine("TCP 标志：$($dec.flags)") }
+        if ($dec.payloadLen -eq 0) {
+            [void]$sb.AppendLine('（没有载荷，纯握手/确认包）')
+        } else {
+            $kind = if ($dec.isHttpReq) { 'HTTP 请求' } elseif ($dec.isHttpResp) { 'HTTP 响应' } else { '载荷' }
+            [void]$sb.AppendLine("载荷（$kind）：")
+            [void]$sb.AppendLine((Get-NetPreview $dec.payload 2000))
+            if ($dec.isHttpReq) {
+                [void]$sb.AppendLine('')
+                [void]$sb.AppendLine('要改这个请求并重发：net_rewrite(index=' + $idx + ', setHeaders="X-Token: nafx-ok")；只改 body 用 bodyReplace="旧=>新"。')
+            }
+        }
+        return $sb.ToString().Trim()
+    }
+
+    # 列表：过滤条件
+    $port = 0; try { if ($Action.ContainsKey('port')) { $port = [int]$Action['port'] } } catch { }
+    $protoWanted = ''
+    try { if ($Action.ContainsKey('proto')) { $protoWanted = ([string]$Action['proto']).Trim().ToLowerInvariant() } } catch { }
+    $contains = ''
+    try { if ($Action.ContainsKey('contains')) { $contains = [string]$Action['contains'] } } catch { }
+    $limit = 20; try { if ($Action.ContainsKey('limit')) { $limit = [int]$Action['limit'] } } catch { }
+    $limit = [Math]::Max(1, [Math]::Min(60, $limit))
+
+    $shown = 0; $matched = 0
+    $sb = New-Object System.Text.StringBuilder
+    [void]$sb.AppendLine("抓包文件：$file（共 $($all.Count) 个包）")
+    foreach ($p in $all) {
+        $dec = Get-NetPacketDecoded $p
+        if (-not $dec) { continue }
+        if ($port -gt 0 -and $dec.sport -ne $port -and $dec.dport -ne $port) { continue }
+        if ($protoWanted) {
+            if ($protoWanted -eq 'http') { if (-not ($dec.isHttpReq -or $dec.isHttpResp)) { continue } }
+            elseif ($protoWanted -eq 'tcp' -and $dec.proto -ne 'TCP') { continue }
+            elseif ($protoWanted -eq 'udp' -and $dec.proto -ne 'UDP') { continue }
+            elseif ($protoWanted -notin @('tcp', 'udp', 'http') -and $dec.proto.ToLowerInvariant() -ne $protoWanted) { continue }
+        }
+        if ($contains -and $dec.payload -notlike "*$contains*") { continue }
+        $matched++
+        if ($shown -ge $limit) { continue }
+        $shown++
+        $tag = ''
+        if ($dec.isHttpReq) { $tag = ' ' + $dec.firstLine } elseif ($dec.isHttpResp) { $tag = ' ' + $dec.firstLine }
+        [void]$sb.AppendLine(('  #{0}  +{1:N3}s  {2} {3}:{4} → {5}:{6}  {7}B{8}' -f `
+            $dec.index, ([double]$dec.time - $first), $dec.proto, $dec.srcIp, $dec.sport, $dec.dstIp, $dec.dport, $dec.ipLen, $tag))
+    }
+    if ($matched -eq 0) {
+        [void]$sb.AppendLine('没有符合条件的包。去掉 port/proto/contains 过滤再看一次。')
+    } else {
+        [void]$sb.AppendLine("共 $matched 个匹配，显示了 $shown 个。")
+        [void]$sb.AppendLine('看某个包的完整内容：net_packets(index=N)；改它：net_rewrite(index=N, setHeaders="X-Token: nafx-ok")。')
+    }
+    return $sb.ToString().Trim()
+}
+
+function Invoke-NetRewrite($Action) {
+    $file = Resolve-NetPcapFile $Action.file
+    $all = @(Read-NetPcapngPackets $file)
+    $idx = 0; try { $idx = [int]$Action.index } catch { }
+    if ($idx -lt 1 -or $idx -gt $all.Count) { throw "index 要给对：这个文件有 $($all.Count) 个包，比如 index=$([Math]::Min(1, $all.Count))" }
+    $dec = Get-NetPacketDecoded $all[$idx - 1]
+    if (-not $dec) { throw "包 #$idx 解析不了。" }
+    if (-not $dec.isHttpReq) {
+        throw ("包 #$idx 不是 HTTP 请求（当前是 $($dec.proto) $($dec.sport)→$($dec.dport)，首行：$($dec.firstLine)）。" +
+               ' 只能改 HTTP 请求；要看包用 net_packets(index=' + $idx + ')。')
+    }
+
+    # ---- 拆请求 ----
+    $raw = $dec.payload -replace "`r`n", "`n"
+    $parts = $raw -split "`n`n", 2
+    $headLines = $parts[0] -split "`n"
+    $body = if ($parts.Count -gt 1) { $parts[1] } else { '' }
+    $reqLine = $headLines[0]
+    $m = [regex]::Match($reqLine, '^(\S+)\s+(\S+)\s+(HTTP/1\.[01])$')
+    if (-not $m.Success) { throw "请求行看不懂：$reqLine" }
+    $method = $m.Groups[1].Value
+    $target = $m.Groups[2].Value
+    $version = $m.Groups[3].Value
+
+    $hdr = @()
+    for ($i = 1; $i -lt $headLines.Count; $i++) {
+        if ($headLines[$i] -match '^([^:]+):\s*(.*)$') {
+            $hdr += [pscustomobject]@{ Name = $matches[1].Trim(); Value = $matches[2].Trim() }
+        }
+    }
+
+    $changes = @()
+    if ($Action.method) { $method = ([string]$Action.method).ToUpperInvariant(); $changes += "方法→$method" }
+    if ($Action.replaceUrl) { $target = [string]$Action.replaceUrl; $changes += "URL→$target" }
+
+    $setPairs = @()
+    if ($Action.setHeaders) {
+        if ($Action.setHeaders -is [string]) {
+            foreach ($pair in ($Action.setHeaders -split ';')) {
+                if ($pair -match '^([^:]+):\s*(.*)$') { $setPairs += [pscustomobject]@{ Name = $matches[1].Trim(); Value = $matches[2].Trim() } }
+            }
+        } else {
+            foreach ($pp in $Action.setHeaders.PSObject.Properties) { $setPairs += [pscustomobject]@{ Name = $pp.Name; Value = [string]$pp.Value } }
+        }
+    }
+    foreach ($sp in $setPairs) {
+        $found = $false
+        for ($i = 0; $i -lt $hdr.Count; $i++) {
+            if ($hdr[$i].Name -ieq $sp.Name) { $hdr[$i].Value = $sp.Value; $found = $true }
+        }
+        if (-not $found) { $hdr += $sp }
+        $changes += "设置头 $($sp.Name): $($sp.Value)"
+    }
+
+    if ($Action.removeHeaders) {
+        $names = @(([string]$Action.removeHeaders) -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+        $hdr = @($hdr | Where-Object { $n = $_.Name; -not ($names | Where-Object { $n -ieq $_ }) })
+        foreach ($n in $names) { $changes += "删头 $n" }
+    }
+
+    if ($null -ne $Action.body) { $body = [string]$Action.body; $changes += '整体替换 body' }
+    if ($Action.bodyReplace) {
+        foreach ($pair in (([string]$Action.bodyReplace) -split ';;')) {
+            if ($pair -match '^(.*?)=>(.*)$') {
+                $old = $matches[1]; $new = $matches[2]
+                if ($body.Contains($old)) { $body = $body.Replace($old, $new); $changes += "body: $old → $new" }
+            }
+        }
+    }
+
+    # 目标与 Host
+    $destHost = $dec.dstIp
+    $destPort = $dec.dport
+    if ($Action.host) { $destHost = [string]$Action.host; $changes += "目标→$destHost" }
+    if ($Action.port -and [int]$Action.port -gt 0) { $destPort = [int]$Action.port; $changes += "端口→$destPort" }
+
+    $hostVal = "$destHost"
+    if ($destPort -ne 80) { $hostVal = "$destHost`:$destPort" }
+    $hasHost = $false
+    for ($i = 0; $i -lt $hdr.Count; $i++) {
+        if ($hdr[$i].Name -ieq 'Host') { $hdr[$i].Value = $hostVal; $hasHost = $true }
+    }
+    if (-not $hasHost) { $hdr = @([pscustomobject]@{ Name = 'Host'; Value = $hostVal }) + $hdr }
+
+    # Content-Length 跟 body 对齐（chunked 不碰）
+    $hasCL = $false; $hasTE = $false
+    foreach ($h in $hdr) { if ($h.Name -ieq 'Content-Length') { $hasCL = $true }; if ($h.Name -ieq 'Transfer-Encoding') { $hasTE = $true } }
+    if (-not $hasTE) {
+        $bodyBytes = [Text.Encoding]::UTF8.GetBytes($body)
+        if ($bodyBytes.Length -gt 0 -or $hasCL) {
+            $newHdr = @()
+            foreach ($h in $hdr) {
+                if ($h.Name -ieq 'Content-Length') { $newHdr += [pscustomobject]@{ Name = $h.Name; Value = [string]$bodyBytes.Length } }
+                else { $newHdr += $h }
+            }
+            if (-not $hasCL) { $newHdr += [pscustomobject]@{ Name = 'Content-Length'; Value = [string]$bodyBytes.Length } }
+            $hdr = $newHdr
+        }
+    }
+
+    # ---- 拼回请求 ----
+    $outLines = @("$method $target $version")
+    foreach ($h in $hdr) { $outLines += ("{0}: {1}" -f $h.Name, $h.Value) }
+    $outText = ($outLines -join "`r`n") + "`r`n`r`n" + $body
+    $sendBytes = [Text.Encoding]::UTF8.GetBytes($outText)
+
+    # ---- 按 TCP 重发 ----
+    $waitMs = 2000; try { if ($Action.waitMs) { $waitMs = [Math]::Max(200, [Math]::Min(10000, [int]$Action.waitMs)) } } catch { }
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    $recvText = ''
+    $recvLen = 0
+    $err = ''
+    try {
+        $tcp = New-Object System.Net.Sockets.TcpClient
+        $iar = $tcp.BeginConnect($destHost, $destPort, $null, $null)
+        if (-not ($iar.AsyncWaitHandle.WaitOne(5000) -and $tcp.Connected)) { throw "连不上 $destHost`:$destPort" }
+        $stream = $tcp.GetStream()
+        $stream.Write($sendBytes, 0, $sendBytes.Length)
+        $stream.Flush()
+        $buf = New-Object byte[] 4096
+        $sbRecv = New-Object System.Text.StringBuilder
+        $deadline = [DateTime]::UtcNow.AddMilliseconds($waitMs)
+        while ([DateTime]::UtcNow -lt $deadline -and $recvLen -lt 65536) {
+            $remain = [int](($deadline - [DateTime]::UtcNow).TotalMilliseconds)
+            if ($remain -le 0) { break }
+            if ($stream.DataAvailable) {
+                $n = $stream.Read($buf, 0, $buf.Length)
+                if ($n -le 0) { break }
+                [void]$sbRecv.Append([Text.Encoding]::UTF8.GetString($buf, 0, $n))
+                $recvLen += $n
+            } else { Start-Sleep -Milliseconds 40 }
+        }
+        $recvText = $sbRecv.ToString()
+        $tcp.Close()
+    } catch { $err = $_.Exception.Message }
+    $sw.Stop()
+
+    $sb = New-Object System.Text.StringBuilder
+    [void]$sb.AppendLine("改包重放：$([IO.Path]::GetFileName($file)) 的 #$idx → $destHost`:$destPort")
+    if ($changes.Count -gt 0) { [void]$sb.AppendLine('改动：' + ($changes -join '；')) } else { [void]$sb.AppendLine('改动：无（原样重放）') }
+    if ($err) {
+        [void]$sb.AppendLine("发送失败：$err")
+    } else {
+        $status = ''
+        if ($recvText -match '^HTTP/1\.[01]\s+(\d{3})\s*([^\r\n]*)') { $status = "$($matches[1]) $($matches[2])" }
+        $statusText = if ($status) { $status } else { '没解析到状态行' }
+        [void]$sb.AppendLine(("发了 {0} B，收到 {1} B（{2}，{3} ms）" -f $sendBytes.Length, $recvLen, $statusText, [int]$sw.ElapsedMilliseconds))
+    }
+    [void]$sb.AppendLine('')
+    [void]$sb.AppendLine('改写后的请求：')
+    [void]$sb.AppendLine((Get-NetPreview $outText 1200))
+    if ($recvText) {
+        [void]$sb.AppendLine('')
+        [void]$sb.AppendLine('响应：')
+        [void]$sb.AppendLine((Get-NetPreview $recvText 800))
+    }
+    if ($err) { [void]$sb.AppendLine('排查：目标端口通不通（net_ports）；host/port 参数对不对；服务是不是只收 HTTP/1.0。') }
+
+    if ($Action.save) {
+        $out = Resolve-NetOutPath $Action.save ("rewrite_$(Get-NetStamp).txt")
+        [IO.File]::WriteAllText($out, $outText, (New-Object Text.UTF8Encoding($false)))
+        [void]$sb.AppendLine('')
+        [void]$sb.AppendLine("改写后的请求已存：$out")
+    }
+    return $sb.ToString().Trim()
+}
+
+# ------------------------------------------------------------
+# 7) net_ports：本机监听端口与连接（带进程名）
 # ------------------------------------------------------------
 function Invoke-NetPorts($Action) {
     $port = 0; try { $port = [int]$Action.port } catch { }

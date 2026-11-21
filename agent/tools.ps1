@@ -968,6 +968,16 @@ function Invoke-AiTool {
                 return (Invoke-NetPorts $Action)
             }
 
+            'net_packets' {
+                if (-not $script:NetReady) { throw '网络工具模块 nettools.ps1 没加载成功。' }
+                return (Invoke-NetPackets $Action)
+            }
+
+            'net_rewrite' {
+                if (-not $script:NetReady) { throw '网络工具模块 nettools.ps1 没加载成功。' }
+                return (Invoke-NetRewrite $Action)
+            }
+
             'pdf_read' {
                 # 读 PDF 文本。底层用 python 的 pypdf（纯解析、不渲染），
                 # 没有就明确报错，别让模型以为读到了空文件。
