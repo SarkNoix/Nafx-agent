@@ -115,188 +115,225 @@
    用户浅灰圆角块 / AI 纯白无边框，更像聊天页。
    功能不减：面板、队列、历史、设置、侧栏全部照旧。
    ============================================================ */
-[data-theme="dsh"],[data-theme="dsh-dark"]{
-  --bg:#f2f4f7; --bg2:#eef0f4;
-  --panel:#ffffff; --panel2:#f5f7fa; --panel3:#eceff4;
-  --fg:#262629; --dim:#6d717a; --faint:#8e939c;
-  --line:#e5e8ec; --line2:#d8dce2;
+/* ============================================================
+   素（su）：浅色，平铺消息、无气泡
+   墨（mo）：深色，同一套排布换深色配色
+
+   两套共用布局规则，只有下面这组变量不同。
+   配色走中性灰阶打底 —— 不抢内容的视觉重心，
+   蓝色只留给交互元素（按钮、链接、选中态）。
+   ============================================================ */
+[data-theme="su"]{
+  --bg:#fafafa; --bg2:#f4f4f5;
+  --panel:#ffffff; --panel2:#f7f7f8; --panel3:#f0f0f1;
+  --fg:#1a1a1a; --dim:#6b7280; --faint:#9ca3af;
+  --line:#e8e8ea; --line2:#dcdcdf;
   --accent:#4d6bfe; --accent2:#4d6bfe;
-  --ok:#0ea35e; --warn:#c47c10; --err:#d93b3b; --run:#2f7ce0;
-  --bubble-user-bg:#eef1f6; --bubble-user-bd:#eef1f6; --bubble-user-fg:#262629;
+  --accent-rgb:77,107,254;
+  --ok:#0e9f6e; --warn:#b45309; --err:#dc2626; --run:#2563eb;
+  --bubble-user-bg:#f0f1f3; --bubble-user-bd:#f0f1f3; --bubble-user-fg:#1a1a1a;
   --bubble-ai-bg:#ffffff; --bubble-ai-bd:#ffffff;
-  --code-bg:#f6f8fa; --code-bd:#e8ebee; --code-fg:#444b55;
-  --inline-bg:#eff3fb; --inline-bd:#e0e7f5; --inline-fg:#3b5bdb;
-  --shadow:0 4px 18px rgba(20,30,50,.06);
-  --mask:rgba(20,30,50,.32);
+  --code-bg:#f6f7f8; --code-bd:#e8e8ea; --code-fg:#3f4650;
+  --inline-bg:#eef1fb; --inline-bd:#dfe4f7; --inline-fg:#3b5bdb;
+  --shadow:0 4px 18px rgba(17,20,26,.06);
+  --mask:rgba(17,20,26,.30);
   --primary-fg:#ffffff;
   --inset-hi:rgba(255,255,255,0);
-  --shadow-sm:0 1px 3px rgba(20,30,50,.07);
-  --ok-bg:rgba(14,163,94,.09); --ok-bd:rgba(14,163,94,.30);
-  --err-bg:rgba(217,59,59,.08); --err-bd:rgba(217,59,59,.30);
-  --run-bg:rgba(47,124,224,.09); --run-bd:rgba(47,124,224,.30);
-  --warn-bg:rgba(196,124,16,.09); --warn-bd:rgba(196,124,16,.30);
+  --shadow-sm:0 1px 3px rgba(17,20,26,.07);
+  --ok-bg:rgba(14,159,110,.09); --ok-bd:rgba(14,159,110,.28);
+  --err-bg:rgba(220,38,38,.08); --err-bd:rgba(220,38,38,.28);
+  --run-bg:rgba(37,99,235,.09); --run-bd:rgba(37,99,235,.28);
+  --warn-bg:rgba(180,83,9,.09); --warn-bd:rgba(180,83,9,.28);
   --blur:none; --panel-alpha:1;
   --radius:12px; --radius-lg:16px;
 }
-html[data-theme="dsh"]{background:#f2f4f7}
+
+/* 墨：同样中性灰阶，只是明暗反转。
+   强调色比浅色版亮一档 —— 深底上 #4d6bfe 偏暗，看不清。 */
+[data-theme="mo"]{
+  --bg:#0f1115; --bg2:#12141a;
+  --panel:#16181d; --panel2:#1b1e24; --panel3:#21242b;
+  --fg:#e8eaed; --dim:#9aa0a6; --faint:#6e747c;
+  --line:#232732; --line2:#2e333d;
+  --accent:#7c93ff; --accent2:#7c93ff;
+  --accent-rgb:124,147,255;
+  --ok:#34d399; --warn:#fbbf24; --err:#f87171; --run:#60a5fa;
+  --bubble-user-bg:#1e2229; --bubble-user-bd:#1e2229; --bubble-user-fg:#e2e4e8;
+  --bubble-ai-bg:#16181d; --bubble-ai-bd:#16181d;
+  --code-bg:#0b0d11; --code-bd:#22262f; --code-fg:#a9b2c0;
+  --inline-bg:#1a1f2b; --inline-bd:#262d3d; --inline-fg:#9ec1ff;
+  --shadow:0 4px 18px rgba(0,0,0,.45);
+  --mask:rgba(0,0,0,.62);
+  --primary-fg:#0b0e14;
+  --inset-hi:rgba(255,255,255,.05);
+  --shadow-sm:0 1px 3px rgba(0,0,0,.35);
+  --ok-bg:rgba(52,211,153,.10); --ok-bd:rgba(52,211,153,.30);
+  --err-bg:rgba(248,113,113,.10); --err-bd:rgba(248,113,113,.30);
+  --run-bg:rgba(96,165,250,.10); --run-bd:rgba(96,165,250,.30);
+  --warn-bg:rgba(251,191,36,.10); --warn-bd:rgba(251,191,36,.30);
+  --blur:none; --panel-alpha:1;
+  --radius:12px; --radius-lg:16px;
+}
+html[data-theme="su"]{background:#fafafa}
+html[data-theme="mo"]{background:#0f1115}
 /* 对话收成居中一栏：860px，窄于其他主题的 1180px */
-[data-theme="dsh"] .thread,[data-theme="dsh-dark"] .thread{
+[data-theme="su"] .thread,[data-theme="mo"] .thread{
   padding-left:max(22px,calc((100% - 860px)/2));
   padding-right:max(22px,calc((100% - 860px)/2));
 }
-[data-theme="dsh"] .composer-inner,[data-theme="dsh-dark"] .composer-inner,
-[data-theme="dsh"] .cmdbar,[data-theme="dsh-dark"] .cmdbar,
-[data-theme="dsh"] .answer-box,[data-theme="dsh-dark"] .answer-box{max-width:860px}
+[data-theme="su"] .composer-inner,[data-theme="mo"] .composer-inner,
+[data-theme="su"] .cmdbar,[data-theme="mo"] .cmdbar,
+[data-theme="su"] .answer-box,[data-theme="mo"] .answer-box{max-width:860px}
 /* 消息：无气泡平铺（DSH 风格），靠 .who 标签和左右对齐区分角色 */
-[data-theme="dsh"] .msg .bubble,[data-theme="dsh-dark"] .msg .bubble{
+[data-theme="su"] .msg .bubble,[data-theme="mo"] .msg .bubble{
   border:none;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;
   background:transparent;border-radius:0;padding:2px 0;
   font-size:14.5px;line-height:1.75}
-[data-theme="dsh"] .msg .wrap,[data-theme="dsh-dark"] .msg .wrap{max-width:78%}
-[data-theme="dsh"] .msg.assistant .wrap,[data-theme="dsh-dark"] .msg.assistant .wrap{max-width:100%}
-[data-theme="dsh"] .msg.user .bubble,[data-theme="dsh-dark"] .msg.user .bubble{color:#4a4d55}
-[data-theme="dsh"] .msg.assistant .bubble,[data-theme="dsh-dark"] .msg.assistant .bubble{color:#262629}
-[data-theme="dsh"] .msg .who,[data-theme="dsh-dark"] .msg .who{color:var(--faint);margin-bottom:2px}
+[data-theme="su"] .msg .wrap,[data-theme="mo"] .msg .wrap{max-width:78%}
+[data-theme="su"] .msg.assistant .wrap,[data-theme="mo"] .msg.assistant .wrap{max-width:100%}
+[data-theme="su"] .msg.user .bubble,[data-theme="mo"] .msg.user .bubble{color:var(--dim)}
+[data-theme="su"] .msg.assistant .bubble,[data-theme="mo"] .msg.assistant .bubble{color:var(--fg)}
+[data-theme="su"] .msg .who,[data-theme="mo"] .msg .who{color:var(--faint);margin-bottom:2px}
 /* 顶栏与主题切换：白底上要能看出选中态 */
-[data-theme="dsh"] .theme-switch,[data-theme="dsh-dark"] .theme-switch{background:var(--panel2)}
-[data-theme="dsh"] .theme-switch button.on,[data-theme="dsh-dark"] .theme-switch button.on{background:#fff;box-shadow:0 1px 4px rgba(20,30,50,.10)}
+[data-theme="su"] .theme-switch,[data-theme="mo"] .theme-switch{background:var(--panel2)}
+[data-theme="su"] .theme-switch button.on,[data-theme="mo"] .theme-switch button.on{background:var(--panel);box-shadow:0 1px 4px var(--shadow-rgb,.10)}
 /* 输入区：白色输入框 + 细边框，发送键品牌蓝 */
-[data-theme="dsh"] .composer,[data-theme="dsh-dark"] .composer{background:#ffffff}
-[data-theme="dsh"] .composer textarea,[data-theme="dsh-dark"] .composer textarea{background:#fff}
-[data-theme="dsh"] .composer textarea:focus,[data-theme="dsh-dark"] .composer textarea:focus{border-color:#4d6bfe;box-shadow:0 0 0 3px rgba(77,107,254,.12)}
+[data-theme="su"] .composer,[data-theme="mo"] .composer{background:var(--panel)}
+[data-theme="su"] .composer textarea,[data-theme="mo"] .composer textarea{background:var(--panel)}
+[data-theme="su"] .composer textarea:focus,[data-theme="mo"] .composer textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.12)}
 /* 侧栏卡片：白底细线，去掉重阴影 */
-[data-theme="dsh"] .side,[data-theme="dsh-dark"] .side{background:#f7f8fa;border-right-color:#e5e8ec}
-[data-theme="dsh"] .side-block,[data-theme="dsh-dark"] .side-block{background:#fff;border-color:#e9ecef;box-shadow:none}
+[data-theme="su"] .side,[data-theme="mo"] .side{background:var(--panel2);border-right-color:var(--line)}
+[data-theme="su"] .side-block,[data-theme="mo"] .side-block{background:var(--panel);border-color:var(--line);box-shadow:none}
 
 /* ---------- DSH 重排：模型输出悬浮窗退役 ----------
    输出已经嵌进任务卡的 .live-stream 折叠行，悬浮窗不再出现。 */
-[data-theme="dsh"] #streamOut,[data-theme="dsh-dark"] #streamOut{display:none!important}
+[data-theme="su"] #streamOut,[data-theme="mo"] #streamOut{display:none!important}
 
 /* ---------- DSH 重排：右侧抽屉（模型 / 队列 / 历史 / 设置）----------
    对齐 DeepSeek Harness：纯白、细分隔线、行式布局，去掉大圆角弹簧动画。 */
-[data-theme="dsh"] .drawer,[data-theme="dsh-dark"] .drawer{
+[data-theme="su"] .drawer,[data-theme="mo"] .drawer{
   background:#fff;border-left-color:#e5e8ec;border-radius:0;
   transition:transform .18s ease-out;box-shadow:-8px 0 30px rgba(20,30,50,.08)}
-[data-theme="dsh"] .drawer-head,[data-theme="dsh-dark"] .drawer-head{padding:14px 20px;border-bottom:1px solid #eef0f3}
-[data-theme="dsh"] .drawer-head h2,[data-theme="dsh-dark"] .drawer-head h2{font-size:14.5px}
-[data-theme="dsh"] .drawer .ghost,[data-theme="dsh-dark"] .drawer .ghost{border:none;background:transparent;color:#84868c}
-[data-theme="dsh"] .drawer .ghost:hover,[data-theme="dsh-dark"] .drawer .ghost:hover{background:#f5f7fa;color:#262629}
+[data-theme="su"] .drawer-head,[data-theme="mo"] .drawer-head{padding:14px 20px;border-bottom:1px solid var(--line)}
+[data-theme="su"] .drawer-head h2,[data-theme="mo"] .drawer-head h2{font-size:14.5px}
+[data-theme="su"] .drawer .ghost,[data-theme="mo"] .drawer .ghost{border:none;background:transparent;color:var(--dim)}
+[data-theme="su"] .drawer .ghost:hover,[data-theme="mo"] .drawer .ghost:hover{background:var(--panel2);color:var(--fg)}
 
 /* 模型抽屉：原始输出 / 翻译 两个盒子改成 DSH 式浅灰代码区 */
-[data-theme="dsh"] .mbox,[data-theme="dsh-dark"] .mbox{border:1px solid #eef0f3;border-radius:12px;box-shadow:none;background:#fff}
-[data-theme="dsh"] .mbox-head,[data-theme="dsh-dark"] .mbox-head{background:#fafbfc;border-bottom:1px solid #eef0f3;font-size:12px}
-[data-theme="dsh"] .mbox-pre,[data-theme="dsh-dark"] .mbox-pre{background:#f7f8fa;border:none;border-radius:0}
+[data-theme="su"] .mbox,[data-theme="mo"] .mbox{border:1px solid var(--line);border-radius:12px;box-shadow:none;background:var(--panel)}
+[data-theme="su"] .mbox-head,[data-theme="mo"] .mbox-head{background:var(--panel2);border-bottom:1px solid var(--line);font-size:12px}
+[data-theme="su"] .mbox-pre,[data-theme="mo"] .mbox-pre{background:var(--panel2);border:none;border-radius:0}
 
 /* 系统信息面板（∑）：白底细线，行式 */
-[data-theme="dsh"] #sysPanel,[data-theme="dsh-dark"] #sysPanel{border-color:#e5e8ec;border-radius:14px;
+[data-theme="su"] #sysPanel,[data-theme="mo"] #sysPanel{border-color:var(--line);border-radius:14px;
   box-shadow:0 12px 44px rgba(20,30,50,.14);transition:.16s ease-out}
-[data-theme="dsh"] .sys-row,[data-theme="dsh-dark"] .sys-row{border-bottom:1px solid #f2f4f7;padding:7px 0}
-[data-theme="dsh"] .sys-row span:last-child,[data-theme="dsh-dark"] .sys-row span:last-child{color:#262629}
+[data-theme="su"] .sys-row,[data-theme="mo"] .sys-row{border-bottom:1px solid var(--line);padding:7px 0}
+[data-theme="su"] .sys-row span:last-child,[data-theme="mo"] .sys-row span:last-child{color:var(--fg)}
 
 /* ---------- DSH 重排：步骤折叠行 ----------
    对齐 DSH 的「执行了命令」：每步一行（序号 + 工具 + 参数 + 秒数），
    点开展开想法和返回，默认收起。其他主题保持现在的全展开。 */
-[data-theme="dsh"] .step,[data-theme="dsh-dark"] .step{border:1px solid #eef0f3;border-radius:10px;
+[data-theme="su"] .step,[data-theme="mo"] .step{border:1px solid var(--line);border-radius:10px;
   background:#fff;margin:0 0 8px;padding:0;overflow:hidden}
-[data-theme="dsh"] .step .step-act,[data-theme="dsh-dark"] .step .step-act{cursor:pointer;padding:7px 10px}
-[data-theme="dsh"] .step .step-act:hover,[data-theme="dsh-dark"] .step .step-act:hover{background:#fafbfc}
-[data-theme="dsh"] .step:not(.open) .think-block,[data-theme="dsh-dark"] .step:not(.open) .think-block,
-[data-theme="dsh"] .step:not(.open) .step-obs-wrap,[data-theme="dsh-dark"] .step:not(.open) .step-obs-wrap{display:none}
-[data-theme="dsh"] .step.open .step-act,[data-theme="dsh-dark"] .step.open .step-act{border-bottom:1px solid #f0f2f5}
-[data-theme="dsh"] .step .think-block,[data-theme="dsh-dark"] .step .think-block,
-[data-theme="dsh"] .step .step-obs-wrap,[data-theme="dsh-dark"] .step .step-obs-wrap{margin:0;padding:8px 12px;border:none;background:#fff}
-[data-theme="dsh"] .step .step-obs,[data-theme="dsh-dark"] .step .step-obs{background:#f7f8fa;border:1px solid #eef0f3;border-radius:8px}
+[data-theme="su"] .step .step-act,[data-theme="mo"] .step .step-act{cursor:pointer;padding:7px 10px}
+[data-theme="su"] .step .step-act:hover,[data-theme="mo"] .step .step-act:hover{background:var(--panel2)}
+[data-theme="su"] .step:not(.open) .think-block,[data-theme="mo"] .step:not(.open) .think-block,
+[data-theme="su"] .step:not(.open) .step-obs-wrap,[data-theme="mo"] .step:not(.open) .step-obs-wrap{display:none}
+[data-theme="su"] .step.open .step-act,[data-theme="mo"] .step.open .step-act{border-bottom:1px solid var(--panel3)}
+[data-theme="su"] .step .think-block,[data-theme="mo"] .step .think-block,
+[data-theme="su"] .step .step-obs-wrap,[data-theme="mo"] .step .step-obs-wrap{margin:0;padding:8px 12px;border:none;background:var(--panel)}
+[data-theme="su"] .step .step-obs,[data-theme="mo"] .step .step-obs{background:var(--panel2);border:1px solid var(--line);border-radius:8px}
 
 /* ---------- DSH 重排：抽屉（左侧栏）变扁平列表 ----------
    对齐 DSH 左栏：条目行（h3）+ 可折叠内容，行式排列，不再是卡片堆。
    内容全保留：自主模式 / 配置 / 上下文占用 / 工作区 / 工具都在，
    收起时只剩一行标题，点开展开。折叠由 applyDshDrawer() 加 .closed 控制。 */
-[data-theme="dsh"] .side,[data-theme="dsh-dark"] .side{background:#fbfcfd;border-right:1px solid #e5e8ec;padding:10px;gap:2px}
-[data-theme="dsh"] .side-block,[data-theme="dsh-dark"] .side-block{background:transparent;border:none;border-radius:10px;
+[data-theme="su"] .side,[data-theme="mo"] .side{background:var(--panel);border-right:1px solid var(--line);padding:10px;gap:2px}
+[data-theme="su"] .side-block,[data-theme="mo"] .side-block{background:transparent;border:none;border-radius:10px;
   box-shadow:none;padding:0;margin:0 0 2px}
-[data-theme="dsh"] .side-block > h3,[data-theme="dsh-dark"] .side-block > h3{
+[data-theme="su"] .side-block > h3,[data-theme="mo"] .side-block > h3{
   display:flex;align-items:center;gap:6px;margin:0;padding:9px 10px;
   font-size:13px;font-weight:500;color:#262629;cursor:pointer;user-select:none;
   border-radius:8px;transition:background .12s}
-[data-theme="dsh"] .side-block > h3:hover,[data-theme="dsh-dark"] .side-block > h3:hover{background:#f0f2f6}
-[data-theme="dsh"] .side-block > h3 .cnt,[data-theme="dsh-dark"] .side-block > h3 .cnt{margin-left:auto}
-[data-theme="dsh"] .side-block > h3::after,[data-theme="dsh-dark"] .side-block > h3::after{content:'▸';font-size:10px;color:#a3a7ae;
+[data-theme="su"] .side-block > h3:hover,[data-theme="mo"] .side-block > h3:hover{background:var(--panel3)}
+[data-theme="su"] .side-block > h3 .cnt,[data-theme="mo"] .side-block > h3 .cnt{margin-left:auto}
+[data-theme="su"] .side-block > h3::after,[data-theme="mo"] .side-block > h3::after{content:'▸';font-size:10px;color:var(--faint);
   transform:rotate(90deg);transition:transform .15s}
-[data-theme="dsh"] .side-block.closed > h3::after,[data-theme="dsh-dark"] .side-block.closed > h3::after{transform:rotate(0deg)}
-[data-theme="dsh"] .side-block.closed > *:not(h3),[data-theme="dsh-dark"] .side-block.closed > *:not(h3){display:none}
-[data-theme="dsh"] .side-block > .quote,[data-theme="dsh-dark"] .side-block > .quote{display:none}
-[data-theme="dsh"] .side-actions,[data-theme="dsh-dark"] .side-actions{display:flex;flex-direction:column;gap:4px;
+[data-theme="su"] .side-block.closed > h3::after,[data-theme="mo"] .side-block.closed > h3::after{transform:rotate(0deg)}
+[data-theme="su"] .side-block.closed > *:not(h3),[data-theme="mo"] .side-block.closed > *:not(h3){display:none}
+[data-theme="su"] .side-block > .quote,[data-theme="mo"] .side-block > .quote{display:none}
+[data-theme="su"] .side-actions,[data-theme="mo"] .side-actions{display:flex;flex-direction:column;gap:4px;
   border:none;padding:8px 2px 0;margin-top:8px;border-top:1px solid #eef0f3}
-[data-theme="dsh"] .side-actions button,[data-theme="dsh-dark"] .side-actions button{background:transparent;border:none;border-radius:8px;
+[data-theme="su"] .side-actions button,[data-theme="mo"] .side-actions button{background:transparent;border:none;border-radius:8px;
   padding:8px 10px;font-size:12.5px;color:#5a5e66;text-align:left;justify-content:flex-start}
-[data-theme="dsh"] .side-actions button:hover,[data-theme="dsh-dark"] .side-actions button:hover{background:#f0f2f6;color:#262629}
+[data-theme="su"] .side-actions button:hover,[data-theme="mo"] .side-actions button:hover{background:var(--panel3);color:var(--fg)}
 
 /* ---------- DSH 细节打磨（第二轮 UI）---------- */
 
 /* 顶栏状态胶囊 → 「标签+值」纯文字（DSH 顶栏是极简的，没有灰底胶囊） */
-[data-theme="dsh"] .hbar,[data-theme="dsh-dark"] .hbar{gap:14px}
-[data-theme="dsh"] .hbar > span,[data-theme="dsh-dark"] .hbar > span{background:transparent;border:none;padding:2px 2px}
-[data-theme="dsh"] .hbar > span:hover,[data-theme="dsh-dark"] .hbar > span:hover{background:transparent;color:var(--fg)}
-[data-theme="dsh"] .hbar b,[data-theme="dsh-dark"] .hbar b{color:#262629;font-family:ui-monospace,Consolas,monospace}
+[data-theme="su"] .hbar,[data-theme="mo"] .hbar{gap:14px}
+[data-theme="su"] .hbar > span,[data-theme="mo"] .hbar > span{background:transparent;border:none;padding:2px 2px}
+[data-theme="su"] .hbar > span:hover,[data-theme="mo"] .hbar > span:hover{background:transparent;color:var(--fg)}
+[data-theme="su"] .hbar b,[data-theme="mo"] .hbar b{color:var(--fg);font-family:ui-monospace,Consolas,monospace}
 
 /* 发送键：DSH 的圆形 ↑ 按钮（原来的长条「发送」只在其他主题保留） */
-[data-theme="dsh"] .composer #send,[data-theme="dsh-dark"] .composer #send{
+[data-theme="su"] .composer #send,[data-theme="mo"] .composer #send{
   width:44px;height:44px;min-width:44px;padding:0;border-radius:50%;
   font-size:0;display:flex;align-items:center;justify-content:center;
   background:#4d6bfe;box-shadow:0 2px 8px rgba(77,107,254,.35)}
-[data-theme="dsh"] .composer #send::before,[data-theme="dsh-dark"] .composer #send::before{
+[data-theme="su"] .composer #send::before,[data-theme="mo"] .composer #send::before{
   content:'↑';font-size:20px;font-weight:700;color:#fff;line-height:1}
-[data-theme="dsh"] .composer #send:hover,[data-theme="dsh-dark"] .composer #send:hover{background:#3d5bf0;transform:translateY(-1px)}
-[data-theme="dsh"] .composer #send:hover,[data-theme="dsh-dark"] .composer #send:hover{box-shadow:0 4px 14px rgba(77,107,254,.45)}
-[data-theme="dsh"] .composer #send:active,[data-theme="dsh-dark"] .composer #send:active{transform:translateY(0)}
+[data-theme="su"] .composer #send:hover,[data-theme="mo"] .composer #send:hover{background:var(--accent);transform:translateY(-1px)}
+[data-theme="su"] .composer #send:hover,[data-theme="mo"] .composer #send:hover{box-shadow:0 4px 14px rgba(var(--accent-rgb),.45)}
+[data-theme="su"] .composer #send:active,[data-theme="mo"] .composer #send:active{transform:translateY(0)}
 
 /* 输入框：DSH 的细边框圆角输入区 */
-[data-theme="dsh"] .composer textarea,[data-theme="dsh-dark"] .composer textarea{
+[data-theme="su"] .composer textarea,[data-theme="mo"] .composer textarea{
   border:1px solid #e3e6ec;border-radius:16px;padding:13px 16px;background:#fff}
-[data-theme="dsh"] .composer textarea:focus,[data-theme="dsh-dark"] .composer textarea:focus{
+[data-theme="su"] .composer textarea:focus,[data-theme="mo"] .composer textarea:focus{
   border-color:#4d6bfe;box-shadow:0 0 0 3px rgba(77,107,254,.10)}
 
 /* 滚动条：细一点、淡一点 */
-[data-theme="dsh"] ::-webkit-scrollbar,[data-theme="dsh-dark"] ::-webkit-scrollbar{width:6px;height:6px}
-[data-theme="dsh"] ::-webkit-scrollbar-thumb,[data-theme="dsh-dark"] ::-webkit-scrollbar-thumb{background:#d8dce2;border-radius:3px}
-[data-theme="dsh"] ::-webkit-scrollbar-thumb:hover,[data-theme="dsh-dark"] ::-webkit-scrollbar-thumb:hover{background:#c4c9d1}
-[data-theme="dsh"] ::-webkit-scrollbar-track,[data-theme="dsh-dark"] ::-webkit-scrollbar-track{background:transparent}
+[data-theme="su"] ::-webkit-scrollbar,[data-theme="mo"] ::-webkit-scrollbar{width:6px;height:6px}
+[data-theme="su"] ::-webkit-scrollbar-thumb,[data-theme="mo"] ::-webkit-scrollbar-thumb{background:var(--line2);border-radius:3px}
+[data-theme="su"] ::-webkit-scrollbar-thumb:hover,[data-theme="mo"] ::-webkit-scrollbar-thumb:hover{background:#c4c9d1}
+[data-theme="su"] ::-webkit-scrollbar-track,[data-theme="mo"] ::-webkit-scrollbar-track{background:transparent}
 
 /* 步骤行：去掉左侧 3px 强调条，统一细边框（其他主题保留强调条） */
-[data-theme="dsh"] .step::before,[data-theme="dsh-dark"] .step::before{display:none}
+[data-theme="su"] .step::before,[data-theme="mo"] .step::before{display:none}
 
 /* 侧栏内里控件统一扁平 */
-[data-theme="dsh"] .side input[type="text"],[data-theme="dsh-dark"] .side input[type="text"],
-[data-theme="dsh"] .side select,[data-theme="dsh-dark"] .side select{
+[data-theme="su"] .side input[type="text"],[data-theme="mo"] .side input[type="text"],
+[data-theme="su"] .side select,[data-theme="mo"] .side select{
   border:1px solid #e3e6ec;border-radius:8px;background:#fff;
   color:#262629;font-size:12.5px}
-[data-theme="dsh"] .side input[type="text"]:focus,[data-theme="dsh-dark"] .side input[type="text"]:focus{border-color:#4d6bfe;outline:none}
-[data-theme="dsh"] .auto-status,[data-theme="dsh-dark"] .auto-status{background:#f7f8fa;border:1px solid #eef0f3;border-radius:8px;color:#84868c}
-[data-theme="dsh"] .auto-status.on,[data-theme="dsh-dark"] .auto-status.on{border-color:#b9c6f5;background:#f5f7ff}
-[data-theme="dsh"] .cfg-cell,[data-theme="dsh-dark"] .cfg-cell{background:#f7f8fa;border:1px solid #eef0f3;border-radius:8px}
-[data-theme="dsh"] .cfg-cell b,[data-theme="dsh-dark"] .cfg-cell b{color:#262629;font-weight:600}
-[data-theme="dsh"] .cfg-cell i,[data-theme="dsh-dark"] .cfg-cell i{color:#84868c}
-[data-theme="dsh"] .file-item,[data-theme="dsh-dark"] .file-item{border-radius:8px;transition:background .12s}
-[data-theme="dsh"] .file-item:hover,[data-theme="dsh-dark"] .file-item:hover{background:#f0f2f6}
-[data-theme="dsh"] .file-item .fi,[data-theme="dsh-dark"] .file-item .fi{display:none}
-[data-theme="dsh"] .fgroup-h,[data-theme="dsh-dark"] .fgroup-h{color:#5a5e66;font-size:12px;padding:6px 8px}
-[data-theme="dsh"] .fgroup-h:hover,[data-theme="dsh-dark"] .fgroup-h:hover{background:#f0f2f6}
-[data-theme="dsh"] .fgroup-h .fgl,[data-theme="dsh-dark"] .fgroup-h .fgl{color:#3a3d44}
+[data-theme="su"] .side input[type="text"]:focus,[data-theme="mo"] .side input[type="text"]:focus{border-color:var(--accent);outline:none}
+[data-theme="su"] .auto-status,[data-theme="mo"] .auto-status{background:var(--panel2);border:1px solid var(--line);border-radius:8px;color:var(--dim)}
+[data-theme="su"] .auto-status.on,[data-theme="mo"] .auto-status.on{border-color:var(--line2);background:#f5f7ff}
+[data-theme="su"] .cfg-cell,[data-theme="mo"] .cfg-cell{background:var(--panel2);border:1px solid var(--line);border-radius:8px}
+[data-theme="su"] .cfg-cell b,[data-theme="mo"] .cfg-cell b{color:var(--fg);font-weight:600}
+[data-theme="su"] .cfg-cell i,[data-theme="mo"] .cfg-cell i{color:var(--dim)}
+[data-theme="su"] .file-item,[data-theme="mo"] .file-item{border-radius:8px;transition:background .12s}
+[data-theme="su"] .file-item:hover,[data-theme="mo"] .file-item:hover{background:var(--panel3)}
+[data-theme="su"] .file-item .fi,[data-theme="mo"] .file-item .fi{display:none}
+[data-theme="su"] .fgroup-h,[data-theme="mo"] .fgroup-h{color:var(--dim);font-size:12px;padding:6px 8px}
+[data-theme="su"] .fgroup-h:hover,[data-theme="mo"] .fgroup-h:hover{background:var(--panel3)}
+[data-theme="su"] .fgroup-h .fgl,[data-theme="mo"] .fgroup-h .fgl{color:var(--fg)}
 
 /* ---------- ATC 打磨（第三轮）：怎么舒服怎么来 ---------- */
 /* 悬停底色统一走主题变量，深浅色观感一致 */
-[data-theme="dsh"] .thread .step .step-act:hover,[data-theme="dsh-dark"] .thread .step .step-act:hover{background:var(--panel2)}
-[data-theme="dsh"] .side-block > h3:hover,[data-theme="dsh-dark"] .side-block > h3:hover{background:var(--panel2)}
-[data-theme="dsh"] .fgroup-h:hover,[data-theme="dsh-dark"] .fgroup-h:hover{background:var(--panel2)}
-[data-theme="dsh"] .file-item:hover,[data-theme="dsh-dark"] .file-item:hover{background:var(--panel2)}
+[data-theme="su"] .thread .step .step-act:hover,[data-theme="mo"] .thread .step .step-act:hover{background:var(--panel2)}
+[data-theme="su"] .side-block > h3:hover,[data-theme="mo"] .side-block > h3:hover{background:var(--panel2)}
+[data-theme="su"] .fgroup-h:hover,[data-theme="mo"] .fgroup-h:hover{background:var(--panel2)}
+[data-theme="su"] .file-item:hover,[data-theme="mo"] .file-item:hover{background:var(--panel2)}
 /* 侧栏标题更松弛：小字号 + 字距，像目录不像按钮 */
-[data-theme="dsh"] .side-block > h3,[data-theme="dsh-dark"] .side-block > h3{
+[data-theme="su"] .side-block > h3,[data-theme="mo"] .side-block > h3{
   font-size:12px;font-weight:600;letter-spacing:.4px;color:var(--dim)}
 /* 输入框聚焦光晕收敛：边框为主，光晕淡一档 */
-[data-theme="dsh"] .composer textarea:focus,[data-theme="dsh-dark"] .composer textarea:focus{
+[data-theme="su"] .composer textarea:focus,[data-theme="mo"] .composer textarea:focus{
   box-shadow:0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent)}
 /* 对话区留白放宽一档，长消息不顶边 */
-[data-theme="dsh"] .thread,[data-theme="dsh-dark"] .thread{padding:22px 26px 12px}
+[data-theme="su"] .thread,[data-theme="mo"] .thread{padding:22px 26px 12px}
 
 /* ---------- 实时进度渲染（第四轮）----------
    核心诉求：模型输出的时候要「同时」看到进度 —— 它现在写到第几步、
@@ -310,8 +347,8 @@ html[data-theme="dsh"]{background:#f2f4f7}
   background:var(--accent);opacity:.75;
   transition:width .5s ease-out;border-radius:0 2px 2px 0}
 .live-box.done .live-progress i{opacity:.45}
-[data-theme="dsh"] .live-progress,[data-theme="dsh-dark"] .live-progress{background:#f0f2f5}
-[data-theme="dsh"] .live-progress i,[data-theme="dsh-dark"] .live-progress i{background:#4d6bfe}
+[data-theme="su"] .live-progress,[data-theme="mo"] .live-progress{background:var(--panel3)}
+[data-theme="su"] .live-progress i,[data-theme="mo"] .live-progress i{background:var(--accent)}
 
 /* 正在进行中的一步：spinner + 人话文案，呼吸光晕提示「这步还没完」。
    agent 只在步骤完成后才把记录写进 state.steps，所以这一行是
@@ -328,18 +365,18 @@ html[data-theme="dsh"]{background:#f2f4f7}
 .step.live-row .live-tool{font-size:11.5px;color:var(--accent);font-weight:500}
 .step.live-row .live-arg{color:var(--dim);font-size:11.5px;
   flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-[data-theme="dsh"] .step.live-row,[data-theme="dsh-dark"] .step.live-row{
+[data-theme="su"] .step.live-row,[data-theme="mo"] .step.live-row{
   background:#f7f9ff;border-color:#dfe6fb}
-[data-theme="dsh"] .step.live-row .live-tool,[data-theme="dsh-dark"] .step.live-row .live-tool{color:#4d6bfe}
-[data-theme="dsh"] .step.live-row .live-arg,[data-theme="dsh-dark"] .step.live-row .live-arg{color:#878c96}
+[data-theme="su"] .step.live-row .live-tool,[data-theme="mo"] .step.live-row .live-tool{color:var(--accent)}
+[data-theme="su"] .step.live-row .live-arg,[data-theme="mo"] .step.live-row .live-arg{color:#878c96}
 
 /* 内嵌输出行：标签跟流类型走（正在回答 / 正在生成工具调用），
    右侧实时字数 —— 模型写字的「体感速度」一眼可见 */
 .live-stream .ls-count{font-size:10.5px;color:var(--faint);
   font-family:ui-monospace,Consolas,monospace;flex-shrink:0}
-[data-theme="dsh"] .live-stream .ls-count,[data-theme="dsh-dark"] .live-stream .ls-count{color:#a0a5af}
+[data-theme="su"] .live-stream .ls-count,[data-theme="mo"] .live-stream .ls-count{color:var(--faint)}
 .live-stream .ls-label{color:var(--dim);font-size:11.5px}
-[data-theme="dsh"] .live-stream .ls-label,[data-theme="dsh-dark"] .live-stream .ls-label{color:#878c96}
+[data-theme="su"] .live-stream .ls-label,[data-theme="mo"] .live-stream .ls-label{color:#878c96}
 
 /* ---------- 动画柔化（第六轮）：自然、柔和 ----------
    统一原则：进出用减速曲线 cubic-bezier(.32,.72,0,1)（iOS 式，
@@ -348,11 +385,11 @@ html[data-theme="dsh"]{background:#f2f4f7}
 
 /* 抽屉滑入：.18s ease-out 太急，改 iOS 式减速 */
 .drawer{transition:transform .32s cubic-bezier(.32,.72,0,1)}
-[data-theme="dsh"] .drawer{transition:transform .3s cubic-bezier(.32,.72,0,1)}
-[data-theme="dsh-dark"] .drawer{transition:transform .3s cubic-bezier(.32,.72,0,1)}
+[data-theme="su"] .drawer,[data-theme="mo"] .drawer{transition:transform .3s cubic-bezier(.32,.72,0,1)}
+[data-theme="mo"] .drawer{transition:transform .3s cubic-bezier(.32,.72,0,1)}
 /* 系统面板（∑）：去掉弹簧过冲，淡入 + 轻微上浮 */
 #sysPanel{transition:opacity .28s cubic-bezier(.32,.72,0,1),transform .28s cubic-bezier(.32,.72,0,1)}
-[data-theme="dsh"] #sysPanel,[data-theme="dsh-dark"] #sysPanel{
+[data-theme="su"] #sysPanel,[data-theme="mo"] #sysPanel{
   transition:opacity .26s cubic-bezier(.32,.72,0,1),transform .26s cubic-bezier(.32,.72,0,1)}
 /* 等回答框：同样去掉过冲 */
 .answer-box{animation:abIn .32s cubic-bezier(.32,.72,0,1)}
@@ -362,11 +399,11 @@ html[data-theme="dsh"]{background:#f2f4f7}
 .step.live-row{animation:liveBreath 2.8s ease-in-out infinite}
 @keyframes liveBreath{0%,100%{background:var(--panel2)}50%{background:var(--panel3)}}
 @keyframes liveBreathDsh{0%,100%{background:#f7f9ff;border-color:#e6ebfb}50%{background:#eef2fd;border-color:#dbe3fb}}
-[data-theme="dsh"] .step.live-row{animation:liveBreathDsh 2.8s ease-in-out infinite}
+[data-theme="su"] .step.live-row{animation:liveBreathDsh 2.8s ease-in-out infinite}
 @keyframes liveBreathDark{0%,100%{background:#171b26;border-color:#263041}50%{background:#1b2130;border-color:#2e3a55}}
-html[data-theme="dsh-dark"] .step.live-row{animation:liveBreathDark 2.8s ease-in-out infinite}
-[data-theme="dsh-dark"] .step.live-row .live-tool{color:#8fa4ff}
-[data-theme="dsh-dark"] .step.live-row .live-arg{color:#9aa1ad}
+html[data-theme="mo"] .step.live-row{animation:liveBreathDark 2.8s ease-in-out infinite}
+[data-theme="mo"] .step.live-row .live-tool{color:#8fa4ff}
+[data-theme="mo"] .step.live-row .live-arg{color:#9aa1ad}
 
 /* spinner：转速降下来，匀速转比快转看着稳 */
 .spinner{animation:spin 1.2s linear infinite}
@@ -391,7 +428,7 @@ html[data-theme="dsh-dark"] .step.live-row{animation:liveBreathDark 2.8s ease-in
    ② 步骤耗时统一走 fmtTime（172.3s → 2m52s），和任务卡头部一致。
    ③ 折叠箭头提一档亮度，让人看得出这里能点开。 */
 .msg .who-ts{color:var(--faint);font-size:.92em;letter-spacing:.2px;margin-left:1px;font-weight:400}
-[data-theme="dsh"] .msg .who,[data-theme="dsh-dark"] .msg .who{color:var(--dim)}
+[data-theme="su"] .msg .who,[data-theme="mo"] .msg .who{color:var(--dim)}
 .fold-arrow{color:var(--dim);opacity:.85}
 
 
@@ -403,67 +440,67 @@ body.drawer-collapsed .side{display:none}
 body.drawer-collapsed .side-collapse{margin-left:8px}
 
 /* 左上角 Nafx 旁边的光球（状态点）在 ATC UI 下去掉 */
-[data-theme="dsh"] .brand .dot,[data-theme="dsh-dark"] .brand .dot{display:none}
-[data-theme="dsh"] .side-actions button.danger,[data-theme="dsh-dark"] .side-actions button.danger{color:#c04a4a}
-[data-theme="dsh"] .side-actions button.danger:hover,[data-theme="dsh-dark"] .side-actions button.danger:hover{background:#fbf1f1;color:#c04a4a}
+[data-theme="su"] .brand .dot,[data-theme="mo"] .brand .dot{display:none}
+[data-theme="su"] .side-actions button.danger,[data-theme="mo"] .side-actions button.danger{color:var(--err)}
+[data-theme="su"] .side-actions button.danger:hover,[data-theme="mo"] .side-actions button.danger:hover{background:#fbf1f1;color:var(--err)}
 
 /* 会话气泡 hover 轻反馈、模式按钮圆润 */
-[data-theme="dsh"] .mode-btn,[data-theme="dsh-dark"] .mode-btn{border-radius:16px}
-[data-theme="dsh"] .mode-btn.on,[data-theme="dsh-dark"] .mode-btn.on{background:#4d6bfe;border-color:#4d6bfe;box-shadow:0 2px 8px rgba(77,107,254,.30)}
+[data-theme="su"] .mode-btn,[data-theme="mo"] .mode-btn{border-radius:16px}
+[data-theme="su"] .mode-btn.on,[data-theme="mo"] .mode-btn.on{background:var(--accent);border-color:var(--accent);box-shadow:0 2px 8px rgba(var(--accent-rgb),.30)}
 
 /* 命令 chip 条（任务下方的步骤索引）：更轻的描边 */
-[data-theme="dsh"] .cmdchip,[data-theme="dsh-dark"] .cmdchip{background:#fff;border-color:#e5e8ec;color:#84868c}
-[data-theme="dsh"] .cmdchip:hover,[data-theme="dsh-dark"] .cmdchip:hover{border-color:#4d6bfe;color:#262629;background:#f5f7ff}
+[data-theme="su"] .cmdchip,[data-theme="mo"] .cmdchip{background:var(--panel);border-color:var(--line);color:var(--dim)}
+[data-theme="su"] .cmdchip:hover,[data-theme="mo"] .cmdchip:hover{border-color:var(--accent);color:var(--fg);background:#f5f7ff}
 
 /* 消息无气泡平铺：加 .thread 提一级优先级，压过任何位置的基样式垫底 */
-[data-theme="dsh"] .thread .msg .bubble,[data-theme="dsh-dark"] .thread .msg .bubble{background:transparent;border:none;border-radius:0;
+[data-theme="su"] .thread .msg .bubble,[data-theme="mo"] .thread .msg .bubble{background:transparent;border:none;border-radius:0;
   box-shadow:none;padding:2px 0}
-[data-theme="dsh"] .thread .msg.fail .bubble,[data-theme="dsh-dark"] .thread .msg.fail .bubble{background:transparent;border:none;color:var(--err)}
-[data-theme="dsh"] .thread .msg.thinking .bubble,[data-theme="dsh-dark"] .thread .msg.thinking .bubble{background:transparent;border:1px dashed var(--line)}
-[data-theme="dsh"] .thread .msg.asking .bubble,[data-theme="dsh-dark"] .thread .msg.asking .bubble{background:transparent;border:none;box-shadow:none}
+[data-theme="su"] .thread .msg.fail .bubble,[data-theme="mo"] .thread .msg.fail .bubble{background:transparent;border:none;color:var(--err)}
+[data-theme="su"] .thread .msg.thinking .bubble,[data-theme="mo"] .thread .msg.thinking .bubble{background:transparent;border:1px dashed var(--line)}
+[data-theme="su"] .thread .msg.asking .bubble,[data-theme="mo"] .thread .msg.asking .bubble{background:transparent;border:none;box-shadow:none}
 
 /* 步骤行：纯文本化 —— 无盒子、无图标、宽松行距（对齐 DSH 参照） */
-[data-theme="dsh"] .thread .step,[data-theme="dsh-dark"] .thread .step{border:none;border-radius:0;background:transparent;
+[data-theme="su"] .thread .step,[data-theme="mo"] .thread .step{border:none;border-radius:0;background:transparent;
   margin:0 0 6px;padding:0}
-[data-theme="dsh"] .thread .step:last-child,[data-theme="dsh-dark"] .thread .step:last-child{margin-bottom:2px}
-[data-theme="dsh"] .thread .step .step-act,[data-theme="dsh-dark"] .thread .step .step-act{padding:4px 8px;border-radius:8px;
+[data-theme="su"] .thread .step:last-child,[data-theme="mo"] .thread .step:last-child{margin-bottom:2px}
+[data-theme="su"] .thread .step .step-act,[data-theme="mo"] .thread .step .step-act{padding:4px 8px;border-radius:8px;
   background:transparent;border:none}
-[data-theme="dsh"] .thread .step .step-act:hover,[data-theme="dsh-dark"] .thread .step .step-act:hover{background:#f7f8fa}
-[data-theme="dsh"] .thread .step.open .step-act,[data-theme="dsh-dark"] .thread .step.open .step-act{border-bottom:none}
-[data-theme="dsh"] .thread .step-act .row,[data-theme="dsh-dark"] .thread .step-act .row{font-size:13px;color:#5a5e66;gap:10px}
-[data-theme="dsh"] .thread .step-act .row::before,[data-theme="dsh-dark"] .thread .step-act .row::before{content:'↳';color:#9ba1ac;font-size:13px;flex-shrink:0}
-[data-theme="dsh"] .thread .step-n,[data-theme="dsh-dark"] .thread .step-n{display:none}
-[data-theme="dsh"] .thread .step-tool .ti,[data-theme="dsh-dark"] .thread .step-tool .ti{display:none}
-[data-theme="dsh"] .thread .step-tool,[data-theme="dsh-dark"] .thread .step-tool{background:transparent;border:none;padding:0;color:#3a3d44;
+[data-theme="su"] .thread .step .step-act:hover,[data-theme="mo"] .thread .step .step-act:hover{background:var(--panel2)}
+[data-theme="su"] .thread .step.open .step-act,[data-theme="mo"] .thread .step.open .step-act{border-bottom:none}
+[data-theme="su"] .thread .step-act .row,[data-theme="mo"] .thread .step-act .row{font-size:13px;color:var(--dim);gap:10px}
+[data-theme="su"] .thread .step-act .row::before,[data-theme="mo"] .thread .step-act .row::before{content:'↳';color:#9ba1ac;font-size:13px;flex-shrink:0}
+[data-theme="su"] .thread .step-n,[data-theme="mo"] .thread .step-n{display:none}
+[data-theme="su"] .thread .step-tool .ti,[data-theme="mo"] .thread .step-tool .ti{display:none}
+[data-theme="su"] .thread .step-tool,[data-theme="mo"] .thread .step-tool{background:transparent;border:none;padding:0;color:var(--fg);
   font-family:ui-monospace,Consolas,monospace;font-weight:500;font-size:12.5px}
-[data-theme="dsh"] .thread .step-tool.bad,[data-theme="dsh-dark"] .thread .step-tool.bad{background:transparent;border:none;color:#c04a4a}
-[data-theme="dsh"] .thread .step-arg,[data-theme="dsh-dark"] .thread .step-arg{background:transparent;border:none;border-radius:0;
+[data-theme="su"] .thread .step-tool.bad,[data-theme="mo"] .thread .step-tool.bad{background:transparent;border:none;color:var(--err)}
+[data-theme="su"] .thread .step-arg,[data-theme="mo"] .thread .step-arg{background:transparent;border:none;border-radius:0;
   padding:0;color:#84868c;font-size:12.5px}
-[data-theme="dsh"] .thread .step-sec,[data-theme="dsh-dark"] .thread .step-sec{color:#8f95a0;font-size:11px}
+[data-theme="su"] .thread .step-sec,[data-theme="mo"] .thread .step-sec{color:#8f95a0;font-size:11px}
 
 /* 想法：纯文本缩进，无底无框无图标 */
-[data-theme="dsh"] .thread .step .think-block,[data-theme="dsh-dark"] .thread .step .think-block{background:transparent;border:none;
+[data-theme="su"] .thread .step .think-block,[data-theme="mo"] .thread .step .think-block{background:transparent;border:none;
   padding:0;margin:6px 0 4px 28px}
-[data-theme="dsh"] .thread .think-ico,[data-theme="dsh-dark"] .thread .think-ico{display:none}
-[data-theme="dsh"] .thread .think-label,[data-theme="dsh-dark"] .thread .think-label{color:#878c96;font-weight:500;font-size:11px}
-[data-theme="dsh"] .thread .think-body,[data-theme="dsh-dark"] .thread .think-body,[data-theme="dsh"] .thread .think-full,[data-theme="dsh-dark"] .thread .think-full{
+[data-theme="su"] .thread .think-ico,[data-theme="mo"] .thread .think-ico{display:none}
+[data-theme="su"] .thread .think-label,[data-theme="mo"] .thread .think-label{color:#878c96;font-weight:500;font-size:11px}
+[data-theme="su"] .thread .think-body,[data-theme="mo"] .thread .think-body,[data-theme="su"] .thread .think-full,[data-theme="mo"] .thread .think-full{
   color:#6d717a;font-size:12.5px;line-height:1.75}
 
 /* 返回：纯文本缩进，无代码块底 */
-[data-theme="dsh"] .thread .step .step-obs-wrap,[data-theme="dsh-dark"] .thread .step .step-obs-wrap{background:transparent;border:none;
+[data-theme="su"] .thread .step .step-obs-wrap,[data-theme="mo"] .thread .step .step-obs-wrap{background:transparent;border:none;
   margin:6px 0 4px 28px;padding:0}
-[data-theme="dsh"] .thread .step-obs-wrap .label,[data-theme="dsh-dark"] .thread .step-obs-wrap .label{color:#878c96;font-size:11px;margin-bottom:3px}
-[data-theme="dsh"] .thread .step .step-obs,[data-theme="dsh-dark"] .thread .step .step-obs{background:transparent;border:none;padding:0;
+[data-theme="su"] .thread .step-obs-wrap .label,[data-theme="mo"] .thread .step-obs-wrap .label{color:#878c96;font-size:11px;margin-bottom:3px}
+[data-theme="su"] .thread .step .step-obs,[data-theme="mo"] .thread .step .step-obs{background:transparent;border:none;padding:0;
   color:#84868c;font-size:12px;line-height:1.7;max-height:none}
-[data-theme="dsh"] .thread .step .step-obs.bad,[data-theme="dsh-dark"] .thread .step .step-obs.bad{background:transparent;border:none;color:#c04a4a}
+[data-theme="su"] .thread .step .step-obs.bad,[data-theme="mo"] .thread .step .step-obs.bad{background:transparent;border:none;color:var(--err)}
 
 /* 任务卡也拍平：白卡+灰块会在灰底上露出白边，改成透明分节 + 细线 */
-[data-theme="dsh"] .thread .live-box,[data-theme="dsh-dark"] .thread .live-box{background:transparent;border:none;box-shadow:none;
+[data-theme="su"] .thread .live-box,[data-theme="mo"] .thread .live-box{background:transparent;border:none;box-shadow:none;
   border-radius:0;margin-top:10px}
-[data-theme="dsh"] .thread .live-box .live-head,[data-theme="dsh-dark"] .thread .live-box .live-head{background:transparent;border-radius:0;
+[data-theme="su"] .thread .live-box .live-head,[data-theme="mo"] .thread .live-box .live-head{background:transparent;border-radius:0;
   padding:8px}
-[data-theme="dsh"] .thread .live-box .live-head.foldable:hover,[data-theme="dsh-dark"] .thread .live-box .live-head.foldable:hover{background:#f7f8fa}
-[data-theme="dsh"] .thread .live-box .live-stream,[data-theme="dsh-dark"] .thread .live-box .live-stream{background:transparent;border:none;
+[data-theme="su"] .thread .live-box .live-head.foldable:hover,[data-theme="mo"] .thread .live-box .live-head.foldable:hover{background:var(--panel2)}
+[data-theme="su"] .thread .live-box .live-stream,[data-theme="mo"] .thread .live-box .live-stream{background:transparent;border:none;
   border-radius:0;margin-top:0;border-top:none;padding:2px 0 6px 0}
 
 *{box-sizing:border-box}
@@ -472,7 +509,7 @@ html,body{height:100%}
 html{background:#0b0c0f;transition:background .35s}
 html[data-theme="light"]{background:#f6f7f9}
 html[data-theme="glass"]{background:linear-gradient(135deg,#ffd3e8 0%,#f7b8f0 22%,#c9a6f7 48%,#9d8cf5 72%,#b7a4ff 100%)}
-html[data-theme="dsh"]{background:#f2f4f7}
+html[data-theme="su"]{background:#f2f4f7}
 body{
   margin:0;background:var(--bg);color:var(--fg);
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;
@@ -732,7 +769,7 @@ main{position:relative;z-index:1;flex:1;display:flex;min-height:0}
   font-size:11px;color:var(--code-fg);white-space:pre-wrap;word-break:break-word;
   line-height:1.5}
 .live-stream.open .ls-body{display:block}
-[data-theme="dsh"] .live-stream,[data-theme="dsh-dark"] .live-stream{display:block}
+[data-theme="su"] .live-stream,[data-theme="mo"] .live-stream{display:block}
 
 .live-box{border:1px solid var(--line);border-radius:var(--radius-lg);
   background:var(--panel);margin-bottom:13px;overflow:hidden;
@@ -2174,9 +2211,9 @@ header button.ghost:hover{background:var(--panel3);border-color:var(--line2)}
 }
 
 
-/* ---------- ATC UI 深色（dsh-dark）：同一套布局，暗色调。
+/* ---------- ATC UI 深色（mo）：同一套布局，暗色调。
    布局规则由上面批量扩展的选择器继承，这里覆盖变量和浅色字面量 ---------- */
-html[data-theme="dsh-dark"]{
+html[data-theme="mo"]{
   --bg:#0d0f12; --bg2:#111318;
   --panel:#16181d; --panel2:#1a1d23; --panel3:#22252c;
   --fg:#e8eaee; --dim:#a2a7b1; --faint:#7f8692;
@@ -2206,102 +2243,102 @@ html[data-theme="dsh-dark"]{
    用户浅灰圆角块 / AI 纯白无边框，更像聊天页。
    功能不减：面板、队列、历史、设置、侧栏全部照旧。
    ============================================================ */
-/* 浅色 dsh 的变量块在上面 L118（批量扩展后 dsh/dsh-dark 共用），
+/* 浅色 dsh 的变量块在上面 L118（批量扩展后 dsh/mo 共用），
    深色变量统一走下面 L2222 的显式暗色块 —— 这里不再放变量，
-   上一版曾在这里留过一个半转换的混合变量块（dsh-dark 选择器
+   上一版曾在这里留过一个半转换的混合变量块（mo 选择器
    装着浅色值），它会把暗色主题的 code/panel3 染回浅色，已删除。 */
-html[data-theme="dsh-dark"]{background:#0d0f12}
-[data-theme="dsh-dark"] .msg.user .bubble{color:#9aa0ab}
-[data-theme="dsh-dark"] .msg.assistant .bubble{color:#e8eaee}
+html[data-theme="mo"]{background:#0d0f12}
+[data-theme="mo"] .msg.user .bubble{color:#9aa0ab}
+[data-theme="mo"] .msg.assistant .bubble{color:#e8eaee}
 /* 输入区：白色输入框 + 细边框，发送键品牌蓝 */
-[data-theme="dsh-dark"] .composer{background:#16181d}
+[data-theme="mo"] .composer{background:#16181d}
 /* 侧栏卡片：白底细线，去掉重阴影 */
-[data-theme="dsh-dark"] .side{background:#1a1d23;border-right-color:#262a31}
+[data-theme="mo"] .side{background:#1a1d23;border-right-color:#262a31}
 /* ---------- DSH 重排：右侧抽屉（模型 / 队列 / 历史 / 设置）----------
    对齐 DeepSeek Harness：纯白、细分隔线、行式布局，去掉大圆角弹簧动画。 */
-[data-theme="dsh-dark"] .drawer{
+[data-theme="mo"] .drawer{
   background:#fff;border-left-color:#262a31;border-radius:0;
   transition:transform .18s ease-out;box-shadow:-8px 0 30px rgba(20,30,50,.08)}
-[data-theme="dsh-dark"] .drawer-head{padding:14px 20px;border-bottom:1px solid #262a31}
-[data-theme="dsh-dark"] .drawer .ghost{border:none;background:transparent;color:#8b8f98}
-[data-theme="dsh-dark"] .drawer .ghost:hover{background:#1a1d23;color:#e8eaee}
+[data-theme="mo"] .drawer-head{padding:14px 20px;border-bottom:1px solid #262a31}
+[data-theme="mo"] .drawer .ghost{border:none;background:transparent;color:#8b8f98}
+[data-theme="mo"] .drawer .ghost:hover{background:#1a1d23;color:#e8eaee}
 /* 模型抽屉：原始输出 / 翻译 两个盒子改成 DSH 式浅灰代码区 */
-[data-theme="dsh-dark"] .mbox{border:1px solid #262a31;border-radius:12px;box-shadow:none;background:#fff}
-[data-theme="dsh-dark"] .mbox-head{background:#1a1d23;border-bottom:1px solid #262a31;font-size:12px}
-[data-theme="dsh-dark"] .mbox-pre{background:#1a1d23;border:none;border-radius:0}
+[data-theme="mo"] .mbox{border:1px solid #262a31;border-radius:12px;box-shadow:none;background:#fff}
+[data-theme="mo"] .mbox-head{background:#1a1d23;border-bottom:1px solid #262a31;font-size:12px}
+[data-theme="mo"] .mbox-pre{background:#1a1d23;border:none;border-radius:0}
 /* 系统信息面板（∑）：白底细线，行式 */
-[data-theme="dsh-dark"] #sysPanel{border-color:#262a31;border-radius:14px;
+[data-theme="mo"] #sysPanel{border-color:#262a31;border-radius:14px;
   box-shadow:0 12px 44px rgba(20,30,50,.14);transition:.16s ease-out}
-[data-theme="dsh-dark"] .sys-row{border-bottom:1px solid #0d0f12;padding:7px 0}
-[data-theme="dsh-dark"] .sys-row span:last-child{color:#e8eaee}
+[data-theme="mo"] .sys-row{border-bottom:1px solid #0d0f12;padding:7px 0}
+[data-theme="mo"] .sys-row span:last-child{color:#e8eaee}
 /* ---------- DSH 重排：步骤折叠行 ----------
    对齐 DSH 的「执行了命令」：每步一行（序号 + 工具 + 参数 + 秒数），
    点开展开想法和返回，默认收起。其他主题保持现在的全展开。 */
-[data-theme="dsh-dark"] .step{border:1px solid #262a31;border-radius:10px;
+[data-theme="mo"] .step{border:1px solid #262a31;border-radius:10px;
   background:#fff;margin:0 0 8px;padding:0;overflow:hidden}
-[data-theme="dsh-dark"] .step .step-act:hover{background:#1a1d23}
-[data-theme="dsh-dark"] .step.open .step-act{border-bottom:1px solid #22252c}
-[data-theme="dsh-dark"] .step .step-obs{background:#1a1d23;border:1px solid #262a31;border-radius:8px}
+[data-theme="mo"] .step .step-act:hover{background:#1a1d23}
+[data-theme="mo"] .step.open .step-act{border-bottom:1px solid #22252c}
+[data-theme="mo"] .step .step-obs{background:#1a1d23;border:1px solid #262a31;border-radius:8px}
 /* ---------- DSH 重排：抽屉（左侧栏）变扁平列表 ----------
    对齐 DSH 左栏：条目行（h3）+ 可折叠内容，行式排列，不再是卡片堆。
    内容全保留：自主模式 / 配置 / 上下文占用 / 工作区 / 工具都在，
    收起时只剩一行标题，点开展开。折叠由 applyDshDrawer() 加 .closed 控制。 */
-[data-theme="dsh-dark"] .side{background:#16181d;border-right:1px solid #262a31;padding:10px;gap:2px}
-[data-theme="dsh-dark"] .side-block > h3{
+[data-theme="mo"] .side{background:#16181d;border-right:1px solid #262a31;padding:10px;gap:2px}
+[data-theme="mo"] .side-block > h3{
   display:flex;align-items:center;gap:6px;margin:0;padding:9px 10px;
   font-size:13px;font-weight:500;color:#e8eaee;cursor:pointer;user-select:none;
   border-radius:8px;transition:background .12s}
-[data-theme="dsh-dark"] .side-block > h3:hover{background:#1d2026}
-[data-theme="dsh-dark"] .side-block > h3::after{content:'▸';font-size:10px;color:#6b707a;
+[data-theme="mo"] .side-block > h3:hover{background:#1d2026}
+[data-theme="mo"] .side-block > h3::after{content:'▸';font-size:10px;color:#6b707a;
   transform:rotate(90deg);transition:transform .15s}
-[data-theme="dsh-dark"] .side-actions{display:flex;flex-direction:column;gap:4px;
+[data-theme="mo"] .side-actions{display:flex;flex-direction:column;gap:4px;
   border:none;padding:8px 2px 0;margin-top:8px;border-top:1px solid #262a31}
-[data-theme="dsh-dark"] .side-actions button{background:transparent;border:none;border-radius:8px;
+[data-theme="mo"] .side-actions button{background:transparent;border:none;border-radius:8px;
   padding:8px 10px;font-size:12.5px;color:#9aa0ab;text-align:left;justify-content:flex-start}
-[data-theme="dsh-dark"] .side-actions button:hover{background:#1d2026;color:#e8eaee}
-[data-theme="dsh-dark"] .hbar b{color:#e8eaee;font-family:ui-monospace,Consolas,monospace}
+[data-theme="mo"] .side-actions button:hover{background:#1d2026;color:#e8eaee}
+[data-theme="mo"] .hbar b{color:#e8eaee;font-family:ui-monospace,Consolas,monospace}
 /* 输入框：DSH 的细边框圆角输入区 */
-[data-theme="dsh-dark"] .composer textarea{
+[data-theme="mo"] .composer textarea{
   border:1px solid #2c3038;border-radius:16px;padding:13px 16px;background:#fff}
-[data-theme="dsh-dark"] ::-webkit-scrollbar-thumb{background:#2c3038;border-radius:3px}
-[data-theme="dsh-dark"] ::-webkit-scrollbar-thumb:hover{background:#3a3f4a}
+[data-theme="mo"] ::-webkit-scrollbar-thumb{background:#2c3038;border-radius:3px}
+[data-theme="mo"] ::-webkit-scrollbar-thumb:hover{background:#3a3f4a}
 /* 侧栏内里控件统一扁平 */
-[data-theme="dsh-dark"] .side input[type="text"],
-[data-theme="dsh-dark"] .side select{
+[data-theme="mo"] .side input[type="text"],
+[data-theme="mo"] .side select{
   border:1px solid #2c3038;border-radius:8px;background:#fff;
   color:#e8eaee;font-size:12.5px}
-[data-theme="dsh-dark"] .auto-status{background:#1a1d23;border:1px solid #262a31;border-radius:8px;color:#8b8f98}
-[data-theme="dsh-dark"] .auto-status.on{border-color:#3a4a7a;background:#161a28}
-[data-theme="dsh-dark"] .cfg-cell{background:#1a1d23;border:1px solid #262a31;border-radius:8px}
-[data-theme="dsh-dark"] .cfg-cell b{color:#e8eaee;font-weight:600}
-[data-theme="dsh-dark"] .cfg-cell i{color:#8b8f98}
-[data-theme="dsh-dark"] .file-item:hover{background:#1d2026}
-[data-theme="dsh-dark"] .fgroup-h{color:#9aa0ab;font-size:12px;padding:6px 8px}
-[data-theme="dsh-dark"] .fgroup-h:hover{background:#1d2026}
-[data-theme="dsh-dark"] .fgroup-h .fgl{color:#c9cdd4}
+[data-theme="mo"] .auto-status{background:#1a1d23;border:1px solid #262a31;border-radius:8px;color:#8b8f98}
+[data-theme="mo"] .auto-status.on{border-color:#3a4a7a;background:#161a28}
+[data-theme="mo"] .cfg-cell{background:#1a1d23;border:1px solid #262a31;border-radius:8px}
+[data-theme="mo"] .cfg-cell b{color:#e8eaee;font-weight:600}
+[data-theme="mo"] .cfg-cell i{color:#8b8f98}
+[data-theme="mo"] .file-item:hover{background:#1d2026}
+[data-theme="mo"] .fgroup-h{color:#9aa0ab;font-size:12px;padding:6px 8px}
+[data-theme="mo"] .fgroup-h:hover{background:#1d2026}
+[data-theme="mo"] .fgroup-h .fgl{color:#c9cdd4}
 /* 命令 chip 条（任务下方的步骤索引）：更轻的描边 */
-[data-theme="dsh-dark"] .cmdchip{background:#fff;border-color:#262a31;color:#8b8f98}
-[data-theme="dsh-dark"] .cmdchip:hover{border-color:#4d6bfe;color:#e8eaee;background:#161a28}
-[data-theme="dsh-dark"] .thread .step .step-act:hover{background:#1a1d23}
-[data-theme="dsh-dark"] .thread .step-act .row{font-size:13px;color:#9aa0ab;gap:10px}
-[data-theme="dsh-dark"] .thread .step-act .row::before{content:'↳';color:#6e7480;font-size:13px;flex-shrink:0}
-[data-theme="dsh-dark"] .thread .step-tool{background:transparent;border:none;padding:0;color:#c9cdd4;
+[data-theme="mo"] .cmdchip{background:#fff;border-color:#262a31;color:#8b8f98}
+[data-theme="mo"] .cmdchip:hover{border-color:#4d6bfe;color:#e8eaee;background:#161a28}
+[data-theme="mo"] .thread .step .step-act:hover{background:#1a1d23}
+[data-theme="mo"] .thread .step-act .row{font-size:13px;color:#9aa0ab;gap:10px}
+[data-theme="mo"] .thread .step-act .row::before{content:'↳';color:#6e7480;font-size:13px;flex-shrink:0}
+[data-theme="mo"] .thread .step-tool{background:transparent;border:none;padding:0;color:#c9cdd4;
   font-family:ui-monospace,Consolas,monospace;font-weight:500;font-size:12.5px}
-[data-theme="dsh-dark"] .thread .step-arg{background:transparent;border:none;border-radius:0;
+[data-theme="mo"] .thread .step-arg{background:transparent;border:none;border-radius:0;
   padding:0;color:#9aa1ad;font-size:12.5px}
-[data-theme="dsh-dark"] .thread .step-sec{color:#79808c;font-size:11px}
-[data-theme="dsh-dark"] .thread .think-label{color:#8e95a3;font-weight:500;font-size:11px}
-[data-theme="dsh-dark"] .thread .think-body,[data-theme="dsh-dark"] .thread .think-full{
+[data-theme="mo"] .thread .step-sec{color:#79808c;font-size:11px}
+[data-theme="mo"] .thread .think-label{color:#8e95a3;font-weight:500;font-size:11px}
+[data-theme="mo"] .thread .think-body,[data-theme="mo"] .thread .think-full{
   color:#9aa1ad;font-size:12.5px;line-height:1.75}
-[data-theme="dsh-dark"] .thread .step-obs-wrap .label{color:#8e95a3;font-size:11px;margin-bottom:3px}
-[data-theme="dsh-dark"] .thread .step .step-obs{background:transparent;border:none;padding:0;
+[data-theme="mo"] .thread .step-obs-wrap .label{color:#8e95a3;font-size:11px;margin-bottom:3px}
+[data-theme="mo"] .thread .step .step-obs{background:transparent;border:none;padding:0;
   color:#9aa1ad;font-size:12px;line-height:1.7;max-height:none}
-[data-theme="dsh-dark"] .thread .live-box .live-head.foldable:hover{background:#1a1d23}
-html[data-theme="dsh-dark"]{background:#0d0f12}
+[data-theme="mo"] .thread .live-box .live-head.foldable:hover{background:#1a1d23}
+html[data-theme="mo"]{background:#0d0f12}
 
-/* ---------- ATC UI 深色（dsh-dark）：同一套布局，暗色调。
+/* ---------- ATC UI 深色（mo）：同一套布局，暗色调。
    布局规则由上面批量扩展的选择器继承，这里覆盖变量和浅色字面量 ---------- */
-html[data-theme="dsh-dark"]{
+html[data-theme="mo"]{
   --bg:#0d0f12; --bg2:#111318;
   --panel:#16181d; --panel2:#1a1d23; --panel3:#22252c;
   --fg:#e8eaee; --dim:#a2a7b1; --faint:#7f8692;
@@ -2325,22 +2362,22 @@ html[data-theme="dsh-dark"]{
   --radius:12px; --radius-lg:16px;
 }
 /* ---------- ATC UI 深色补漏：短写 #fff 未进映射表的面板底色统一收口 ---------- */
-[data-theme="dsh-dark"] .composer{background:#16181d}
-[data-theme="dsh-dark"] .composer textarea{background:#10131a;color:#e8eaee;caret-color:#e8eaee}
-[data-theme="dsh-dark"] .composer textarea::placeholder{color:#6b707a}
-[data-theme="dsh-dark"] .theme-switch{background:#1d2026;border-color:#262a31}
-[data-theme="dsh-dark"] .theme-switch button{color:#8b8f98}
-[data-theme="dsh-dark"] .theme-switch button:hover{color:#e8eaee}
-[data-theme="dsh-dark"] .theme-switch button.on{background:#2a2f3a;color:#e8eaee;box-shadow:0 1px 4px rgba(0,0,0,.4)}
-[data-theme="dsh-dark"] .side-block{background:transparent}
-[data-theme="dsh-dark"] .drawer{background:#16181d}
-[data-theme="dsh-dark"] .mbox{background:#10131a}
-[data-theme="dsh-dark"] .step{background:transparent}
-[data-theme="dsh-dark"] .step .think-block,
-[data-theme="dsh-dark"] .step .step-obs-wrap{background:transparent}
-[data-theme="dsh-dark"] .side input[type="text"],
-[data-theme="dsh-dark"] .side select{background:#10131a;color:#e8eaee}
-[data-theme="dsh-dark"] .cmdchip{background:#16181d;border-color:#262a31;color:#9aa1ad}
+[data-theme="mo"] .composer{background:#16181d}
+[data-theme="mo"] .composer textarea{background:#10131a;color:#e8eaee;caret-color:#e8eaee}
+[data-theme="mo"] .composer textarea::placeholder{color:#6b707a}
+[data-theme="mo"] .theme-switch{background:#1d2026;border-color:#262a31}
+[data-theme="mo"] .theme-switch button{color:#8b8f98}
+[data-theme="mo"] .theme-switch button:hover{color:#e8eaee}
+[data-theme="mo"] .theme-switch button.on{background:#2a2f3a;color:#e8eaee;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+[data-theme="mo"] .side-block{background:transparent}
+[data-theme="mo"] .drawer{background:#16181d}
+[data-theme="mo"] .mbox{background:#10131a}
+[data-theme="mo"] .step{background:transparent}
+[data-theme="mo"] .step .think-block,
+[data-theme="mo"] .step .step-obs-wrap{background:transparent}
+[data-theme="mo"] .side input[type="text"],
+[data-theme="mo"] .side select{background:#10131a;color:#e8eaee}
+[data-theme="mo"] .cmdchip{background:#16181d;border-color:#262a31;color:#9aa1ad}
 
 /* ============================================================
    UI 第九批：呼吸感（间距 / 层级 / 条形柔化）
@@ -2387,17 +2424,17 @@ html[data-theme="dsh-dark"]{
 .side-actions button.danger:hover{border-color:var(--err);color:var(--err);background:var(--err-bg);opacity:1}
 /* DSH 主题原本把这里做成扁平列表，四个动作看着像散落的字；
    这里改回 2×2 格子，仍是低对比，但不飘。 */
-[data-theme="dsh"] .side-actions button,
-[data-theme="dsh-dark"] .side-actions button{
+[data-theme="su"] .side-actions button,
+[data-theme="mo"] .side-actions button{
   background:var(--panel3);border:1px solid var(--line);border-radius:10px;
   color:var(--dim);text-align:center;justify-content:center;
 }
-[data-theme="dsh"] .side-actions button:hover,
-[data-theme="dsh-dark"] .side-actions button:hover{
+[data-theme="su"] .side-actions button:hover,
+[data-theme="mo"] .side-actions button:hover{
   background:var(--panel2);border-color:var(--line2);color:var(--fg);
 }
-[data-theme="dsh"] .side-actions button.danger,
-[data-theme="dsh-dark"] .side-actions button.danger{color:#c04a4a}
+[data-theme="su"] .side-actions button.danger,
+[data-theme="mo"] .side-actions button.danger{color:var(--err)}
 
 /* 7) 滚动条轻一点，别抢眼 */
 .thread::-webkit-scrollbar,.side::-webkit-scrollbar{width:8px}
@@ -2426,11 +2463,11 @@ html[data-theme="dsh-dark"]{
 .composer .cmdbar,
 .composer .answer-box{max-width:900px;margin-left:auto;margin-right:auto}
 /* 豆包两套主题保留自带的 860px 一栏 */
-[data-theme="dsh"] .thread .msg,[data-theme="dsh-dark"] .thread .msg,
-[data-theme="dsh"] .thread .live-box,[data-theme="dsh-dark"] .thread .live-box,
-[data-theme="dsh"] .thread .chips,[data-theme="dsh-dark"] .thread .chips,
-[data-theme="dsh"] .cmdbar,[data-theme="dsh-dark"] .cmdbar,
-[data-theme="dsh"] .answer-box,[data-theme="dsh-dark"] .answer-box{max-width:860px}
+[data-theme="su"] .thread .msg,[data-theme="mo"] .thread .msg,
+[data-theme="su"] .thread .live-box,[data-theme="mo"] .thread .live-box,
+[data-theme="su"] .thread .chips,[data-theme="mo"] .thread .chips,
+[data-theme="su"] .cmdbar,[data-theme="mo"] .cmdbar,
+[data-theme="su"] .answer-box,[data-theme="mo"] .answer-box{max-width:860px}
 
 /* ③ 所有指标数字等宽，扫一眼就能对齐比较 */
 .hbar,.cfg-cell b,.gauge-label span:last-child,.ctx-total-head b,
@@ -2514,8 +2551,8 @@ header .theme-switch button{white-space:nowrap}
     <button data-theme-btn="light" title="浅色：最朴素的白底">浅色</button>
     <button data-theme-btn="dark" title="深色：基础深色">深色</button>
     <button data-theme-btn="glass" title="液态玻璃：半透明毛玻璃">玻璃</button>
-    <button data-theme-btn="dsh" title="ATC：豆包风浅色，平铺消息、无气泡">ATC</button>
-    <button data-theme-btn="dsh-dark" title="BATC：ATC 深色，默认推荐">BATC</button>
+  <button data-theme-btn="su" title="素：浅色，平铺消息、无气泡">素</button>
+  <button data-theme-btn="mo" title="墨：深色，同素墨布局">墨</button>
   </div>
   <button id="btnModel" class="ghost">模型</button>
   <button id="btnQueue" class="ghost">队列</button>
@@ -2910,12 +2947,12 @@ function fallbackCopy(txt){
 }
 
 /* ---------- 主题 ---------- */
-/* ATC UI 主题判定：dsh（浅色）与 dsh-dark（深色）共用同一套重排布局 */
+/* ATC UI 主题判定：dsh（浅色）与 mo（深色）共用同一套重排布局 */
 function atcTheme(t){
   if (!t) t = document.documentElement.getAttribute('data-theme');
-  return t === 'dsh' || t === 'dsh-dark';
+  return t === 'su' || t === 'mo';
 }
-var THEMES = ['light','dark','glass','dsh','dsh-dark'];
+var THEMES = ['light','dark','glass','su','mo'];
 function applyTheme(name){
   if (THEMES.indexOf(name) < 0) name = 'dark';
   document.documentElement.setAttribute('data-theme', name);
