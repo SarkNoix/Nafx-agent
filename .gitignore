@@ -44,3 +44,6 @@ config.self.json.bak
 workspace/data/*
 !workspace/data/orders.jsonl
 !workspace/data/smoke-test.txt
+
+# API 密钥：本地文件，绝不能进仓库
+api-key.json

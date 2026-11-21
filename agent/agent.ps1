@@ -78,7 +78,49 @@ if ($MaxSteps -le 0) {
     if ($Mode -eq 'auto') { $MaxSteps = [int][Math]::Min(40, $MaxSteps + 10) }
 }
 
-$Api       = "http://$($Cfg.host):$($Cfg.port)"
+# ---- 模型来源：本地 llama / 外部 API ----
+#
+# 两种模式共用同一套请求体和解析逻辑（都是 OpenAI 兼容的 /chat/completions），
+# 差别只有四处：
+#   · URL        本地 http://host:port    API  https://api.deepseek.com/v1
+#   · 鉴权        本地不要                   API  要 Authorization: Bearer
+#   · model 名    本地固定 qwen             API  按配置
+#   · 上下文      本地问 /props 拿真实值     API  按配置（服务商的额度）
+#
+# 模式从 config.modelMode 读，面板顶栏能切。
+$script:ModelMode = ([string]$Cfg.modelMode).Trim().ToLower()
+if ($script:ModelMode -notin @('local', 'api')) { $script:ModelMode = 'local' }
+$script:IsApiMode = ($script:ModelMode -eq 'api')
+
+if ($script:IsApiMode) {
+    # 接口模式：地址从 apiBase 读，去掉结尾多余的斜杠
+    $Api = ([string]$Cfg.apiBase).TrimEnd('/').Trim()
+    if (-not $Api) { $Api = 'https://api.deepseek.com/v1' }
+
+    # 密钥单独放 api-key.json，不进仓库、不进 config。
+    # 读不到就报错退出 —— 接口模式没有 key 一定跑不通，早点说清楚比每步报 401 强。
+    $script:ApiKey = ''
+    $keyFile = Join-Path $Root 'api-key.json'
+    try {
+        if (Test-Path $keyFile) {
+            $kj = Get-Content $keyFile -Raw -Encoding UTF8 | ConvertFrom-Json
+            $script:ApiKey = ([string]$kj.apiKey).Trim()
+        }
+    } catch { }
+    if (-not $script:ApiKey) {
+        Write-Host '  [错误] 接口模式需要 API 密钥，但 api-key.json 里是空的。' -ForegroundColor Red
+        Write-Host ('         编辑 ' + $keyFile + '，把 apiKey 填上。') -ForegroundColor Red
+        Write-Host '         或者把 config.json 里的 modelMode 改回 local。' -ForegroundColor Red
+        exit 1
+    }
+    $script:ApiModelName = [string]$Cfg.apiModel
+    if (-not $script:ApiModelName) { $script:ApiModelName = 'deepseek-chat' }
+} else {
+    $Api = "http://$($Cfg.host):$($Cfg.port)"
+    $script:ApiKey = ''
+    $script:ApiModelName = 'qwen'
+}
+
 $Workspace = if ([IO.Path]::IsPathRooted([string]$Cfg.workspace)) { [string]$Cfg.workspace } else { Join-Path $Root ([string]$Cfg.workspace) }
 $LogDir    = Join-Path $AgentDir 'logs'
 $StateFile = if ($env:NAFX_STATE) { $env:NAFX_STATE } else { Join-Path $AgentDir 'state.json' }
@@ -101,20 +143,27 @@ $script:LiveChars     = 0
 # （配置写 5000，实际起 -c 4000 → n_ctx 4096），但 config.json 不会跟着改。
 # agent 照着 5000 算预算，就会以为能塞 4340 token 输入，比实际多出 844 ——
 # 一超就是 400（实测 prompt 4009 ok、4209 直接 400，body 还是空的，很难查）。
-$script:RealCtx = [int]$Cfg.context
-try {
-    $propsResp = Invoke-WebRequest -Uri ($Api + '/props') -UseBasicParsing -TimeoutSec 5
-    $propsObj = $propsResp.Content | ConvertFrom-Json
-    $realCtx = [int]$propsObj.default_generation_settings.n_ctx
-    if ($realCtx -gt 0) {
-        $script:RealCtx = $realCtx
-        if ($realCtx -ne [int]$Cfg.context) {
-            Write-Host ("  上下文按 llama 实际值 " + $realCtx + "（配置里是 " + [int]$Cfg.context + "）") -ForegroundColor DarkYellow
+if ($script:IsApiMode) {
+    # 接口模式的上下文是服务商给的，没法问 —— 直接按配置。
+    # 默认 64000（deepseek-chat 的实际额度），配置里能改。
+    $script:RealCtx = [int]$Cfg.apiContext
+    if ($script:RealCtx -le 0) { $script:RealCtx = 64000 }
+} else {
+    $script:RealCtx = [int]$Cfg.context
+    try {
+        $propsResp = Invoke-WebRequest -Uri ($Api + '/props') -UseBasicParsing -TimeoutSec 5
+        $propsObj = $propsResp.Content | ConvertFrom-Json
+        $realCtx = [int]$propsObj.default_generation_settings.n_ctx
+        if ($realCtx -gt 0) {
+            $script:RealCtx = $realCtx
+            if ($realCtx -ne [int]$Cfg.context) {
+                Write-Host ("  上下文按 llama 实际值 " + $realCtx + "（配置里是 " + [int]$Cfg.context + "）") -ForegroundColor DarkYellow
+            }
         }
+    } catch {
+        # 问不到就用配置值。这种情况一般说明模型还没起来，
+        # 后面每步开头还有 Test-ModelAlive 兜着。
     }
-} catch {
-    # 问不到就用配置值。这种情况一般说明模型还没起来，
-    # 后面每步开头还有 Test-ModelAlive 兜着。
 }
 
 # 日志要定期清理。每次任务生成一个 run_*.txt，跑几十轮训练就是几百个，
@@ -601,29 +650,37 @@ function Get-HistoryTokens {
 # 按优先级从工具集里砍，直到装进预算。think/finish 永远保留。
 function Trim-ToolsToBudget {
     param([string[]]$Names, [int]$Budget)
-    # 优先级：越靠前越该保留
-    # 从后往前砍，所以这里排的是「最不该砍的」。
-    #
-    # 原来保底只有 think/finish/say/rethink —— 全是"会说话"的工具，
-    # 一个"能干活"的都没有。实测砍到 5 个时 write_file / read_file / grep_file
-    # 全没了，模型手里只剩会说话的工具：想写 err.txt 写不了，连试三次 think，
-    # 最后居然去下 https://example.com/big.log。
-    # 「能读能写」是干活的底线，必须和 think/finish 一样受保护。
-    $mustKeep = @('think', 'note', 'finish', 'say', 'rethink',
+
+    # 无论如何都要留的：没它们干不成活
+    $mustKeep = @('think', 'note', 'finish', 'say', 'rethink', 'plan', 'skill',
                   'read_file', 'write_file', 'append_file', 'list_dir')
+
     $list = @($Names)
     $json = Get-ToolsJsonWithFinish -Names $list
     if ((Get-CtxTokens $json) -le $Budget) { return $list }
 
-    # 从后面开始砍，但不砍 mustKeep
-    $k = $list.Count - 1
-    while ($k -ge 0 -and (Get-CtxTokens $json) -gt $Budget) {
-        $nm = [string]$list[$k]
-        if ($mustKeep -notcontains $nm) {
-            $list = @($list | Where-Object { $_ -ne $nm })
-            $json = Get-ToolsJsonWithFinish -Names $list
-        }
-        $k--
+    # ---- 按「谁最能省空间」来砍，不是按位置 ----
+    #
+    # 原来的写法是从列表末尾往前删。列表顺序是 flows.json 里排的，
+    # 跟重要性没关系 —— 实测「查东西」模板里 skill 排第 12 位，
+    # 末尾往前砍第三个就把它砍掉了，等于白加。
+    #
+    # 现在按「去掉它能省多少 token」排序，从最费的开始砍。
+    # 描述写得越详细占得越多，而详尽描述恰恰是次要工具的特征；
+    # 核心工具（read_file 之类）描述短、省不了几个字，自然留到最后。
+    $cand = @()
+    foreach ($nm in $list) {
+        if ($mustKeep -contains $nm) { continue }
+        $sc = $script:ToolSchemaMap[$nm]
+        if (-not $sc) { continue }
+        $cand += [pscustomobject]@{ name = $nm; cost = (Get-CtxTokens ([string]$sc)) }
+    }
+    $cand = @($cand | Sort-Object cost -Descending)
+
+    foreach ($c in $cand) {
+        if ((Get-CtxTokens $json) -le $Budget) { break }
+        $list = @($list | Where-Object { $_ -ne $c.name })
+        $json = Get-ToolsJsonWithFinish -Names $list
     }
     return $list
 }
@@ -950,7 +1007,7 @@ function Invoke-Model {
     if (-not $ToolsJson) { $ToolsJson = $ToolsSchemaRaw }
     $choice = if ($ForceTool) { '"required"' } else { '"auto"' }
 
-    $jsonBody = '{"model":"qwen","messages":[' + ($msgJson -join ',') + ']' +
+    $jsonBody = '{"model":' + (To-JsonStr $script:ApiModelName) + ',"messages":[' + ($msgJson -join ',') + ']' +
                 ',"temperature":' + ([string]$Cfg.temperature) +
                 ',"top_p":' + ([string]$Cfg.topP) +
                 ',"max_tokens":' + $(if ($MaxTokens -gt 0) { $MaxTokens } else { [int]$Cfg.maxTokens }) +
@@ -984,6 +1041,8 @@ function Invoke-Model {
             $req = [System.Net.HttpWebRequest]::Create("$Api/chat/completions")
             $req.Method = 'POST'
             $req.ContentType = 'application/json; charset=utf-8'
+            # 接口模式要带 Bearer 令牌；本地 llama 不需要（留空就是不加）。
+            if ($script:ApiKey) { $req.Headers.Add('Authorization', 'Bearer ' + $script:ApiKey) }
             $req.Timeout = [int]$Cfg.stepTimeoutSeconds * 1000
             $req.ReadWriteTimeout = [int]$Cfg.stepTimeoutSeconds * 1000
             $req.ContentLength = $bytes.Length
@@ -1222,6 +1281,21 @@ function Invoke-Model {
 # 模型服务活着吗？3 秒就能判断出来，不用等 180 秒超时。
 function Test-ModelAlive {
     param([int]$TimeoutSec = 3)
+    # 接口模式没有 /health 这个端点（那是 llama-server 专有的），
+    # 去问一个最轻的接口看通不通。用 /models 而不是真的发一次对话 ——
+    # 探活每步都做，不能花钱。
+    if ($script:IsApiMode) {
+        try {
+            $h = @{ 'Authorization' = 'Bearer ' + $script:ApiKey }
+            $r = Invoke-WebRequest ($Api + '/models') -Headers $h -UseBasicParsing -TimeoutSec $TimeoutSec
+            return ($r.StatusCode -eq 200)
+        } catch {
+            # 401/403 也是「服务活着但 key 不对」，这种情况探活不该判死，
+            # 让真正的请求去报错，用户能看到具体原因。
+            try { $code = [int]$_.Exception.Response.StatusCode; if ($code -in @(401,403)) { return $true } } catch { }
+            return $false
+        }
+    }
     try {
         $r = Invoke-WebRequest "$Api/health" -UseBasicParsing -TimeoutSec $TimeoutSec
         return ($r.StatusCode -eq 200 -and $r.Content -match 'ok')

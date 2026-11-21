@@ -271,9 +271,23 @@ html[data-theme="mo"]{background:#0f1115}
              margin-top .28s cubic-bezier(.32,.72,0,1);
 }
 [data-theme="su"] .side-block.closed > *:not(h3),[data-theme="mo"] .side-block.closed > *:not(h3){
-  max-height:0 !important;opacity:0;margin-top:0 !important;pointer-events:none;
+  /* ⚠ 这里不能加 !important。
+     
+     教训：原来写的是 max-height:0 !important，而 JS 展开时用行内样式
+     设 max-height，行内样式没有 !important，优先级比不过这条 —— 高度永远是 0。
+     用户看到的就是「点一下闪一下又收回去」。
+     
+     现在不带了。收起流程由 JS 驱动：先把高度设成 0px，过渡完再加 closed。
+     这里只管 opacity / pointer-events 这种不影响测量的属性。 */
+  opacity:0; pointer-events:none;
 }
-/* 展开态的高度由 JS 置为实际值；这里给个足够大的上限，
+/* 兜底：JS 完全没跑（比如脚本报错）时，closed 至少要是收起的。
+   用 :not([style]) 排除 JS 已经接管的情况 —— 只要行内写了 max-height，
+   就说明 JS 在控制，别再压它。 */
+[data-theme="su"] .side-block.closed > *:not(h3):not([style*="max-height"]),
+[data-theme="mo"] .side-block.closed > *:not(h3):not([style*="max-height"]){
+  max-height:0;
+}
    免得万一 JS 没跑内容被截断。 */
 [data-theme="su"] .side-block:not(.closed) > *:not(h3),[data-theme="mo"] .side-block:not(.closed) > *:not(h3){
   opacity:1;
@@ -1558,6 +1572,31 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,.tool-chip:focus
   animation:nafx-fade-up .22s ease both;
 }
 
+/* ---------- 模型来源切换胶囊 ----------
+   本地 = 离线、免费、慢（CPU 上 3 tok/s）
+   接口 = 快、按量计费、要 key
+   放顶栏是因为这是「用哪个脑子」的选择，跟主题一样属于全局状态。 */
+.mode-pill{
+  display:inline-flex;align-items:center;gap:5px;
+  height:24px;padding:0 10px;border-radius:12px;
+  border:1px solid var(--line2);background:var(--panel2);
+  color:var(--dim);font-size:11.5px;font-family:inherit;
+  cursor:pointer;white-space:nowrap;
+  transition:background .16s ease,border-color .16s ease,color .16s ease,transform .12s ease;
+}
+.mode-pill:hover{background:var(--panel3);color:var(--fg);border-color:var(--line2)}
+.mode-pill:active{transform:scale(.97)}
+/* 接口模式用强调色描边，一眼能看出「现在在花 API 的钱」 */
+.mode-pill.api{
+  border-color:var(--accent);color:var(--accent);
+  background:rgba(var(--accent-rgb,.0),.10);
+  background:color-mix(in srgb,var(--accent) 12%,transparent);
+}
+.mode-pill.api::before{content:'●';font-size:8px;line-height:1}
+.mode-pill.local::before{content:'◐';font-size:9px;line-height:1;opacity:.7}
+/* 接口模式但没配 key：红一下提醒 */
+.mode-pill.nokey{border-color:var(--err);color:var(--err)}
+
 /* 减少动效偏好：系统设了「减少动画」就别硬动 */
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
@@ -2598,6 +2637,7 @@ header .theme-switch button{white-space:nowrap}
   <div class="brand" id="brandEgg" title="点我"><span class="dot idle" id="dot"></span><span>Nafx</span></div>
   <div class="hbar">
     <span id="hModel">—</span>
+    <button id="btnMode" class="mode-pill" title="点一下换模型来源：本地 llama ↔ DeepSeek 接口">—</button>
     <span id="hIntent">—</span>
     <span id="hSlot">—</span>
     <span id="hQueue">—</span>
@@ -3010,6 +3050,65 @@ function atcTheme(t){
   if (!t) t = document.documentElement.getAttribute('data-theme');
   return t === 'su' || t === 'mo';
 }
+/* ---------- 模型来源切换 ----------
+   local：本地 llama，离线、免费、慢
+   api  ：外部接口（DeepSeek），快、按量计费、要 key
+
+   切完下一次任务生效 —— 正在跑的那个不受影响，
+   不然跑到一半换脑子，历史会被搞乱。 */
+var curModelMode = 'local';
+
+function renderModePill(sys){
+  var b = $('btnMode');
+  if (!b) return;
+  var mode = (sys && sys.modelMode) || 'local';
+  curModelMode = mode;
+  var hasKey = !(sys && sys.apiHasKey === false);
+  var label = (sys && sys.modeLabel) || '';
+  if (mode === 'api'){
+    b.className = 'mode-pill api' + (hasKey ? '' : ' nokey');
+    b.textContent = hasKey ? ('接口 · ' + label) : '接口 · 未配密钥';
+    b.title = hasKey
+      ? ('当前用 ' + label + '（按量计费）。点一下换回本地 llama')
+      : '接口模式还没填 API 密钥。点一下换回本地，或去编辑 api-key.json';
+  } else {
+    b.className = 'mode-pill local';
+    b.textContent = '本地 · ' + (label || 'llama');
+    b.title = '当前用本地 llama（离线、免费、慢）。点一下换成 DeepSeek 接口';
+  }
+}
+
+function toggleModelMode(){
+  var next = (curModelMode === 'api') ? 'local' : 'api';
+  if (next === 'api'){
+    // 切到接口先提醒一句：这是要花钱的
+    var ok = confirm('切换到接口模式？\n\n· 走 DeepSeek 的服务器，不再用本地模型\n· 按 token 计费（DeepSeek 官方价）\n· 需要 api-key.json 里有密钥\n\n正在跑的任务不受影响，下次发任务才生效。');
+    if (!ok) return;
+  }
+  var b = $('btnMode');
+  if (b) { b.disabled = true; b.textContent = '切换中…'; }
+  fetch('/api/config', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ modelMode: next })
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(j){
+    if (b) b.disabled = false;
+    if (j && j.ok){
+      curModelMode = next;
+      toast(next === 'api' ? '已切到接口模式，下次发任务生效' : '已切回本地模式');
+      if (window.__loadSystem) window.__loadSystem();
+    } else {
+      toast('切换失败' + (j && j.msg ? '：' + j.msg : ''), true);
+    }
+  })
+  .catch(function(e){
+    if (b) b.disabled = false;
+    toast('切换失败：' + e.message, true);
+  });
+}
+
 var THEMES = ['light','dark','glass','su','mo'];
 function applyTheme(name){
   if (THEMES.indexOf(name) < 0) name = 'dark';
@@ -3055,39 +3154,54 @@ function saveSideState(m){ try { localStorage.setItem('nafx-side', JSON.stringif
    · 用 requestAnimationFrame 保证浏览器先渲染起始值 */
 function foldBlock(block){
   if (!block) return;
-  var willClose = !block.classList.contains('closed');
+  var wasClosed = block.classList.contains('closed');
   var kids = [];
   for (var i=0;i<block.children.length;i++){
     var c = block.children[i];
     if (c.tagName.toLowerCase() !== 'h3') kids.push(c);
   }
-  if (kids.length === 0){ block.classList.toggle('closed', willClose); return; }
+  if (kids.length === 0){ block.classList.toggle('closed', !wasClosed); return; }
 
-  // 先量出展开态每块的完整高度
-  var heights = kids.map(function(k){
-    k.style.maxHeight = 'none';
-    var h = k.scrollHeight;
-    return h;
-  });
-
-  if (willClose){
-    // 收起：从实际高度过渡到 0
-    kids.forEach(function(k, idx){ k.style.maxHeight = heights[idx] + 'px'; });
-    void block.offsetHeight;   // 强制重排，让起始值生效
-    kids.forEach(function(k){ k.style.maxHeight = '0px'; });
-    block.classList.add('closed');
-    setTimeout(function(){
-      kids.forEach(function(k){ k.style.maxHeight = ''; });
-    }, 300);
-  } else {
-    // 展开：先去掉 closed（此时 max-height:0），再设成实际高度
+  /* 量高度必须在「已经展开」的状态下量。
+     
+     踩过的坑：原来在 folded 状态下量 scrollHeight，那时 CSS 里
+       .closed > *:not(h3){ max-height:0 !important }
+     把元素压成了 0 高，量出来全是 0。于是「展开」把 max-height 设成 0px，
+     再清空回 auto —— 但过程中 opacity 还是 0，看起来就是「点一下闪一下又收回去了」。
+     
+     而且类规则带 !important，行内样式压不过它，所以不能在 closed 状态下硬设高度。 */
+  if (wasClosed){
+    // 先真正展开（去掉 closed），再量
     block.classList.remove('closed');
+    kids.forEach(function(k){ k.style.maxHeight = 'none'; k.style.transition = 'none'; });
+  } else {
+    kids.forEach(function(k){ k.style.maxHeight = 'none'; k.style.transition = 'none'; });
+  }
+  void block.offsetHeight;   // 让上面的 none 生效，量到的才是完整高度
+
+  var heights = kids.map(function(k){ return k.scrollHeight; });
+
+  // 把 transition 装回来，之后的变化才有动画
+  kids.forEach(function(k){ k.style.transition = ''; });
+
+  if (wasClosed){
+    // 展开：从 0 动画到实际高度
     kids.forEach(function(k){ k.style.maxHeight = '0px'; });
     void block.offsetHeight;
     kids.forEach(function(k, idx){ k.style.maxHeight = heights[idx] + 'px'; });
     setTimeout(function(){
+      // 过渡完清掉，让内容以后能自由变高（工具列表刷新会变长）
       kids.forEach(function(k){ k.style.maxHeight = ''; });
     }, 300);
+  } else {
+    // 收起：从实际高度动画到 0，结束了再加 closed
+    kids.forEach(function(k, idx){ k.style.maxHeight = heights[idx] + 'px'; });
+    void block.offsetHeight;
+    kids.forEach(function(k){ k.style.maxHeight = '0px'; });
+    setTimeout(function(){
+      block.classList.add('closed');
+      kids.forEach(function(k){ k.style.maxHeight = ''; });
+    }, 290);   // 略小于过渡时长，避免闪一下 auto
   }
 }
 
@@ -4486,6 +4600,7 @@ function bindMsgOps(){
 
 /* ---------- 配置信息 ---------- */
 function renderSystem(sys, st){
+  if (sys) renderModePill(sys);
   if (!sys) return;
   if (!st) { st = window.curState || null; }
   $('cModel').textContent = sys.model || '—';
@@ -5138,6 +5253,8 @@ function renderModelDrawer(){
 
 $('mask').onclick = closeDrawers;
 document.onkeydown = function(e){ if (e && e.key === 'Escape') closeDrawers(); };
+
+if ($('btnMode')) $('btnMode').onclick = toggleModelMode;
 
 $('btnModel').onclick = toggleModelDrawer;
 

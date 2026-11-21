@@ -162,6 +162,7 @@
                                     "http_request",
                                     "pdf_read",
                                     "notify",
+                                    "skill",
                                     "note",
                                     "finish"
                                 ],
@@ -246,6 +247,7 @@
                                     "delete_path",
                                     "list_dir",
                                     "notify",
+                                    "skill",
                                     "note",
                                     "finish"
                                 ],
@@ -311,6 +313,7 @@
                                     "diff_files",
                                     "write_file",
                                     "notify",
+                                    "skill",
                                     "note",
                                     "finish"
                                 ],
@@ -387,6 +390,7 @@
                                     "http_request",
                                     "pdf_read",
                                     "notify",
+                                    "skill",
                                     "note",
                                     "finish"
                                 ],
@@ -454,6 +458,7 @@
                                     "http_request",
                                     "pdf_read",
                                     "notify",
+                                    "skill",
                                     "note",
                                     "finish"
                                 ],
@@ -531,6 +536,7 @@
                                     "run_ps1",
                                     "make_dir",
                                     "notify",
+                                    "skill",
                                     "note",
                                     "finish"
                                 ],
@@ -762,6 +768,7 @@
                                     "help",
                                     "win_doc",
                                     "notify",
+                                    "skill",
                                     "note",
                                     "finish"
                                 ],
@@ -784,6 +791,7 @@
                                     "write_file",
                                     "make_dir",
                                     "notify",
+                                    "skill",
                                     "note",
                                     "finish"
                                 ],

@@ -43,7 +43,7 @@
     "_内存说明":  "KV缓存量化：把注意力缓存从 fp16 压到 8bit/4bit，同样内存能装 2-4 倍的上下文。kvCacheTypeK/V 可选 f16(不压)/q8_0/q4_0，内存紧就用 q4_0。flashAttn 量化时建议开。改完重启生效。",
     "warmupOnStart":  true,
     "_warmupOnStart说明":  "启动后在后台预热提示词（约 60 秒 CPU），第一个任务能快一倍多。不想让开机后占 CPU 就改 false，第一个任务会慢回去。",
-    "context":  5120,
+    "context":  4000,
     "threads":  7,
     "maxTokens":  600,
     "maxSteps":  25,
@@ -52,5 +52,13 @@
     "llamaMode":  "cpu",
     "_llamaMode说明":  "llama 的编译方式：cpu 用 llama 文件夹，gpu 用 llama-gpu 文件夹。在面板「设置 → 模型编译方式」里先初始化检测再切换，改完重启服务生效。",
     "llamaCpuDir":  "llama",
-    "llamaGpuDir":  "llama-gpu"
+    "llamaGpuDir":  "llama-gpu",
+    "_modelMode说明":  "模型来源。local=本地 llama（离线、免费、慢）；api=接口（快、要 key、按量计费）。面板顶栏可切。",
+    "apiBase":  "https://api.deepseek.com/v1",
+    "_apiBase说明":  "API 根地址。DeepSeek 是 https://api.deepseek.com/v1；换别家改这里。",
+    "apiModel":  "deepseek-chat",
+    "_apiModel说明":  "API 模式下用的模型名，例如 deepseek-chat / deepseek-reasoner。",
+    "apiContext":  64000,
+    "_apiContext说明":  "API 模式的上下文上限（token）。deepseek-chat 是 64K，别写超过服务商的。",
+    "modelMode":  "local"
 }
