@@ -288,9 +288,16 @@ html[data-theme="mo"]{background:#0f1115}
 [data-theme="mo"] .side-block.closed > *:not(h3):not([style*="max-height"]){
   max-height:0;
 }
-   免得万一 JS 没跑内容被截断。 */
-[data-theme="su"] .side-block:not(.closed) > *:not(h3),[data-theme="mo"] .side-block:not(.closed) > *:not(h3){
+[data-theme="su"] .side-block:not(.closed) > *:not(h3):not([style*="max-height"]),
+[data-theme="mo"] .side-block:not(.closed) > *:not(h3):not([style*="max-height"]){
   opacity:1;
+  /* 展开态彻底不设上限。
+     
+     这条是保险：万一 JS 量高度算错、或者过渡结束没清干净，
+     只要不是 .closed，内容就一定完整显示 —— 宁可没有动画，
+     也不能让用户点开看到一片空白。
+     JS 在动画期间会用行内样式临时压住，动画结束清掉就回到这里。 */
+  max-height:none;
 }
 [data-theme="su"] .side-block > .quote,[data-theme="mo"] .side-block > .quote{display:none}
 [data-theme="su"] .side-actions,[data-theme="mo"] .side-actions{display:flex;flex-direction:column;gap:4px;
@@ -2641,6 +2648,17 @@ header .theme-switch button{white-space:nowrap}
   box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 13%,transparent);
 }
 
+/* ⑥ 上下文百分比：从「一串小字」改成标签，颜色仍由 JS 按档位给 */
+#ctxTag{
+  font-size:10.5px;font-weight:600;letter-spacing:.04em;
+  padding:1px 7px;border-radius:99px;
+  border:1px solid currentColor;background:transparent;
+  transition:color .2s,border-color .2s;
+}
+/* 已用数字提亮一档，右边上限保持灰，一眼能分清「用了多少 / 总共多少」 */
+.ctx-total-head b{color:var(--fg)}
+.ctx-total-head .ctx-lim{color:var(--dim);font-weight:500}
+
 /* ⑤ 任务卡悬停反馈（素/墨是透明平铺，不加深色阴影） */
 .live-box{transition:border-color .18s ease,box-shadow .18s ease}
 .live-box:hover{border-color:var(--line2);box-shadow:0 6px 20px rgba(0,0,0,.12)}
@@ -3216,46 +3234,41 @@ function foldBlock(block){
   }
   if (kids.length === 0){ block.classList.toggle('closed', !wasClosed); return; }
 
-  /* 量高度必须在「已经展开」的状态下量。
-     
-     踩过的坑：原来在 folded 状态下量 scrollHeight，那时 CSS 里
-       .closed > *:not(h3){ max-height:0 !important }
-     把元素压成了 0 高，量出来全是 0。于是「展开」把 max-height 设成 0px，
-     再清空回 auto —— 但过程中 opacity 还是 0，看起来就是「点一下闪一下又收回去了」。
-     
-     而且类规则带 !important，行内样式压不过它，所以不能在 closed 状态下硬设高度。 */
+  kids.forEach(function(k){ k.style.transition = 'none'; k.style.maxHeight = 'none'; });
+
   if (wasClosed){
-    // 先真正展开（去掉 closed），再量
     block.classList.remove('closed');
-    kids.forEach(function(k){ k.style.maxHeight = 'none'; k.style.transition = 'none'; });
-  } else {
-    kids.forEach(function(k){ k.style.maxHeight = 'none'; k.style.transition = 'none'; });
   }
-  void block.offsetHeight;   // 让上面的 none 生效，量到的才是完整高度
 
-  var heights = kids.map(function(k){ return k.scrollHeight; });
+  /* 量高度。
+    
+    这里必须读 offsetHeight 强制布局，不能只靠 scrollHeight ——
+    overflow:hidden 且还没布局过的元素，scrollHeight 有时给 0。
+    量完不低于 24px 兜底：万一真的量出 0（比如内容还没渲染），
+    给个最小值也比把内容压成 0 强（那会让整块变空白）。 */
+  var heights = kids.map(function(k){
+    var h = k.scrollHeight || k.offsetHeight || 0;
+    if (h < 24) h = 24;
+    return h;
+  });
 
-  // 把 transition 装回来，之后的变化才有动画
   kids.forEach(function(k){ k.style.transition = ''; });
 
   if (wasClosed){
-    // 展开：从 0 动画到实际高度
     kids.forEach(function(k){ k.style.maxHeight = '0px'; });
     void block.offsetHeight;
     kids.forEach(function(k, idx){ k.style.maxHeight = heights[idx] + 'px'; });
     setTimeout(function(){
-      // 过渡完清掉，让内容以后能自由变高（工具列表刷新会变长）
       kids.forEach(function(k){ k.style.maxHeight = ''; });
     }, 300);
   } else {
-    // 收起：从实际高度动画到 0，结束了再加 closed
     kids.forEach(function(k, idx){ k.style.maxHeight = heights[idx] + 'px'; });
     void block.offsetHeight;
     kids.forEach(function(k){ k.style.maxHeight = '0px'; });
     setTimeout(function(){
+      kids.forEach(function(k){ k.style.maxHeight = '' ; });
       block.classList.add('closed');
-      kids.forEach(function(k){ k.style.maxHeight = ''; });
-    }, 290);   // 略小于过渡时长，避免闪一下 auto
+    }, 290);
   }
 }
 
@@ -4722,12 +4735,12 @@ function renderSystem(sys, st){
   $('gFree').textContent = hasReal ? (fmtNum(free) + ' tok') : '等任务开始后算';
   $('gbFree').style.width = hasReal ? (Math.min(100, free/per*100) + '%') : '0%';
 
-  // 总条
+  // 总条：分子亮、分母灰，扫一眼知道用了多少
   var cu = $('ctxUsed');
   if (cu){
-    cu.textContent = hasReal
-      ? (fmtNum(used) + ' / ' + fmtNum(per) + ' tok')
-      : ('— / ' + fmtNum(per) + ' tok');
+    cu.innerHTML = hasReal
+      ? ('<b>' + fmtNum(used) + '</b><span class="ctx-lim"> / ' + fmtNum(per) + ' tok</span>')
+      : ('<b>—</b><span class="ctx-lim"> / ' + fmtNum(per) + ' tok</span>');
   }
   var sp = $('segPrompt');
   if (sp) sp.style.width = Math.min(100, pt/per*100) + '%';
