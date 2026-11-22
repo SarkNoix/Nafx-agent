@@ -3595,8 +3595,12 @@ var TOOL_GROUPS = [
 /* 工具全量，从后端拉 */
 var ALL_TOOLS = [];
 var toolSig = '';
+var lastToolsFetch = 0;
 
 function loadTools(){
+  // 工具列表 44KB，运行中每 2.8 秒拉一次太浪费；工具集几十分钟才变一次，60 秒够了
+  if (Date.now() - lastToolsFetch < 60000) return;
+  lastToolsFetch = Date.now();
   fetch('/api/tools?t=' + Date.now())
     .then(function(r){ return r.ok ? r.json() : null; })
     .then(function(list){
@@ -3607,7 +3611,7 @@ function loadTools(){
       ALL_TOOLS = list;
       renderTools();
     })
-    .catch(function(){});
+    .catch(function(){ lastToolsFetch = 0; });
 }
 
 function renderTools(){
@@ -4956,7 +4960,6 @@ function tick(){
         if (!drawerOn && !dshNow) { showStreamPanel(); } else { hideStreamPanel(); }
       }
       else { hideStreamPanel(); }
-      if (mdo && drawerOn) { renderModelDrawer(); }
       // 模型抽屉开着的话，跟着刷新（原始输出 + 翻译）
       var md = $('modelDrawer');
       if (md && md.className.indexOf('on') >= 0) { renderModelDrawer(); }
@@ -5000,7 +5003,8 @@ function tick(){
         else { hideStreamSoon(); }
       }
       if (pollTimer) clearTimeout(pollTimer);
-pollTimer = setTimeout(tick, busy ? 350 : 1600);
+      // 标签页在后台时不再轮询，回来时立刻补一次；避免后台一直发请求
+      pollTimer = document.hidden ? null : setTimeout(tick, busy ? 350 : 1600);
       send.disabled = false;
 
       // 这里原来有个「僵死检测」：9 秒没变化就 lastSig='' + 立即重轮询。
@@ -5029,10 +5033,17 @@ pollTimer = setTimeout(tick, busy ? 350 : 1600);
       if (failStreak <= 3) { try { console.warn('tick 失败', e); } catch(_){} }
       var wait = Math.min(5000, 400 * failStreak);
       if (pollTimer) clearTimeout(pollTimer);
-      pollTimer = setTimeout(tick, wait);
+      pollTimer = document.hidden ? null : setTimeout(tick, wait);
       send.disabled = false;
     });
 }
+
+/* ---------- 后台暂停 ----------
+   标签页切到后台时停掉轮询（上面的 tick 不会再挂下一轮），
+   切回来立刻补一次，状态不会停在旧帧。 */
+document.addEventListener('visibilitychange', function(){
+  if (!document.hidden && !pollTimer) { tick(); }
+});
 
 /* ---------- 模式选择 ----------
    normal 常规：日常问答和简单任务，直接给结果
@@ -6063,7 +6074,7 @@ bindModelWarn();
 loadFiles();
 tick();
 // 自主模式状态单独刷：它几秒才变一次，不用挤进主轮询
-setInterval(refreshAutopilot, 4000);
+setInterval(function(){ if (!document.hidden) refreshAutopilot(); }, 4000);
 </script>
 </body>
 </html>

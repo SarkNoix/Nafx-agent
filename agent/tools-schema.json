@@ -1454,7 +1454,7 @@
           },
           "limit": {
             "type": "integer",
-            "description": "列表最多几条，默认 20"
+            "description": "列表最多几条，默认 12"
           }
         },
         "required": []

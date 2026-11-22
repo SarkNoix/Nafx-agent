@@ -337,7 +337,7 @@ function Invoke-NetCapture($Action) {
         [void]$sb.AppendLine('也可以先用 net_ports 确认服务在跑，再用 net_proxy 在 HTTP 层看请求。')
     } else {
         [void]$sb.AppendLine('出现最多的流：')
-        $top = $flows.GetEnumerator() | Sort-Object Value -Descending | Select-Object -First 8
+        $top = $flows.GetEnumerator() | Sort-Object Value -Descending | Select-Object -First 6
         foreach ($x in $top) { [void]$sb.AppendLine(('  {0,-58} ×{1}' -f $x.Key, $x.Value)) }
     }
     if (Test-Path -LiteralPath $pcap) {
@@ -817,10 +817,10 @@ function Invoke-NetPackets($Action) {
     if ($portRaw.Trim()) { try { $port = [int]$portRaw } catch { } }
     $protoWanted = ([string]$Action.proto).Trim().ToLowerInvariant()
     $contains = ([string]$Action.contains).Trim()
-    $limit = 20
+    $limit = 12
     $limitRaw = [string]$Action.limit
     if ($limitRaw.Trim()) { try { $limit = [int]$limitRaw } catch { } }
-    $limit = [Math]::Max(1, [Math]::Min(60, $limit))
+    $limit = [Math]::Max(1, [Math]::Min(40, $limit))
 
     $shown = 0; $matched = 0
     $sb = New-Object System.Text.StringBuilder

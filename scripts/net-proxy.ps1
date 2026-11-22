@@ -55,8 +55,18 @@ while ($true) {
     $h = $ps.BeginInvoke()
     $handlers += @{ ps = $ps; h = $h }
 
-    if ($handlers.Count -gt 40) {
-        $handlers = @($handlers | Where-Object { $_.h.IsCompleted -eq $false })
+    if ($handlers.Count -gt 20) {
+        # 已完成的连接必须 EndInvoke + Dispose，否则 PowerShell 对象和管道会一直堆着
+        $alive = @()
+        foreach ($item in $handlers) {
+            if ($item.h.IsCompleted) {
+                try { [void]$item.ps.EndInvoke($item.h) } catch { }
+                try { $item.ps.Dispose() } catch { }
+            } else {
+                $alive += $item
+            }
+        }
+        $handlers = $alive
     }
 }
 

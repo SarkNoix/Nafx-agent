@@ -1143,7 +1143,7 @@ function Invoke-Model {
             if ($reader) { try { $reader.Close() } catch { } }
             if ($resp) { try { $resp.Close() } catch { } }
             if ($attempt -ge 2) { throw }
-            Write-Log ("  模型响应超时，重试一次：" + $errMsg)
+            Write-Log ("  模型请求失败，重试一次：" + $errMsg)
             Start-Sleep -Seconds 2
             $acc = ''
             $dtCalls = @{}
@@ -1746,7 +1746,7 @@ $capLine
 2. net_packets(index=N) —— 要看别的包再用；抓包结果里已经给了第一条请求/响应。
 3. net_rewrite(index=N, setHeaders="X-Token: 值") —— 值从响应体的 hint 里读，别猜；改完重发，返回 200/403 就是结果。
 "@
-    Write-Log '  已注入网络调试四步速查'
+    Write-Log '  已注入网络调试速查'
 }
 
 # 套流程模板：这个任务的硬约束
@@ -2168,7 +2168,8 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
     #
     # 所以：启动时问一次 /props 拿真实 n_ctx，问不到才退回配置值。
     # 这台机器上这一步很快（10ms 左右），而且整个任务只做一次。
-    $ctxLimit = [int]$script:RealCtx - $mt0 - 60
+    # 留 180 余量：字符估 token 会偏低，实测按 60 估还能超出 116 tok 被 llama 回 400
+    $ctxLimit = [int]$script:RealCtx - $mt0 - 180
     $histTok = Get-HistoryTokens -History $history
     $toolsTokNow = Get-CtxTokens $toolsJson
 
