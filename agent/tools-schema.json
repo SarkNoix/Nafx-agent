@@ -1270,49 +1270,54 @@
       "name": "net_capture",
       "parameters": {
         "properties": {
+          "program": {
+            "description": "抓某个程序：进程名或 PID，如 chrome.exe / 1234；按它当前 TCP/UDP 端口过滤。程序要先有连接/监听。",
+            "type": "string"
+          },
+          "pid": {
+            "description": "程序 PID（和 program 二选一）",
+            "type": "integer"
+          },
           "url": {
-            "type": "string",
-            "description": "抓自己的请求给这个 URL，如 http://127.0.0.1:9100/api/secure"
+            "description": "抓自己的请求给这个 URL，如 http://127.0.0.1:9100/api/secure",
+            "type": "string"
           },
           "method": {
-            "type": "string",
-            "description": "配合 url，默认 GET"
+            "description": "配合 url，默认 GET",
+            "type": "string"
           },
           "headers": {
-            "type": "string",
-            "description": "配合 url，如 X-Token: abc"
+            "description": "配合 url，如 X-Token: abc",
+            "type": "string"
           },
           "port": {
-            "type": "integer",
-            "description": "只抓这个端口"
+            "description": "只抓这个端口",
+            "type": "integer"
           },
           "seconds": {
-            "type": "integer",
-            "description": "抓几秒，默认 5"
+            "description": "抓几秒，默认 5",
+            "type": "integer"
           },
           "pktSize": {
-            "type": "integer",
-            "description": "每包字节，默认 512"
+            "description": "每包字节，默认 512",
+            "type": "integer"
           },
           "ip": {
-            "type": "string",
-            "description": "只抓这个 IP"
+            "description": "只抓这个 IP",
+            "type": "string"
           },
           "proto": {
-            "type": "string",
-            "description": "tcp/udp/icmp"
+            "description": "tcp/udp/icmp",
+            "type": "string"
           },
           "file": {
-            "type": "string",
-            "description": "输出文件名"
+            "description": "输出文件名",
+            "type": "string"
           }
         },
-        "type": "object",
-        "required": [
-          "url"
-        ]
+        "type": "object"
       },
-      "description": "抓包（pktmon，需管理员）。抓自己的请求给 url，会替你发一次并按该 URL 的端口过滤；只抓端口给 port。例：net_capture(url=\"http://127.0.0.1:9100/api/secure\")。"
+      "description": "抓包（pktmon，需管理员）。抓程序给 program（进程名或 PID，按它当前端口过滤）；抓自己的请求给 url；只抓端口给 port。例：net_capture(program=\"chrome.exe\", seconds=8)。"
     },
     "type": "function"
   },

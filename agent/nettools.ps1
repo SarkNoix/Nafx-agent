@@ -197,9 +197,50 @@ function Invoke-NetCapture($Action) {
         }
     }
 
-    # 没 url 也没端口/IP：抓到的只会是一屏背景流量，直接提示怎么用，别浪费上下文
-    if (-not $triggerUrl -and $port -le 0 -and -not $ip) {
-        return "没给抓包范围，这次没抓。要抓自己的请求：net_capture(url=`"http://127.0.0.1:9100/api/secure`")；只抓某个端口：net_capture(port=9100)。"
+    # 抓某个程序：用它的 TCP/UDP 端口做过滤（pktmon 本身不支持按 PID 过滤）
+    $procSpec = ([string]$Action.program).Trim()
+    $pidWant = 0
+    try { if ([string]$Action.pid -and [int]$Action.pid -gt 0) { $pidWant = [int]$Action.pid } } catch { }
+    $procs = @()
+    if ($pidWant -gt 0) {
+        $procs = @(Get-Process -Id $pidWant -ErrorAction SilentlyContinue)
+    } elseif ($procSpec) {
+        $nm = $procSpec -replace '(?i)\.exe$', ''
+        if ($nm -match '^\d+$') {
+            $procs = @(Get-Process -Id ([int]$nm) -ErrorAction SilentlyContinue)
+        } else {
+            $procs = @(Get-Process -Name $nm -ErrorAction SilentlyContinue)
+        }
+        if ($procs.Count -eq 0 -and (Test-Path -LiteralPath $procSpec)) {
+            $procs = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $procSpec })
+        }
+    }
+    $procPorts = @()
+    if ($procs.Count -gt 0) {
+        $pids = @($procs | ForEach-Object { [int]$_.Id })
+        $procPorts += @(Get-NetTCPConnection -ErrorAction SilentlyContinue |
+                        Where-Object { $pids -contains [int]$_.OwningProcess } |
+                        ForEach-Object { [int]$_.LocalPort })
+        $procPorts += @(Get-NetUDPEndpoint -ErrorAction SilentlyContinue |
+                        Where-Object { $pids -contains [int]$_.OwningProcess } |
+                        ForEach-Object { [int]$_.LocalPort })
+        $procPorts = @($procPorts | Where-Object { $_ -gt 0 } | Sort-Object -Unique)
+    }
+    $procLabel = ''
+    if ($procSpec -or $pidWant -gt 0) {
+        if ($procs.Count -eq 0) {
+            return "没找到程序「$procSpec」。给进程名（如 chrome.exe）或 PID；先确认它开着。"
+        }
+        $names = @($procs | ForEach-Object { $_.ProcessName } | Sort-Object -Unique)
+        $procLabel = ($names -join ',') + '（PID ' + (($procs | ForEach-Object { $_.Id }) -join ',') + '）'
+        if ($procPorts.Count -eq 0) {
+            return "程序 $procLabel 现在没有 TCP/UDP 连接或监听，抓不到它的包。先让它发一次请求/产生流量，再抓；也可以直接用 net_capture(port=端口)。"
+        }
+    }
+
+    # 没 url 也没端口/IP/程序：抓到的只会是一屏背景流量，直接提示怎么用，别浪费上下文
+    if (-not $triggerUrl -and $port -le 0 -and -not $ip -and -not $procLabel) {
+        return "没给抓包范围，这次没抓。抓某个程序：net_capture(program=`"进程名或PID`")；抓自己的请求：net_capture(url=`"http://127.0.0.1:9100/api/secure`")；只抓端口：net_capture(port=9100)。"
     }
 
     # url 里自带端口：没显式给 port 时用它做过滤，避免抓到一屏无关流量
@@ -215,13 +256,22 @@ function Invoke-NetCapture($Action) {
     $etl = Resolve-NetOutPath $Action.file ('cap_' + $stamp + '.etl')
     if ($etl -match '\.pcapng$') { $etl = [IO.Path]::ChangeExtension($etl, '.etl') }
 
-    # 一个过滤器里把 port/ip/proto 一起给，pktmon 才会按「与」匹配；分多条 add 是「或」，会连背景流量一起抓
+    # 一个过滤器里把 port/ip/proto 一起给，pktmon 才会按「与」匹配；分多条 add 是「或」
     & $pkt filter remove 2>&1 | Out-Null
-    $fargs = @('filter', 'add')
-    if ($port -gt 0) { $fargs += @('-p', [string]$port) }
-    if ($ip) { $fargs += @('-i', $ip) }
-    if ($proto -in @('tcp','udp','icmp')) { $fargs += @('-t', $proto) }
-    if ($fargs.Count -gt 2) { & $pkt @fargs 2>&1 | Out-Null }
+    if ($procLabel) {
+        # 同一个程序的多个端口用多条 filter（这里是「或」），只覆盖它自己的端口
+        foreach ($pp in ($procPorts | Select-Object -First 16)) {
+            $pf = @('filter', 'add', '-p', [string]$pp)
+            if ($proto -in @('tcp','udp','icmp')) { $pf += @('-t', $proto) }
+            & $pkt @pf 2>&1 | Out-Null
+        }
+    } else {
+        $fargs = @('filter', 'add')
+        if ($port -gt 0) { $fargs += @('-p', [string]$port) }
+        if ($ip) { $fargs += @('-i', $ip) }
+        if ($proto -in @('tcp','udp','icmp')) { $fargs += @('-t', $proto) }
+        if ($fargs.Count -gt 2) { & $pkt @fargs 2>&1 | Out-Null }
+    }
 
     $startOut = & $pkt start --capture --pkt-size $pktSize --file-name $etl 2>&1
     if ($LASTEXITCODE -ne 0) {
@@ -270,12 +320,17 @@ function Invoke-NetCapture($Action) {
 
     $sb = New-Object System.Text.StringBuilder
     [void]$sb.AppendLine("抓包完成：$seconds 秒，抓到 $ipCount 个 IP 包（HTTP 事件 $httpCount 条）。")
+    if ($procLabel) {
+        [void]$sb.AppendLine("抓包对象：程序 $procLabel，端口 " + (($procPorts | Select-Object -First 16) -join ',') + "（按这些端口过滤）")
+    }
     if ($triggerUrl) {
         [void]$sb.AppendLine("抓包期间发了：$triggerMethod $triggerUrl → $triggerStatus（这条请求/响应就在包里）")
     }
     if ($ipCount -eq 0) {
         if ($triggerUrl) {
             [void]$sb.AppendLine('请求发出去了但没抓到包：检查 port 是否写成了这条请求的端口；或者当前不是管理员。')
+        } elseif ($procLabel) {
+            [void]$sb.AppendLine('程序这 ' + $seconds + ' 秒没发包。抓包只「看」流量，先让它动起来（发请求/刷新）再抓，或把 seconds 调大。')
         } else {
             [void]$sb.AppendLine('一个包都没抓到。抓包只「看」流量，不会自己产生流量；要抓自己的请求，加上 url="http://127.0.0.1:端口/路径" 一起抓。')
         }
@@ -287,9 +342,9 @@ function Invoke-NetCapture($Action) {
     }
     if (Test-Path -LiteralPath $pcap) {
         [void]$sb.AppendLine("pcapng：$pcap（可直接拖进 Wireshark）")
-        # 抓到自己请求时，顺手把请求首行和响应体贴出来：模型不用再调 net_packets 就能看到差什么
+        # 抓到自己请求/指定程序时，顺手把请求首行和响应体贴出来：模型不用再调 net_packets 就能看到差什么
         $reqs = @()
-        if ($triggerUrl) {
+        if ($triggerUrl -or $procLabel) {
             try {
                 $pk = @(Read-NetPcapngPackets $pcap)
                 $resps = @()
@@ -303,6 +358,8 @@ function Invoke-NetCapture($Action) {
                     [void]$sb.AppendLine("包里的请求：#" + $reqs[0].index + " " + $reqs[0].firstLine)
                 }
                 if ($resps.Count -gt 0) {
+                    $st = ([string]$resps[0].firstLine).Trim()
+                    if ($st) { [void]$sb.AppendLine('响应状态：' + $st) }
                     $body = ''
                     $rp = $resps[0].payload -replace "`r`n", "`n"
                     if ($rp -match "`n`n") { $body = ($rp -split "`n`n", 2)[1] }
@@ -320,7 +377,7 @@ function Invoke-NetCapture($Action) {
     }
     if ($ipCount -gt 0) {
         $leaf = Split-Path -Leaf $pcap
-        if ($triggerUrl -and $reqs.Count -gt 0) {
+        if (($triggerUrl -or $procLabel) -and $reqs.Count -gt 0) {
             # 抓到自己请求时，细节已经在上面给过了，不再提示多余的步骤
         } else {
             [void]$sb.AppendLine('看具体包：net_packets(file="' + $leaf + '")；看第 N 个加 index=N，改请求再发用 net_rewrite(index=N)。')

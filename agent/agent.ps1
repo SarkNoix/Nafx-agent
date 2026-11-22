@@ -1714,7 +1714,9 @@ try {
 
 # 按任务挑 project.md 的相关段落（不再是全量 1826 token）
 $sysFull = $SystemPrompt
-$projPick = Get-ProjectPromptFor -Task $TaskText
+# 网络调试任务用不到项目背景，加载了只会挤占 5120 上下文
+$isNetTask = $TaskText -match '抓包|数据包|端口|改包|重写|重放|发包|代理|pcap|401|抓.{0,8}请求|请求.*改|net_'
+$projPick = if ($isNetTask) { '' } else { Get-ProjectPromptFor -Task $TaskText }
 if ($projPick) {
     $sysFull = $SystemPrompt + "`n`n" + $projPick
     Write-Log ("  已加载 project.md 相关段（" + $projPick.Length + " 字符，全量是 2684）")
@@ -1729,18 +1731,20 @@ if ($TaskText -match '抓包|数据包|端口|改包|重写|重放|发包|代理
     if ($TaskText -match '(\d{2,5})\s*的\s*(/[A-Za-z0-9_\-./]*)') { $netPort = $matches[1]; $netPath = $matches[2] }
     elseif ($TaskText -match '127\.0\.0\.1:(\d{2,5})') { $netPort = $matches[1] }
     if (-not $netPath) { $netPath = '/' }
-    if ($netPort) {
-        $capLine = '2. net_capture(url="http://127.0.0.1:' + $netPort + $netPath + '") —— 直接抄这一行，别只给 seconds；它会替你发这条请求，并自动只抓 ' + $netPort + ' 端口。'
+    $isProcTask = $TaskText -match '程序|进程|进程名|\bexe\b|PID'
+    if ($isProcTask) {
+        $capLine = '1. net_capture(program="进程名或PID", seconds=8) —— 抓某个程序就抄这行；按它当前 TCP/UDP 端口过滤，程序要先动起来（有连接/监听）。'
+    } elseif ($netPort) {
+        $capLine = '1. net_capture(url="http://127.0.0.1:' + $netPort + $netPath + '") —— 直接抄这一行，别只给 seconds；它会替你发这条请求，并自动只抓 ' + $netPort + ' 端口。'
     } else {
-        $capLine = '2. net_capture(url="http://127.0.0.1:端口/路径") —— 抓自己的请求必须给 url，别只给 seconds。'
+        $capLine = '1. net_capture(url="http://127.0.0.1:端口/路径") —— 抓自己的请求必须给 url，别只给 seconds。'
     }
     $sysFull = $sysFull + @"
 
 ## 网络调试工具（照着走）
-1. net_ports(port=端口) —— 先确认服务在跑、端口被谁占。
 $capLine
-3. net_packets() 看包列表；net_packets(index=N) 看这个请求的头和 body。
-4. net_rewrite(index=N, setHeaders="X-Token: 值") —— 值从 401 响应体的 hint 里读，别猜；改完重发，返回 200/403 就是结果。
+2. net_packets(index=N) —— 要看别的包再用；抓包结果里已经给了第一条请求/响应。
+3. net_rewrite(index=N, setHeaders="X-Token: 值") —— 值从响应体的 hint 里读，别猜；改完重发，返回 200/403 就是结果。
 "@
     Write-Log '  已注入网络调试四步速查'
 }
@@ -1822,7 +1826,7 @@ try {
             # 网络调试任务：模板给的无关工具太多（19 个），4B 模型上下文扛不住。
             # 只留「看包 / 改包 / 抓包 / 查端口」这条链上的工具。
             if ($TaskText -match '抓包|数据包|端口|改包|重写|重放|发包|代理|pcap|401|抓.{0,8}请求|请求.*改|net_(packets|rewrite)') {
-                $netCore = @('net_ports', 'net_packets', 'net_rewrite', 'net_capture', 'net_http', 'say', 'finish')
+                $netCore = @('net_capture', 'net_packets', 'net_rewrite', 'say', 'finish')
                 $flowTools = @($netCore | Where-Object { $_ -in @('say', 'finish') -or $script:ToolSchemaMap.ContainsKey($_) })
                 Write-Log ("  网络调试任务，工具收到 " + $flowTools.Count + " 个：" + ($flowTools -join ','))
                 $script:ActiveFlowToolCount = $flowTools.Count
@@ -1853,7 +1857,7 @@ try {
             Write-Log ("  按任务关键词补了工具：" + ($extraTools -join ','))
         }
         if ($TaskText -match '抓包|数据包|端口|改包|重写|重放|发包|代理|pcap|401|抓.{0,8}请求|请求.*改|net_(packets|rewrite)') {
-            $netCore = @('net_ports', 'net_packets', 'net_rewrite', 'net_capture', 'net_http', 'say', 'finish')
+            $netCore = @('net_capture', 'net_packets', 'net_rewrite', 'say', 'finish')
             $defaultTools = @($netCore | Where-Object { $_ -in @('say', 'finish') -or $script:ToolSchemaMap.ContainsKey($_) })
             Write-Log ("  网络调试任务，工具收到 " + @($defaultTools).Count + " 个：" + (@($defaultTools) -join ','))
         }
@@ -2678,8 +2682,10 @@ Add-SessionNote -Text $bcSay -Kind 'say'
     # net_capture 只给 seconds 时，从任务里补 url —— 4B 模型反复漏这个参数，工具没法自己猜目标
     if ($toolName -eq 'net_capture') {
         $uNow = ([string]$act.url).Trim()
+        $procNow = ([string]$act.program).Trim()
+        $pidNow = 0; [void][int]::TryParse(([string]$act.pid), [ref]$pidNow)
         $pNum = 0; [void][int]::TryParse(([string]$act.port), [ref]$pNum)
-        if (-not $uNow -and $pNum -le 0) {
+        if (-not $uNow -and -not $procNow -and $pidNow -le 0 -and $pNum -le 0 -and ($TaskText -notmatch '程序|进程|进程名|\bexe\b|PID')) {
             $gPort = ''; $gPath = ''
             if ($TaskText -match '(\d{2,5})\s*的\s*(/[A-Za-z0-9_\-./]*)') { $gPort = $matches[1]; $gPath = $matches[2] }
             elseif ($TaskText -match '127\.0\.0\.1:(\d{2,5})') { $gPort = $matches[1] }
