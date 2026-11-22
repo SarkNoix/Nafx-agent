@@ -605,7 +605,7 @@ function Get-ExtraToolsByTask {
     if ($TaskText -match 'pdf|PDF') { $need += 'pdf_read' }
     if ($TaskText -match '提醒|弹窗|通知|做完.*(叫|喊|告诉)|完成.*(叫|喊|告诉)') { $need += 'notify' }
     # 网络调试：抓包 / 拦截改包 / 发裸包 / 查端口。一次最多补两三个，别把上下文顶爆。
-    if ($TaskText -match '抓包|抓流量|抓.{0,12}包|pcap|pktmon|wireshark') { $need += 'net_capture'; $need += 'net_packets'; $need += 'net_ports' }
+    if ($TaskText -match '抓包|抓流量|抓.{0,12}(包|请求|流量)|pcap|pktmon|wireshark') { $need += 'net_capture'; $need += 'net_packets'; $need += 'net_ports' }
     if ($TaskText -match '拦截|改包|改请求|重写请求|代理|mock|proxy') { $need += 'net_proxy'; $need += 'net_http' }
     if ($TaskText -match '发包|裸包|原始包|tcp.*(发|请求)|udp') { $need += 'net_send'; $need += 'net_ports' }
     if ($TaskText -match '端口|监听|占用') { $need += 'net_ports' }
@@ -1722,6 +1722,29 @@ if ($projPick) {
     Write-Log ("  project.md 没加载（任务不涉及写脚本/项目）")
 }
 
+# 网络调试任务给一张四步速查：4B 模型照抄比读长描述管用
+if ($TaskText -match '抓包|数据包|端口|改包|重写|重放|发包|代理|pcap|401|抓.{0,8}请求|请求.*改|net_') {
+    # 从任务里抠出「端口 + 路径」，直接给一条能抄的调用；4B 模型常常只给 seconds
+    $netPort = ''; $netPath = ''
+    if ($TaskText -match '(\d{2,5})\s*的\s*(/[A-Za-z0-9_\-./]*)') { $netPort = $matches[1]; $netPath = $matches[2] }
+    elseif ($TaskText -match '127\.0\.0\.1:(\d{2,5})') { $netPort = $matches[1] }
+    if (-not $netPath) { $netPath = '/' }
+    if ($netPort) {
+        $capLine = '2. net_capture(url="http://127.0.0.1:' + $netPort + $netPath + '") —— 直接抄这一行，别只给 seconds；它会替你发这条请求，并自动只抓 ' + $netPort + ' 端口。'
+    } else {
+        $capLine = '2. net_capture(url="http://127.0.0.1:端口/路径") —— 抓自己的请求必须给 url，别只给 seconds。'
+    }
+    $sysFull = $sysFull + @"
+
+## 网络调试工具（照着走）
+1. net_ports(port=端口) —— 先确认服务在跑、端口被谁占。
+$capLine
+3. net_packets() 看包列表；net_packets(index=N) 看这个请求的头和 body。
+4. net_rewrite(index=N, setHeaders="X-Token: 值") —— 值从 401 响应体的 hint 里读，别猜；改完重发，返回 200/403 就是结果。
+"@
+    Write-Log '  已注入网络调试四步速查'
+}
+
 # 套流程模板：这个任务的硬约束
 $script:ActiveFlow = $null
 $script:ActiveFlowToolCount = 0
@@ -1734,8 +1757,8 @@ if ($FlowsLoaded) {
             Write-Log ("  套用模板：" + $fr.Flow.name + "（分 " + $fr.Score + "）")
         } else {
             # 没匹配到流程：至少给一张技能速查表，别让它裸奔。
-            # 之前这里什么都不加，模型只能凭提示词里的工具名硬猜，
-            # 结果是「大文件」任务去 list_dir 两次然后瞎报一个 1.8 KB 是「大文件」。
+            # 网络调试任务有自己的四步速查，再塞技能表只会挤爆 5120 上下文。
+            if ($TaskText -notmatch '抓包|数据包|端口|改包|重写|重放|发包|代理|pcap|401|抓.{0,8}请求|请求.*改|net_(packets|rewrite|capture)') {
             $fallback = @'
 
 ## 没见过的任务，先想清楚再动手
@@ -1754,6 +1777,7 @@ if ($FlowsLoaded) {
 '@
             $sysFull = $sysFull + $fallback
             Write-Log ("  没匹配到流程模板，注入通用技能速查表")
+            }
         }
     } catch { }
 
@@ -1797,9 +1821,9 @@ try {
 
             # 网络调试任务：模板给的无关工具太多（19 个），4B 模型上下文扛不住。
             # 只留「看包 / 改包 / 抓包 / 查端口」这条链上的工具。
-            if ($TaskText -match '抓包|数据包|端口|改包|重写|重放|发包|代理|pcap|net_(packets|rewrite)') {
-                $netCore = @('plan', 'think', 'list_dir', 'read_file', 'net_ports', 'net_packets', 'net_rewrite', 'net_capture', 'net_http', 'say', 'finish')
-                $flowTools = @($netCore | Where-Object { $_ -in @('plan', 'say', 'finish') -or $script:ToolSchemaMap.ContainsKey($_) })
+            if ($TaskText -match '抓包|数据包|端口|改包|重写|重放|发包|代理|pcap|401|抓.{0,8}请求|请求.*改|net_(packets|rewrite)') {
+                $netCore = @('net_ports', 'net_packets', 'net_rewrite', 'net_capture', 'net_http', 'say', 'finish')
+                $flowTools = @($netCore | Where-Object { $_ -in @('say', 'finish') -or $script:ToolSchemaMap.ContainsKey($_) })
                 Write-Log ("  网络调试任务，工具收到 " + $flowTools.Count + " 个：" + ($flowTools -join ','))
                 $script:ActiveFlowToolCount = $flowTools.Count
                 $script:ActiveFlowTools = $flowTools
@@ -1828,9 +1852,9 @@ try {
             $defaultTools = @($defaultTools) + $extraTools
             Write-Log ("  按任务关键词补了工具：" + ($extraTools -join ','))
         }
-        if ($TaskText -match '抓包|数据包|端口|改包|重写|重放|发包|代理|pcap|net_(packets|rewrite)') {
-            $netCore = @('plan', 'think', 'list_dir', 'read_file', 'net_ports', 'net_packets', 'net_rewrite', 'net_capture', 'net_http', 'say', 'finish')
-            $defaultTools = @($netCore | Where-Object { $_ -in @('plan', 'say', 'finish') -or $script:ToolSchemaMap.ContainsKey($_) })
+        if ($TaskText -match '抓包|数据包|端口|改包|重写|重放|发包|代理|pcap|401|抓.{0,8}请求|请求.*改|net_(packets|rewrite)') {
+            $netCore = @('net_ports', 'net_packets', 'net_rewrite', 'net_capture', 'net_http', 'say', 'finish')
+            $defaultTools = @($netCore | Where-Object { $_ -in @('say', 'finish') -or $script:ToolSchemaMap.ContainsKey($_) })
             Write-Log ("  网络调试任务，工具收到 " + @($defaultTools).Count + " 个：" + (@($defaultTools) -join ','))
         }
         $script:ActiveFlowToolCount = @($defaultTools).Count
@@ -2601,7 +2625,11 @@ Add-SessionNote -Text $bcSay -Kind 'say'
     # 直接查比先纠结强，不拦。
     $anyStep = ($state.steps.Count -gt 0)
     # plan 也豁免：工作模式下第一步就该是 plan，不是 think。
-    if (-not $anyStep -and -not $script:SimpleTask -and $toolName -notin @('think', 'finish', 'web_search', 'plan')) {
+    # 网络调试的 net_* 也豁免：4B 模型第一步就想抓包，这是对的；
+    # 硬拦去 think 它会写一大段计划，超出输出上限被截成没结尾的 JSON，
+    # 反而空转两轮把上下文撑爆（2026-11-22 实测）。
+    $firstStepOk = @('think', 'finish', 'web_search', 'plan', 'net_capture', 'net_packets', 'net_rewrite', 'net_ports')
+    if (-not $anyStep -and -not $script:SimpleTask -and $toolName -notin $firstStepOk) {
         $script:thinkNudge = [int]$script:thinkNudge + 1
         if ($script:thinkNudge -le 2) {
             Write-Log ("  [要求先想] 第 $($script:thinkNudge) 次打回：" + $toolName + " → 先 think")
@@ -2622,6 +2650,9 @@ Add-SessionNote -Text $bcSay -Kind 'say'
     if (-not $argsObj) {
         $argRaw = [string]$call.arguments
         Write-Log ('  [参数为空] 长度=' + $argRaw.Length + ' 内容=[' + $argRaw.Substring(0,[Math]::Min(150,$argRaw.Length)) + ']')
+    } elseif ($toolName -like 'net_*') {
+        $argRaw = [string]$call.arguments
+        Write-Log ('  [参数] ' + $toolName + ' ' + $argRaw.Substring(0,[Math]::Min(180,$argRaw.Length)))
     }
 
     $act = [pscustomobject]@{
@@ -2643,6 +2674,23 @@ Add-SessionNote -Text $bcSay -Kind 'say'
         }
     }
     $act = Repair-ActionStrings $act
+
+    # net_capture 只给 seconds 时，从任务里补 url —— 4B 模型反复漏这个参数，工具没法自己猜目标
+    if ($toolName -eq 'net_capture') {
+        $uNow = ([string]$act.url).Trim()
+        $pNum = 0; [void][int]::TryParse(([string]$act.port), [ref]$pNum)
+        if (-not $uNow -and $pNum -le 0) {
+            $gPort = ''; $gPath = ''
+            if ($TaskText -match '(\d{2,5})\s*的\s*(/[A-Za-z0-9_\-./]*)') { $gPort = $matches[1]; $gPath = $matches[2] }
+            elseif ($TaskText -match '127\.0\.0\.1:(\d{2,5})') { $gPort = $matches[1] }
+            if (-not $gPath) { $gPath = '/' }
+            if ($gPort) {
+                $gUrl = 'http://127.0.0.1:' + $gPort + $gPath
+                $act | Add-Member -NotePropertyName url -NotePropertyValue $gUrl -Force
+                Write-Log ("  [补参数] net_capture 没给 url，按任务补成 " + $gUrl)
+            }
+        }
+    }
 
     $think = [string]$act.think
     # think 工具的想法在 content 参数里，不在 act.think。

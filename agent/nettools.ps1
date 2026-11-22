@@ -184,15 +184,44 @@ function Invoke-NetCapture($Action) {
     if ($pktSize -lt 64) { $pktSize = 64 }
     if ($pktSize -gt 512) { $pktSize = 512 }
 
+    # 可选：抓包期间顺手发一条请求，专门制造「自己的流量」，不用另开窗口
+    # 注意：子进程传进来的可能是 PSCustomObject，不是 Hashtable，不能用 ContainsKey
+    $triggerUrl = ([string]$Action.url).Trim()
+    $triggerMethod = 'GET'
+    if (([string]$Action.method).Trim()) { $triggerMethod = ([string]$Action.method).Trim().ToUpperInvariant() }
+    $triggerHeaders = @{}
+    $hdrRaw = ([string]$Action.headers).Trim()
+    if ($hdrRaw) {
+        foreach ($pair in ($hdrRaw -split ';')) {
+            if ($pair -match '^([^:]+):\s*(.*)$') { $triggerHeaders[$matches[1].Trim()] = $matches[2].Trim() }
+        }
+    }
+
+    # 没 url 也没端口/IP：抓到的只会是一屏背景流量，直接提示怎么用，别浪费上下文
+    if (-not $triggerUrl -and $port -le 0 -and -not $ip) {
+        return "没给抓包范围，这次没抓。要抓自己的请求：net_capture(url=`"http://127.0.0.1:9100/api/secure`")；只抓某个端口：net_capture(port=9100)。"
+    }
+
+    # url 里自带端口：没显式给 port 时用它做过滤，避免抓到一屏无关流量
+    if ($triggerUrl -and $port -le 0) {
+        try {
+            $u = [Uri]$triggerUrl
+            if ($u.Port -gt 0) { $port = [int]$u.Port }
+            if (-not $ip -and $u.Host) { $ip = [string]$u.Host }
+        } catch { }
+    }
+
     $stamp = Get-NetStamp
     $etl = Resolve-NetOutPath $Action.file ('cap_' + $stamp + '.etl')
     if ($etl -match '\.pcapng$') { $etl = [IO.Path]::ChangeExtension($etl, '.etl') }
 
-    # 先清掉上次的过滤器，否则会层层叠加
+    # 一个过滤器里把 port/ip/proto 一起给，pktmon 才会按「与」匹配；分多条 add 是「或」，会连背景流量一起抓
     & $pkt filter remove 2>&1 | Out-Null
-    if ($port -gt 0) { & $pkt filter add -p $port 2>&1 | Out-Null }
-    if ($ip) { & $pkt filter add -i $ip 2>&1 | Out-Null }
-    if ($proto -in @('tcp','udp','icmp')) { & $pkt filter add -t $proto 2>&1 | Out-Null }
+    $fargs = @('filter', 'add')
+    if ($port -gt 0) { $fargs += @('-p', [string]$port) }
+    if ($ip) { $fargs += @('-i', $ip) }
+    if ($proto -in @('tcp','udp','icmp')) { $fargs += @('-t', $proto) }
+    if ($fargs.Count -gt 2) { & $pkt @fargs 2>&1 | Out-Null }
 
     $startOut = & $pkt start --capture --pkt-size $pktSize --file-name $etl 2>&1
     if ($LASTEXITCODE -ne 0) {
@@ -200,7 +229,20 @@ function Invoke-NetCapture($Action) {
         throw ("抓包启动失败（多半要管理员权限，或者已经有一个抓包在跑）：" + (($startOut | Out-String).Trim()))
     }
 
-    Start-Sleep -Seconds $seconds
+    $triggerStatus = ''
+    $swCap = [Diagnostics.Stopwatch]::StartNew()
+    if ($triggerUrl) {
+        Start-Sleep -Milliseconds 400
+        try {
+            $wr = Invoke-WebRequest -Uri $triggerUrl -Method $triggerMethod -Headers $triggerHeaders -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
+            $triggerStatus = [string][int]$wr.StatusCode
+        } catch {
+            if ($_.Exception.Response) { $triggerStatus = [string][int]$_.Exception.Response.StatusCode }
+            else { $triggerStatus = '失败:' + $_.Exception.Message }
+        }
+    }
+    $remain = $seconds - [Math]::Floor($swCap.Elapsed.TotalSeconds)
+    if ($remain -gt 0) { Start-Sleep -Seconds ([int]$remain) }
     $stopOut = & $pkt stop 2>&1
     & $pkt filter remove 2>&1 | Out-Null
 
@@ -228,19 +270,61 @@ function Invoke-NetCapture($Action) {
 
     $sb = New-Object System.Text.StringBuilder
     [void]$sb.AppendLine("抓包完成：$seconds 秒，抓到 $ipCount 个 IP 包（HTTP 事件 $httpCount 条）。")
+    if ($triggerUrl) {
+        [void]$sb.AppendLine("抓包期间发了：$triggerMethod $triggerUrl → $triggerStatus（这条请求/响应就在包里）")
+    }
     if ($ipCount -eq 0) {
-        [void]$sb.AppendLine('一个包都没抓到。常见原因：这段时间没有流量、过滤器太窄（端口/IP 写错了），或者当前不是管理员。')
-        [void]$sb.AppendLine('可以先去掉 port/ip 过滤再抓一次，或者用 net_proxy 在 HTTP 层看请求。')
+        if ($triggerUrl) {
+            [void]$sb.AppendLine('请求发出去了但没抓到包：检查 port 是否写成了这条请求的端口；或者当前不是管理员。')
+        } else {
+            [void]$sb.AppendLine('一个包都没抓到。抓包只「看」流量，不会自己产生流量；要抓自己的请求，加上 url="http://127.0.0.1:端口/路径" 一起抓。')
+        }
+        [void]$sb.AppendLine('也可以先用 net_ports 确认服务在跑，再用 net_proxy 在 HTTP 层看请求。')
     } else {
         [void]$sb.AppendLine('出现最多的流：')
         $top = $flows.GetEnumerator() | Sort-Object Value -Descending | Select-Object -First 8
         foreach ($x in $top) { [void]$sb.AppendLine(('  {0,-58} ×{1}' -f $x.Key, $x.Value)) }
     }
-    if (Test-Path -LiteralPath $pcap) { [void]$sb.AppendLine("pcapng：$pcap（可直接拖进 Wireshark）") }
-    [void]$sb.AppendLine("文本明细：$txt")
+    if (Test-Path -LiteralPath $pcap) {
+        [void]$sb.AppendLine("pcapng：$pcap（可直接拖进 Wireshark）")
+        # 抓到自己请求时，顺手把请求首行和响应体贴出来：模型不用再调 net_packets 就能看到差什么
+        $reqs = @()
+        if ($triggerUrl) {
+            try {
+                $pk = @(Read-NetPcapngPackets $pcap)
+                $resps = @()
+                foreach ($one in $pk) {
+                    $dd = Get-NetPacketDecoded $one
+                    if (-not $dd) { continue }
+                    if ($dd.isHttpReq) { $reqs += $dd }
+                    elseif ($dd.isHttpResp) { $resps += $dd }
+                }
+                if ($reqs.Count -gt 0) {
+                    [void]$sb.AppendLine("包里的请求：#" + $reqs[0].index + " " + $reqs[0].firstLine)
+                }
+                if ($resps.Count -gt 0) {
+                    $body = ''
+                    $rp = $resps[0].payload -replace "`r`n", "`n"
+                    if ($rp -match "`n`n") { $body = ($rp -split "`n`n", 2)[1] }
+                    if ($body) {
+                        $b = $body.Trim()
+                        if ($b.Length -gt 300) { $b = $b.Substring(0, 300) + '...' }
+                        [void]$sb.AppendLine('第一个响应体：' + $b)
+                    }
+                    if ($reqs.Count -gt 0) {
+                        [void]$sb.AppendLine('改这条请求：net_rewrite(file="' + (Split-Path -Leaf $pcap) + '", index=' + $reqs[0].index + ', setHeaders="X-Token: 值")')
+                    }
+                }
+            } catch { }
+        }
+    }
     if ($ipCount -gt 0) {
-        [void]$sb.AppendLine('看具体包（首行、长度、载荷）：net_packets(file="' + (Split-Path -Leaf $pcap) + '")；看第 N 个：加 index=N。')
-        [void]$sb.AppendLine('改包里的 HTTP 请求再重发：net_rewrite(file="' + (Split-Path -Leaf $pcap) + '", index=N, setHeaders="X-Token: nafx-ok")。')
+        $leaf = Split-Path -Leaf $pcap
+        if ($triggerUrl -and $reqs.Count -gt 0) {
+            # 抓到自己请求时，细节已经在上面给过了，不再提示多余的步骤
+        } else {
+            [void]$sb.AppendLine('看具体包：net_packets(file="' + $leaf + '")；看第 N 个加 index=N，改请求再发用 net_rewrite(index=N)。')
+        }
     }
     return $sb.ToString().Trim()
 }
@@ -271,9 +355,10 @@ function Invoke-NetSend($Action) {
 
     $waitMs = 1500; try { if ($Action.waitMs -gt 0) { $waitMs = [int]$Action.waitMs } } catch { }
     if ($waitMs -gt 10000) { $waitMs = 10000 }
-    # ⚠ 不能写 $Action.count —— 哈希表自带 Count 属性，会拿到键的数量
+    # ⚠ 哈希表自带 Count 属性，会拿到键的数量；对象才读 count 参数
     $count = 1
-    try { if ($Action.ContainsKey('count') -and [int]$Action['count'] -gt 1) { $count = [int]$Action['count'] } } catch { }
+    $countVal = if ($Action -is [hashtable]) { $Action['count'] } else { $Action.count }
+    try { if ([int]$countVal -gt 1) { $count = [int]$countVal } } catch { }
     if ($count -gt 20) { $count = 20 }
     $interval = 0; try { $interval = [int]$Action.intervalMs } catch { }
     if ($interval -lt 0) { $interval = 0 }
@@ -515,6 +600,9 @@ function Resolve-NetPcapFile($rel) {
     foreach ($c in $cands) {
         if (Test-Path -LiteralPath $c) { return $c }
     }
+    # 模型常瞎猜文件名（如 capture.pcapng）。找不到就退回最新的，别让它卡在报错上
+    $latest = Get-NetLatestPcap
+    if ($latest) { return $latest }
     throw ("找不到抓包文件：$rel。可以直接给文件名（如 " + [IO.Path]::GetFileName($rel) + '），不给 file 就用最新一个。')
 }
 
@@ -637,7 +725,9 @@ function Invoke-NetPackets($Action) {
     if ($all.Count -eq 0) { return "文件里没解析出包：$file（可能不是 pcapng，或抓的时候 0 包）" }
     $first = [double]$all[0].time
 
-    $idx = 0; try { if ($Action.ContainsKey('index')) { $idx = [int]$Action['index'] } } catch { }
+    $idx = 0
+    $idxRaw = [string]$Action.index
+    if ($idxRaw.Trim()) { try { $idx = [int]$idxRaw } catch { } }
 
     # 单个包：给详情
     if ($idx -gt 0) {
@@ -658,19 +748,21 @@ function Invoke-NetPackets($Action) {
             [void]$sb.AppendLine((Get-NetPreview $dec.payload 2000))
             if ($dec.isHttpReq) {
                 [void]$sb.AppendLine('')
-                [void]$sb.AppendLine('要改这个请求并重发：net_rewrite(index=' + $idx + ', setHeaders="X-Token: nafx-ok")；只改 body 用 bodyReplace="旧=>新"。')
+                [void]$sb.AppendLine('要改这个请求并重发：net_rewrite(index=' + $idx + ', setHeaders="X-Token: abc")；只改 body 用 bodyReplace="旧=>新"。')
             }
         }
         return $sb.ToString().Trim()
     }
 
     # 列表：过滤条件
-    $port = 0; try { if ($Action.ContainsKey('port')) { $port = [int]$Action['port'] } } catch { }
-    $protoWanted = ''
-    try { if ($Action.ContainsKey('proto')) { $protoWanted = ([string]$Action['proto']).Trim().ToLowerInvariant() } } catch { }
-    $contains = ''
-    try { if ($Action.ContainsKey('contains')) { $contains = [string]$Action['contains'] } } catch { }
-    $limit = 20; try { if ($Action.ContainsKey('limit')) { $limit = [int]$Action['limit'] } } catch { }
+    $port = 0
+    $portRaw = [string]$Action.port
+    if ($portRaw.Trim()) { try { $port = [int]$portRaw } catch { } }
+    $protoWanted = ([string]$Action.proto).Trim().ToLowerInvariant()
+    $contains = ([string]$Action.contains).Trim()
+    $limit = 20
+    $limitRaw = [string]$Action.limit
+    if ($limitRaw.Trim()) { try { $limit = [int]$limitRaw } catch { } }
     $limit = [Math]::Max(1, [Math]::Min(60, $limit))
 
     $shown = 0; $matched = 0
@@ -699,7 +791,7 @@ function Invoke-NetPackets($Action) {
         [void]$sb.AppendLine('没有符合条件的包。去掉 port/proto/contains 过滤再看一次。')
     } else {
         [void]$sb.AppendLine("共 $matched 个匹配，显示了 $shown 个。")
-        [void]$sb.AppendLine('看某个包的完整内容：net_packets(index=N)；改它：net_rewrite(index=N, setHeaders="X-Token: nafx-ok")。')
+        [void]$sb.AppendLine('看某个包的完整内容：net_packets(index=N)；改它：net_rewrite(index=N, setHeaders="X-Token: abc")。')
     }
     return $sb.ToString().Trim()
 }
@@ -853,12 +945,9 @@ function Invoke-NetRewrite($Action) {
         [void]$sb.AppendLine(("发了 {0} B，收到 {1} B（{2}，{3} ms）" -f $sendBytes.Length, $recvLen, $statusText, [int]$sw.ElapsedMilliseconds))
     }
     [void]$sb.AppendLine('')
-    [void]$sb.AppendLine('改写后的请求：')
-    [void]$sb.AppendLine((Get-NetPreview $outText 1200))
     if ($recvText) {
-        [void]$sb.AppendLine('')
-        [void]$sb.AppendLine('响应：')
-        [void]$sb.AppendLine((Get-NetPreview $recvText 800))
+        [void]$sb.AppendLine('响应（前 300 字）：')
+        [void]$sb.AppendLine((Get-NetPreview $recvText 300))
     }
     if ($err) { [void]$sb.AppendLine('排查：目标端口通不通（net_ports）；host/port 参数对不对；服务是不是只收 HTTP/1.0。') }
 
