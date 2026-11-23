@@ -271,7 +271,7 @@ html[data-theme="mo"]{background:#0f1115}
              margin-top .28s cubic-bezier(.32,.72,0,1);
 }
 [data-theme="su"] .side-block.closed > *:not(h3),[data-theme="mo"] .side-block.closed > *:not(h3){
-  /* ⚠ 这里不能加 !important。
+  /* 注意：这里不能加 !important。
      
      教训：原来写的是 max-height:0 !important，而 JS 展开时用行内样式
      设 max-height，行内样式没有 !important，优先级比不过这条 —— 高度永远是 0。
@@ -638,9 +638,10 @@ header{position:relative;z-index:1;display:flex;align-items:center;gap:14px;padd
    点击展开详情；数据由 renderFlow → refreshGenbar 每轮 state 刷新。 */
 .hbar-live{
   display:flex;align-items:center;gap:6px;flex-shrink:0;
-  padding:4px 9px;border:1px solid var(--line);border-radius:999px;
+  min-height:22px;padding:5px 10px;border:1px solid var(--line);border-radius:999px;
   background:var(--panel3);color:var(--dim);font-size:11px;line-height:1;
   cursor:pointer;user-select:none;transition:.18s;white-space:nowrap;
+  box-shadow:inset 0 1px 0 var(--inset-hi);
 }
 .hbar-live:hover{border-color:var(--line2);color:var(--fg);transform:translateY(-1px)}
 .hbar-live b{color:var(--fg);font-weight:600;font-variant-numeric:tabular-nums}
@@ -649,7 +650,7 @@ header{position:relative;z-index:1;display:flex;align-items:center;gap:14px;padd
 .hbar-live .hl-ico{opacity:.55;font-size:10px}
 .hbar-live .hl-unit{opacity:.6}
 .hbar-live .hl-ratio{opacity:.5}
-.hbar-live.idle{opacity:.55}
+.hbar-live.idle{opacity:.82}
 .hbar-live.fresh b{color:var(--ok)}
 .live-pop{
   position:fixed;z-index:120;top:58px;right:18px;width:330px;
@@ -867,10 +868,11 @@ main{position:relative;z-index:1;flex:1;display:flex;min-height:0}
    生成进度条（DSH 式状态行）—— 参考DeepSeek Harness：
    任务跑的时候输入框下一条极简状态行：阶段 / tok/s / 缓存命中 /
    上下文占用。任务结束隐藏。数据来自 state.speed / cacheHit / ctxUsed。
+
+   第十六轮：这些指标已经全部收进顶栏实时胶囊，底部不再重复；
+   保留 DOM 供旧逻辑更新，视觉上关闭，避免挤压 698 宽下的输入区。
    ============================================================ */
-.genbar{display:flex;align-items:center;justify-content:center;gap:12px;
-  margin:7px auto 0;padding:0 12px;font-size:11.5px;color:var(--dim);
-  max-width:900px;flex-wrap:wrap}
+.genbar{display:none}
 .genbar.hide{display:none}
 .gb-it{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
 .gb-it svg{width:11px;height:11px;stroke:currentColor;fill:none;
@@ -2177,7 +2179,7 @@ header button,.side-actions button{
   letter-spacing:.3px;
 }
 .msg.thinking .bubble::before{
-  content:'💭';
+  content:'◌';
   margin-right:6px;
   opacity:.6;
 }
@@ -2765,6 +2767,113 @@ header .theme-switch button{white-space:nowrap}
 .live-box:hover{border-color:var(--line2);box-shadow:0 6px 20px rgba(0,0,0,.12)}
 [data-theme="su"] .thread .live-box:hover,
 [data-theme="mo"] .thread .live-box:hover{box-shadow:none}
+
+/* ============================================================
+   第十六轮 · 面板 UI 收口（2026-11-24）
+   ① 顶栏实时胶囊：三项分色 + 底部上下文用量细条
+   ② 气泡计量从“散字”改成轻量胶囊，缓存/速度/上下文分色
+   ③ 输入区：窄屏不再把发送按钮拉满整行，改 46px 图标钮
+   ④ 窄屏主题组收成 5 个色点，不再单独占一整行
+   ============================================================ */
+
+/* ① 实时胶囊 */
+.hbar-live{position:relative;overflow:hidden}
+.hbar-live #hlSpeed{color:var(--run)}
+.hbar-live #hlCache{color:var(--ok)}
+.hbar-live #hlCtx{color:var(--accent)}
+.hbar-live .hl-bar{
+  position:absolute;left:0;bottom:0;height:2px;width:0;
+  background:linear-gradient(90deg,var(--accent),var(--accent2));
+  opacity:.75;pointer-events:none;
+  transition:width .3s cubic-bezier(.22,1,.36,1),opacity .2s;
+}
+.hbar-live.idle .hl-bar{opacity:.25}
+
+/* ② 气泡计量 */
+.msg .msg-meter{
+  width:fit-content;max-width:100%;
+  margin-top:7px;padding:4px 9px;gap:7px;
+  border:1px solid var(--line);border-radius:999px;
+  background:var(--panel2);
+  box-shadow:inset 0 1px 0 var(--inset-hi);
+}
+.msg .msg-meter.live{
+  border-color:rgba(var(--accent-rgb),.34);
+  background:rgba(var(--accent-rgb),.07);
+}
+.msg .msg-meter .mm-speed b{color:var(--run)}
+.msg .msg-meter .mm-cache b{color:var(--ok)}
+.msg .msg-meter .mm-ctx b{color:var(--accent)}
+.msg .msg-meter .mm-unit,
+.msg .msg-meter .mm-pct{opacity:.55;font-weight:400}
+.msg .msg-meter .mm-pct{font-size:10px}
+.msg .msg-meter .mm-ico{opacity:.68}
+[data-theme="su"] .msg .msg-meter,
+[data-theme="mo"] .msg .msg-meter{background:var(--panel);box-shadow:none}
+
+/* 气泡本身给一点轻微反馈，别太重 */
+.msg .bubble{transition:border-color .18s ease,box-shadow .18s ease}
+.msg:hover .bubble{border-color:var(--line2)}
+
+/* ③ 发送按钮 */
+#send{
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  min-width:96px;height:46px;padding:0 20px;
+  border-radius:var(--radius-lg);
+  box-shadow:0 4px 14px rgba(var(--accent-rgb),.20);
+}
+#send .send-ico{
+  width:18px;height:18px;flex-shrink:0;transition:transform .16s;
+  fill:currentColor;stroke:none;
+}
+#send:hover .send-ico{transform:translateX(1px)}
+@media(max-width:900px){
+  .composer-inner{flex-direction:row;align-items:flex-end}
+  .composer-inner #send{
+    width:46px;min-width:46px;padding:0;border-radius:15px;
+  }
+  .composer-inner #send .send-txt{display:none}
+}
+
+/* ④ 窄屏主题色点 */
+@media(max-width:760px){
+  header{gap:6px;padding:0 10px}
+  .theme-switch{
+    order:0;flex-basis:auto;margin:0;padding:3px;gap:5px;
+    height:28px;align-items:center;
+  }
+  .theme-switch button{
+    position:relative;
+    width:20px;height:20px;min-width:20px;min-height:20px;max-height:20px;
+    flex:0 0 20px;align-self:center;
+    padding:0;border-radius:50%;
+    font-size:0;line-height:0;overflow:hidden;border:1px solid transparent;
+  }
+  .theme-switch button::after{
+    content:'';position:absolute;inset:2px;border-radius:50%;
+    background:var(--dot,#888);
+  }
+  .theme-switch button[data-theme-btn="light"]{--dot:#f6f7f9;border-color:#cbd0da}
+  .theme-switch button[data-theme-btn="dark"]{--dot:#1a1d24;border-color:#485064}
+  .theme-switch button[data-theme-btn="glass"]{--dot:linear-gradient(135deg,#ffd3e8,#9d8cf5)}
+  .theme-switch button[data-theme-btn="su"]{--dot:#f3efe6;border-color:#d7d1c4}
+  .theme-switch button[data-theme-btn="mo"]{--dot:#11141a;border-color:#39404f}
+  .theme-switch button.on{
+    box-shadow:0 0 0 2px var(--panel),0 0 0 3px var(--accent);
+  }
+}
+
+/* ⑤ 系统按钮：从右下角挪到顶栏下方，别压住发送按钮 */
+#sysBtn{
+  top:64px;right:15px;bottom:auto;
+  width:34px;height:34px;opacity:.45;
+  font-size:14px;
+}
+#sysBtn:hover{opacity:1}
+#sysPanel{
+  top:106px;right:15px;bottom:auto;
+  max-height:min(72vh,620px);
+}
 </style>
 </head>
 <body>
@@ -2794,11 +2903,12 @@ header .theme-switch button{white-space:nowrap}
     <span id="hQueue">—</span>
   </div>
   <div class="hbar-live idle" id="hLive" title="点击查看缓存 / 上下文详情">
-    <span class="hl-item"><span class="hl-ico">⚡</span><b id="hlSpeed">—</b><span class="hl-unit"> tok/s</span></span>
+    <span class="hl-item"><span class="hl-ico">↯</span><b id="hlSpeed">—</b><span class="hl-unit"> tok/s</span></span>
     <span class="hl-sep">·</span>
-    <span class="hl-item"><span class="hl-ico">◈</span><span class="hl-label">缓存 </span><b id="hlCache">—</b></span>
+    <span class="hl-item"><span class="hl-ico">⧉</span><span class="hl-label">缓存 </span><b id="hlCache">—</b></span>
     <span class="hl-sep">·</span>
-    <span class="hl-item"><span class="hl-ico">▣</span><span class="hl-label">上下文 </span><b id="hlCtx">—</b><span class="hl-ratio"></span></span>
+    <span class="hl-item"><span class="hl-ico">▭</span><span class="hl-label">上下文 </span><b id="hlCtx">—</b><span class="hl-ratio"></span></span>
+    <span class="hl-bar" id="hlBar"></span>
   </div>
   <div class="spacer"></div>
   <button id="btnSide" class="ghost side-toggle" title="展开侧栏">☰</button>
@@ -2934,7 +3044,7 @@ header .theme-switch button{white-space:nowrap}
          不能像回答问题那样随便敲句话就发出去。 -->
     <div class="del-box" id="delBox">
       <div class="del-head">
-        <span class="del-ico">⚠</span>
+        <span class="del-ico">⊗</span>
         <span class="del-title">模型要删除文件</span>
         <span class="del-cd" id="delCd">180s</span>
       </div>
@@ -2954,17 +3064,16 @@ header .theme-switch button{white-space:nowrap}
            常规 = 日常问答，一步到三步就动手；工作 = 复杂任务，先拆再排再做。
            自主模式不在这里 —— 它在左侧抽屉里，单独一套（不向你提问、自己拍板）。 -->
       <div class="mode-row" id="modeRow">
-        <button class="mode-btn on" data-mode="normal" title="日常问答和简单任务：直接给结果">
-          <span class="mi">💬</span>常规
-        </button>
-        <button class="mode-btn" data-mode="work" title="复杂任务：步数翻倍、强制先列计划、可用技能">
-          <span class="mi">🔧</span>工作
-        </button>
+        <button class="mode-btn on" data-mode="normal" title="日常问答和简单任务：直接给结果">常规</button>
+        <button class="mode-btn" data-mode="work" title="复杂任务：步数翻倍、强制先列计划、可用技能">工作</button>
         <span class="mode-hint" id="modeHint">日常问答、简单任务</span>
       </div>
       <div class="composer-inner">
         <textarea id="input" rows="1" placeholder="说点什么，让它去做…"></textarea>
-        <button class="primary" id="send">发送</button>
+        <button class="primary" id="send" title="发送（Enter）">
+          <svg class="send-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.2 21.5 21.8 12 2.2 2.5v6.8L16.4 12 2.2 14.7z"/></svg>
+          <span class="send-txt">发送</span>
+        </button>
       </div>
       <div class="hint">
         <span>Enter 发送</span>
@@ -3040,7 +3149,7 @@ header .theme-switch button{white-space:nowrap}
   </div>
 </div>
 
-<div id="sysBtn" title="系统信息 / 插件">∑</div>
+<div id="sysBtn" title="系统信息 / 插件">ⓘ</div>
 
 <div id="sysPanel">
   <div class="sys-head">
@@ -3794,13 +3903,15 @@ function msgMeter(m, idx){
   }
   if (!tok && !speed && cache === null && !used) return '';
   var bits = [];
-  if (speed > 0) bits.push('<span class="mm-item"><span class="mm-ico">⚡</span><b>' + speed.toFixed(1) + '</b> tok/s</span>');
-  if (cache !== null && cache > 0) bits.push('<span class="mm-item"><span class="mm-ico">◈</span>缓存 <b>' + cache.toFixed(0) + '%</b></span>');
+  if (speed > 0) bits.push('<span class="mm-item mm-speed"><span class="mm-ico">↯</span><b>' + speed.toFixed(1) + '</b><span class="mm-unit"> tok/s</span></span>');
+  if (cache !== null && cache > 0) bits.push('<span class="mm-item mm-cache"><span class="mm-ico">⧉</span>缓存 <b>' + cache.toFixed(0) + '%</b></span>');
   if (used > 0) {
     var ctxTxt = limit > 0 ? (used + ' / ' + limit) : String(used);
-    bits.push('<span class="mm-item"><span class="mm-ico">▣</span>上下文 <b>' + ctxTxt + '</b></span>');
+    var ctxPct = (limit > 0) ? Math.min(100, Math.round(used / limit * 100)) : 0;
+    bits.push('<span class="mm-item mm-ctx"><span class="mm-ico">▭</span>上下文 <b>' + ctxTxt + '</b>' +
+      (limit > 0 ? '<span class="mm-pct"> · ' + ctxPct + '%</span>' : '') + '</span>');
   }
-  if (tok > 0) bits.push('<span class="mm-item"><span class="mm-ico">Σ</span><b>' + tok + '</b> tok</span>');
+  if (tok > 0) bits.push('<span class="mm-item mm-tok"><span class="mm-ico">Σ</span><b>' + tok + '</b><span class="mm-unit"> tok</span></span>');
   if (!bits.length) return '';
   return '<div class="msg-meter' + (live ? ' live' : '') + '">' + bits.join('<span class="mm-sep">·</span>') + '</div>';
 }
@@ -3846,23 +3957,23 @@ function planHtml(planText){
 }
 
 /* 工具图标。一眼能分出「在读文件」还是「在写文件」比文字快得多。
-   用 emoji 而不是图标字体 —— 不用加载外部资源，离线也能显示。 */
+   用单色 Unicode 符号，不加载外部资源；不依赖彩色 emoji 字体。 */
 var TOOL_ICONS = {
-  think:        '💭',
-  read_file:    '📖', read_lines: '📄', grep_file: '🔎', find_files: '🔍',
-  write_file:   '✏️', append_file: '➕', write_script: '📝', set_line: '✂️',
-  replace_in_file: '🔄', delete_path: '🗑️',
-  list_dir:     '📁', make_dir: '📂', move_path: '➡️', copy_path: '📋',
-  run_cmd:      '⚡', run_ps1: '▶️', run_ps: '▶️', run_bat: '▶️', run_js: '▶️',
-  web_search:   '🌐', web_fetch: '🔗', download_file: '⬇️',
-  sys_info:     '🖥️', env_get: '⚙️', ps: '📊', kill_process: '⛔', now: '🕐',
-  syshelp:      '📘', help: '📘', win_doc: '📘', project_doc: '📘',
-  http_request: '🌐', pdf_read: '📄', notify: '🔔',
-  finish:       '✅', say: '💬', rethink: '🔁', plan: '📋',
-  skill:        '🧩', write_skill: '🧩', json_format: '🔧', csv_preview: '📊',
-  hash_file:    '🔐', file_info: 'ℹ️', diff_files: '📑', zip_list: '🗜️',
-  unzip:        '📦', open_app: '🚀', clipboard: '📎', install: '📥',
-  date_calc:    '📅', unit_convert: '📐'
+  think:        '◌',
+  read_file:    '▤', read_lines: '☰', grep_file: '⌕', find_files: '⌕',
+  write_file:   '✎', append_file: '⊕', write_script: '⌨', set_line: '≣',
+  replace_in_file: '⇄', delete_path: '⌫',
+  list_dir:     '▦', make_dir: '⊞', move_path: '→', copy_path: '⧉',
+  run_cmd:      '▸', run_ps1: '▸', run_ps: '▸', run_bat: '▸', run_js: '▸',
+  web_search:   '⌕', web_fetch: '⇣', download_file: '↓',
+  sys_info:     '⌂', env_get: '⌁', ps: '▥', kill_process: '⊗', now: '◷',
+  syshelp:      '▤', help: '▤', win_doc: '▤', project_doc: '▤',
+  http_request: '↗', pdf_read: '▤', notify: '◉',
+  finish:       '✓', say: '·', rethink: '↻', plan: '☰',
+  skill:        '◇', write_skill: '◇', json_format: '{}', csv_preview: '▦',
+  hash_file:    '#', file_info: 'i', diff_files: '≠', zip_list: '▤',
+  unzip:        '⇩', open_app: '↗', clipboard: '⧉', install: '⇩',
+  date_calc:    '◷', unit_convert: '⇄'
 };
 function toolIcon(n){
   return TOOL_ICONS[String(n)] || '•';
@@ -3911,7 +4022,7 @@ function stepHtml(s){
     var long = th.length > 200;
     var shown = long ? th.substring(0, 200) + '…' : th;
     think = '<div class="think-block">' +
-      '<div class="think-head"><span class="think-ico">💭</span>' +
+      '<div class="think-head"><span class="think-ico">◌</span>' +
       '<span class="think-label">想法</span>' +
       (long ? '<span class="think-more" onclick="toggleThink(this)">展开</span>' : '') +
       '</div>' +
@@ -4015,6 +4126,11 @@ function renderLiveMeter(st){
   } else {
     ctxB.textContent = '—';
     if (ctxRatio) ctxRatio.textContent = '';
+  }
+  var liveBar = $('hlBar');
+  if (liveBar) {
+    var barPct = (used > 0 && real > 0) ? Math.min(100, used / real * 100) : 0;
+    liveBar.style.width = barPct.toFixed(1) + '%';
   }
 
   // 详情面板只在打开时重建，避免每 350ms 白写 DOM。
@@ -4736,7 +4852,7 @@ function renderFlow(sess, st){
   // 界面就被清空重画 —— 用户看到的就是「任务突然消失，过一会儿又出现」。
   // 只把「结构真的变了」算进去。
   //
-  // ⚠ 签名里绝对不能带 step / arr.length 这种「每步都变」的东西：
+  // 注意：签名里绝对不能带 step / arr.length 这种「每步都变」的东西：
   //   · note 播报让每一步往 session.jsonl 追加一条 → arr.length 变
   //   · 每走一步 st.step 也变
   // 带上它们等于每轮都重建整个 thread.innerHTML，所有气泡一起闪。
@@ -6062,14 +6178,20 @@ function renderLm(cfg, inited){
   var cur = (cfg && cfg.llamaMode) ? cfg.llamaMode : 'cpu';
   var c = $('lmCur');
   if (c) c.textContent = cur === 'gpu' ? 'GPU 版' : 'CPU 版';
+  var boxRoot = $('lmBox');
+  if (boxRoot) boxRoot.setAttribute('data-current', cur);
   ['cpu','gpu'].forEach(function(m){
     var box = document.querySelector('.lm-opt[data-mode="' + m + '"]');
     if (!box) return;
     var st = $('lmSt' + (m === 'cpu' ? 'Cpu' : 'Gpu'));
     var rec = inited && inited[m] ? String(inited[m]) : '';
-    if (st) st.textContent = rec ? ('已初始化 · ' + rec.split('|')[1]) : '未初始化';
+    if (st) {
+      // 当前正在用的版本不需要“先初始化”才能点；它只是没留下检测记录。
+      st.textContent = rec ? ('已初始化 · ' + rec.split('|')[1])
+                           : (cur === m ? '当前使用' : '未初始化');
+    }
     box.classList.toggle('active', cur === m);
-    box.classList.toggle('ready', !!rec);
+    box.classList.toggle('ready', !!rec || cur === m);
   });
 }
 function bindLm(){
@@ -6098,6 +6220,11 @@ function bindLm(){
     var opt = e.target.closest ? e.target.closest('.lm-opt') : null;
     if (!opt) return;
     var mode = opt.getAttribute('data-mode');
+    var cur = box.getAttribute('data-current') || '';
+    if (mode === cur){
+      toast('当前已经在使用 ' + mode.toUpperCase() + ' 版', false);
+      return;
+    }
     var stEl = $('lmSt' + (mode === 'cpu' ? 'Cpu' : 'Gpu'));
     // 没初始化过的编译版不允许直接选：先点「初始化」做检测
     if (stEl && stEl.textContent.indexOf('未初始化') === 0){

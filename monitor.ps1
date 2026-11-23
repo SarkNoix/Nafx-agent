@@ -1147,8 +1147,8 @@ while ($listener.IsListening) {
                     # 校验对应目录的 llama-server.exe 能跑、版本输出里探测后端。
                     # 检测通过才允许在面板上选中该模式。
                     if ($method -eq 'POST') {
-                        $body = Read-Body $ctx.Request
                         try {
+                            $body = Read-Body $ctx.Request | ConvertFrom-Json
                             $mode = [string]$body.mode
                             if ($mode -notin @('cpu','gpu')) { throw 'mode 必须是 cpu 或 gpu' }
                             $dirName = if ($mode -eq 'gpu') { 'llama-gpu' } else { 'llama' }
@@ -1157,8 +1157,15 @@ while ($listener.IsListening) {
                                 Send-Text -Response $resp -Text ('{"ok":false,"msg":' + (J "没找到 $dirName\llama-server.exe。请先把 $mode 版编译文件放进 $dirName 文件夹再初始化。") + '}') -Code 400
                                 break
                             }
+                            # llama-server 把 --version 写到 stderr，直接 2>&1 在全局
+                            # ErrorActionPreference=Stop 下会被当成异常抛出（报错内容
+                            # 恰好是版本号）。这里临时放宽，只按退出码判断。
+                            $oldEap = $ErrorActionPreference
+                            $ErrorActionPreference = 'Continue'
                             $verOut = (& $srv --version 2>&1 | Out-String)
-                            if (-not $verOut -or $LASTEXITCODE -ne 0) { throw 'llama-server.exe --version 跑不起来，文件可能不完整' }
+                            $verCode = $LASTEXITCODE
+                            $ErrorActionPreference = $oldEap
+                            if (-not $verOut -or $verCode -ne 0) { throw 'llama-server.exe --version 跑不起来，文件可能不完整' }
                             $backend = if ($verOut -match 'CUDA|Vulkan|HIP|SYCL') { 'gpu' } else { 'cpu' }
                             # 通过检测，把初始化时间和后端记进配置
                             $cur = Get-Content $CfgPath -Raw -Encoding UTF8 | ConvertFrom-Json
