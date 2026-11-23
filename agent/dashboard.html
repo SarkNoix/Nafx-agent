@@ -633,6 +633,48 @@ header{position:relative;z-index:1;display:flex;align-items:center;gap:14px;padd
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 .hbar{display:flex;gap:16px;color:var(--dim);font-size:12px}
 .hbar b{color:var(--fg);font-weight:500}
+
+/* 顶栏实时用量：缓存命中 / 速度 / 上下文。
+   点击展开详情；数据由 renderFlow → refreshGenbar 每轮 state 刷新。 */
+.hbar-live{
+  display:flex;align-items:center;gap:6px;flex-shrink:0;
+  padding:4px 9px;border:1px solid var(--line);border-radius:999px;
+  background:var(--panel3);color:var(--dim);font-size:11px;line-height:1;
+  cursor:pointer;user-select:none;transition:.18s;white-space:nowrap;
+}
+.hbar-live:hover{border-color:var(--line2);color:var(--fg);transform:translateY(-1px)}
+.hbar-live b{color:var(--fg);font-weight:600;font-variant-numeric:tabular-nums}
+.hbar-live .hl-sep{opacity:.35}
+.hbar-live .hl-item{display:flex;align-items:center;gap:3px}
+.hbar-live .hl-ico{opacity:.55;font-size:10px}
+.hbar-live .hl-unit{opacity:.6}
+.hbar-live .hl-ratio{opacity:.5}
+.hbar-live.idle{opacity:.55}
+.hbar-live.fresh b{color:var(--ok)}
+.live-pop{
+  position:fixed;z-index:120;top:58px;right:18px;width:330px;
+  background:var(--panel);border:1px solid var(--line2);border-radius:16px;
+  box-shadow:var(--shadow);padding:12px 14px;font-size:12px;color:var(--dim);
+  opacity:0;transform:translateY(-6px) scale(.97);pointer-events:none;
+  transition:.18s cubic-bezier(.34,1.2,.64,1);
+  backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);
+}
+.live-pop.on{opacity:1;transform:translateY(0) scale(1);pointer-events:auto}
+.live-pop .lp-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px;
+  color:var(--fg);font-weight:600;font-size:12.5px}
+.live-pop .lp-close{cursor:pointer;color:var(--faint);font-size:15px;line-height:1;padding:0 3px}
+.live-pop .lp-close:hover{color:var(--fg)}
+.live-pop .lp-row{display:flex;justify-content:space-between;gap:12px;padding:4px 0;border-top:1px dashed var(--line)}
+.live-pop .lp-row:first-of-type{border-top:0}
+.live-pop .lp-row span{color:var(--dim)}
+.live-pop .lp-row b{color:var(--fg);font-weight:500;font-variant-numeric:tabular-nums;text-align:right}
+.live-pop .lp-note{margin-top:8px;color:var(--faint);font-size:10.5px;line-height:1.5}
+@media(max-width:1100px){ .hbar-live{gap:4px;padding:4px 7px;font-size:10.5px} }
+@media(max-width:760px){
+  .hbar-live{padding:3px 8px;font-size:10.5px;gap:5px;max-width:none;overflow:visible}
+  .hbar-live .hl-ratio{display:none}
+  .hbar-live .hl-item{gap:2px}
+}
 .spacer{flex:1}
 .brand{cursor:pointer;user-select:none;transition:.15s}
 .brand:hover{opacity:.82}
@@ -686,6 +728,10 @@ button.sm{padding:5px 10px;font-size:12px}
    叠在浅紫半透明底上一样糊，所以单独指定深紫。 */
 [data-theme="glass"] .theme-switch button{color:rgba(58,24,84,.82)}
 [data-theme="glass"] .theme-switch button:hover{color:rgba(58,24,84,1);background:rgba(255,255,255,.28)}
+@media(max-width:760px){
+  /* 窄屏主题组单独占第二行，避免把「设置」挤到下一行，同时不丢主题入口。 */
+  .theme-switch{order:10;flex-basis:100%;margin:0;justify-content:flex-start}
+}
 
 /* ---------- 主体 ---------- */
 main{position:relative;z-index:1;flex:1;display:flex;min-height:0}
@@ -789,6 +835,16 @@ main{position:relative;z-index:1;flex:1;display:flex;min-height:0}
 .msg .who{font-size:10.5px;color:var(--faint);margin-bottom:5px;letter-spacing:.4px}
 .msg .files{margin-top:7px;font-size:10.5px;color:var(--faint);
   font-family:ui-monospace,Consolas,monospace}
+.msg .msg-meter{
+  display:flex;flex-wrap:wrap;align-items:center;gap:7px;
+  margin-top:6px;padding:0 2px;color:var(--faint);font-size:10.5px;
+  line-height:1.4;font-variant-numeric:tabular-nums;
+}
+.msg .msg-meter b{color:var(--dim);font-weight:500}
+.msg .msg-meter .mm-sep{opacity:.35}
+.msg .msg-meter .mm-item{display:inline-flex;align-items:center;gap:3px}
+.msg .msg-meter .mm-ico{opacity:.55;font-size:10px}
+.msg .msg-meter.live b{color:var(--accent)}
 .msg .ops{display:flex;gap:6px;margin-top:6px;opacity:0;transition:.15s}
 .msg:hover .ops{opacity:1}
 .msg .ops button{font-size:11px;padding:3px 9px;background:transparent;
@@ -2737,6 +2793,13 @@ header .theme-switch button{white-space:nowrap}
     <span id="hSlot">—</span>
     <span id="hQueue">—</span>
   </div>
+  <div class="hbar-live idle" id="hLive" title="点击查看缓存 / 上下文详情">
+    <span class="hl-item"><span class="hl-ico">⚡</span><b id="hlSpeed">—</b><span class="hl-unit"> tok/s</span></span>
+    <span class="hl-sep">·</span>
+    <span class="hl-item"><span class="hl-ico">◈</span><span class="hl-label">缓存 </span><b id="hlCache">—</b></span>
+    <span class="hl-sep">·</span>
+    <span class="hl-item"><span class="hl-ico">▣</span><span class="hl-label">上下文 </span><b id="hlCtx">—</b><span class="hl-ratio"></span></span>
+  </div>
   <div class="spacer"></div>
   <button id="btnSide" class="ghost side-toggle" title="展开侧栏">☰</button>
   <button id="btnDrawer" class="ghost side-collapse" title="收起 / 展开侧边栏">‹</button>
@@ -2752,6 +2815,11 @@ header .theme-switch button{white-space:nowrap}
   <button id="btnHist" class="ghost">历史</button>
   <button id="btnSettings" class="ghost">设置</button>
 </header>
+
+<div class="live-pop" id="livePop">
+  <div class="lp-head"><span>本次请求用量</span><span class="lp-close" id="livePopClose">×</span></div>
+  <div id="livePopBody"></div>
+</div>
 
 <main>
   <aside class="side">
@@ -3705,6 +3773,38 @@ function emptyHtml(){
     '</div></div>';
 }
 
+function msgMeter(m, idx){
+  if (!m || m.role === 'user') return '';
+  var kind = String(m.kind || '');
+  if (kind === 'think') return '';
+  var tok = Number(m.tok || 0);
+  var speed = Number(m.speed || 0);
+  var cache = (typeof m.cacheHit === 'number') ? m.cacheHit : null;
+  var used = Number(m.ctxUsed || 0);
+  var limit = Number(m.ctxLimit || 0);
+  var live = false;
+  // 正在跑的这条最终气泡还没有落盘指标时，用当前 state 兜底。
+  if ((!tok && !speed && cache === null && !used) &&
+      idx === curSession.length - 1 && curState && curState.status === 'running'){
+    speed = Number(curState.speed || 0);
+    cache = (typeof curState.cacheHit === 'number') ? curState.cacheHit : null;
+    used = Number(curState.ctxUsed || 0);
+    limit = Number(curState.ctxLimit || 0);
+    live = true;
+  }
+  if (!tok && !speed && cache === null && !used) return '';
+  var bits = [];
+  if (speed > 0) bits.push('<span class="mm-item"><span class="mm-ico">⚡</span><b>' + speed.toFixed(1) + '</b> tok/s</span>');
+  if (cache !== null && cache > 0) bits.push('<span class="mm-item"><span class="mm-ico">◈</span>缓存 <b>' + cache.toFixed(0) + '%</b></span>');
+  if (used > 0) {
+    var ctxTxt = limit > 0 ? (used + ' / ' + limit) : String(used);
+    bits.push('<span class="mm-item"><span class="mm-ico">▣</span>上下文 <b>' + ctxTxt + '</b></span>');
+  }
+  if (tok > 0) bits.push('<span class="mm-item"><span class="mm-ico">Σ</span><b>' + tok + '</b> tok</span>');
+  if (!bits.length) return '';
+  return '<div class="msg-meter' + (live ? ' live' : '') + '">' + bits.join('<span class="mm-sep">·</span>') + '</div>';
+}
+
 function msgBubble(m, idx){
   var role = (m.role === 'user') ? 'user' : 'assistant';
   // 分清三种内容的视觉分量：
@@ -3728,7 +3828,7 @@ function msgBubble(m, idx){
     '</div>';
   return '<div class="' + cls + '"><div class="wrap"><div class="bubble">' +
     '<div class="who">' + who + (m.ts ? '<span class="who-ts"> · ' + esc(m.ts) + '</span>' : '') + '</div>' +
-    fmtMsg(content) + files + '</div>' + ops +
+    fmtMsg(content) + files + '</div>' + msgMeter(m, idx) + ops +
     '<pre class="raw-out hide"></pre></div></div>';
 }
 
@@ -3872,7 +3972,95 @@ function toggleThink(el){
    ④ 上下文    —— state.ctxUsed / contextPerSlot
    所有主题都显示；任务没在跑就整条隐藏、把 hint 露出来。
    ============================================================ */
+/* 顶栏实时用量 + 点击详情。
+   设计原则：数字每轮 state 都覆盖写，不依赖 session 的 3.6 秒慢通道；
+   点击展开的明细也只从同一个 state 组装，不再额外请求。 */
+function renderLiveMeter(st){
+  var live = $('hLive');
+  if (!live) return;
+  var prev = window.__lastLiveMeter || {};
+  var hasSt = !!(st && typeof st === 'object');
+  // 有 state 就信 state（包括 0）；没有 state 才留上一次的数，避免新任务开头挂着上一轮的高缓存。
+  var speed = hasSt ? (Number(st.speed) || 0) : (prev.speed || 0);
+  var cache = hasSt ? ((typeof st.cacheHit === 'number' && st.cacheHit > 0) ? st.cacheHit : null) : (prev.cacheHit || null);
+  var used = hasSt ? (Number(st.ctxUsed) || 0) : (prev.used || 0);
+  var real = hasSt ? (Number(st.ctxReal) || 0) : (prev.real || 0);
+  var limit = hasSt ? (Number(st.ctxLimit) || 0) : (prev.limit || 0);
+  var cacheN = hasSt ? (Number(st.cacheN) || 0) : (prev.cacheN || 0);
+  var promptN = hasSt ? (Number(st.promptN) || 0) : (prev.promptN || 0);
+  var genTok = hasSt ? (Number(st.genTok) || 0) : (prev.genTok || 0);
+  var ctxPrompt = hasSt ? (Number(st.ctxPrompt) || 0) : (prev.ctxPrompt || 0);
+  var ctxHistory = hasSt ? (Number(st.ctxHistory) || 0) : (prev.ctxHistory || 0);
+  var ctxTools = hasSt ? (Number(st.ctxTools) || 0) : (prev.ctxTools || 0);
+  var snap = {
+    speed: speed, cacheHit: cache, used: used, real: real, limit: limit,
+    cacheN: cacheN, promptN: promptN, genTok: genTok,
+    ctxPrompt: ctxPrompt, ctxHistory: ctxHistory, ctxTools: ctxTools
+  };
+  window.__lastLiveMeter = snap;
+
+  var running = !!(st && st.status === 'running');
+  live.classList.toggle('idle', !running);
+  live.classList.toggle('fresh', running && (speed > 0 || cache !== null));
+
+  var sp = speed > 0 ? speed.toFixed(1) : '—';
+  $('hlSpeed').textContent = sp;
+  $('hlCache').textContent = (cache !== null) ? cache.toFixed(0) + '%' : '—';
+  var ctxB = $('hlCtx');
+  var ctxRatio = ctxB.parentElement.querySelector('.hl-ratio');
+  if (used > 0) {
+    var p = real > 0 ? Math.min(100, Math.round(used / real * 100)) : 0;
+    ctxB.textContent = used;
+    if (ctxRatio) ctxRatio.textContent = real > 0 ? ' / ' + real + ' · ' + p + '%' : '';
+  } else {
+    ctxB.textContent = '—';
+    if (ctxRatio) ctxRatio.textContent = '';
+  }
+
+  // 详情面板只在打开时重建，避免每 350ms 白写 DOM。
+  var pop = $('livePop');
+  if (!pop || !pop.classList.contains('on')) return;
+  var rows = [];
+  function row(k, v){ return '<div class="lp-row"><span>' + k + '</span><b>' + v + '</b></div>'; }
+  if (cache !== null) rows.push(row('缓存命中', cache.toFixed(1) + '%'));
+  if (cacheN > 0) rows.push(row('命中 token', cacheN.toLocaleString()));
+  if (promptN > 0) rows.push(row('本次新算 token', promptN.toLocaleString()));
+  if (speed > 0) rows.push(row('生成速度', speed.toFixed(1) + ' tok/s'));
+  if (genTok > 0) rows.push(row('本次生成 token', genTok.toLocaleString()));
+  if (used > 0) {
+    var pct = real > 0 ? (used / real * 100).toFixed(1) + '%' : '—';
+    rows.push(row('已消耗上下文', used.toLocaleString() + ' / ' + (real || '?') + ' （' + pct + '）'));
+  }
+  if (limit > 0) rows.push(row('输入预算', limit.toLocaleString()));
+  if (ctxPrompt > 0) rows.push(row('其中提示词', ctxPrompt.toLocaleString()));
+  if (ctxHistory > 0) rows.push(row('其中对话历史', ctxHistory.toLocaleString()));
+  if (ctxTools > 0) rows.push(row('其中工具定义', ctxTools.toLocaleString()));
+  $('livePopBody').innerHTML = rows.join('') +
+    '<div class="lp-note">数据来自 agent 每次模型请求的 timings；缓存命中 = cache_n / (cache_n + prompt_n)。</div>';
+}
+
+function bindLiveMeter(){
+  var live = $('hLive'), pop = $('livePop');
+  if (!live || !pop) return;
+  live.addEventListener('click', function(ev){
+    ev.stopPropagation();
+    var on = pop.classList.toggle('on');
+    if (on) { renderLiveMeter(curState); }
+  });
+  var close = $('livePopClose');
+  if (close) close.addEventListener('click', function(ev){ ev.stopPropagation(); pop.classList.remove('on'); });
+  document.addEventListener('click', function(ev){
+    if (!pop.classList.contains('on')) return;
+    if (pop.contains(ev.target) || live.contains(ev.target)) return;
+    pop.classList.remove('on');
+  });
+  document.addEventListener('keydown', function(ev){
+    if (ev.key === 'Escape') pop.classList.remove('on');
+  });
+}
+
 function refreshGenbar(st){
+  renderLiveMeter(st);
   var bar = $('genBar');
   if (!bar) return;
   var running = (st && st.status === 'running');
@@ -4945,7 +5133,15 @@ function tick(){
       if (slow) { loadTools(); loadFiles(); checkAsk(); }
 
       var busy = (st && st.status === 'running');
+      var wasBusy = !!window.__lastBusy;
       window.__lastBusy = busy;
+      // 任务刚结束：立即补一次 session，别等慢通道的 8 轮（空闲时约 12 秒）——
+      // 用户看到的「做完了半天不显示最后一条回答」就是这一步等出来的。
+      if (wasBusy && !busy) {
+        fetchJson('/api/session').then(function(s2){
+          if (s2) { window.__lastSess = s2; renderFlow(s2, st); }
+        }).catch(function(){});
+      }
       // 回合在跑 → 浮窗一直亮着。
       // 之前靠 .stream-out:empty 自动隐藏，模型思考的几十秒里一个字都不吐，
       // 浮窗就消失了 —— 用户以为它挂了。现在只看 status，不看有没有内容。
@@ -6071,6 +6267,7 @@ bindAnswer();
 bindAutopilot();
 bindMode();
 bindModelWarn();
+bindLiveMeter();
 loadFiles();
 tick();
 // 自主模式状态单独刷：它几秒才变一次，不用挤进主轮询

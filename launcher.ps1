@@ -127,6 +127,10 @@ if (-not (Test-AiUp)) {
         '-t', [string]$threads,
         '-tb', [string]$threads,
         '-np', "$([int]$Cfg.parallel)",
+        # 前缀缓存显式打开；cache-reuse 让历史被裁/改写时还能复用
+        # 相邻的 KV 块，少做一次整段 prefill。
+        '--cache-prompt',
+        '--cache-reuse', '256',
         '--load-mode', $loadMode,
         '--prio', $prio,
         '--timeout', '600'

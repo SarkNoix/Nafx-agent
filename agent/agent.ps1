@@ -562,6 +562,103 @@ function Repair-ActionStrings {
 #  目的：任务简单时别给 19 个工具，模型反而挑得准。
 # ============================================================
 
+function Test-ProjectDeliverable {
+    # 项目验收器：只做静态检查 + 看执行痕迹，不擅自运行未知脚本。
+    # 目的是在 finish 前发现「能跑但没说明」「写了但没落盘」「只有文件没有用法」
+    # 这类小模型最常见的半成品，而不是用固定文件名把项目判死。
+    param([string]$Root, [object]$State, [string]$Answer)
+
+    $missing = @()
+    $files = @(Get-ChildItem -LiteralPath $Root -Recurse -File -ErrorAction SilentlyContinue)
+    if ($files.Count -eq 0) {
+        return [pscustomobject]@{ Ok = $false; Missing = @('项目里一个文件都没有'); Count = 0 }
+    }
+
+    $code = @($files | Where-Object { $_.Extension -in @('.ps1', '.bat') })
+    $docs = @($files | Where-Object { $_.Name -match '(?i)^README(\.|$)|\.md$' })
+    $data = @($files | Where-Object { $_.Extension -in @('.jsonl', '.json', '.csv', '.txt', '.log') })
+
+    if ($code.Count -eq 0) { $missing += '没有可执行入口（.ps1 / .bat）' }
+    if ($docs.Count -eq 0) {
+        $missing += '没有 README 或用法说明'
+    } else {
+        $docText = ''
+        foreach ($d in $docs) { try { $docText += "`n" + [IO.File]::ReadAllText($d.FullName) } catch { } }
+        if ($docText.Length -lt 30 -or $docText -notmatch '(?i)用法|运行|Usage|命令') {
+            $missing += 'README 内容太短或没有写用法'
+        } else {
+            # 小模型写 README 常被截断：代码块/行内反引号没闭合，最后一行是 ".\"。
+            $docLines = @($docText -split "`r?`n" | Where-Object { $_.Trim() })
+            if ($docLines.Count -gt 0) {
+                $lastDoc = $docLines[$docLines.Count - 1]
+                $ticks = @($lastDoc.ToCharArray() | Where-Object { $_ -eq [char]96 }).Count
+                if (($ticks % 2) -eq 1) { $missing += 'README 最后一行的反引号没闭合，说明没写完' }
+            }
+            if ((([regex]::Matches($docText, '(?m)^\s*```')).Count % 2) -eq 1) {
+                $missing += 'README 的代码块没闭合，说明没写完'
+            }
+        }
+    }
+    if ($data.Count -eq 0) { $missing += '没有数据/记录文件' }
+
+    $codeText = ''
+    foreach ($f in $code) {
+        try { $codeText += "`n" + [IO.File]::ReadAllText($f.FullName) } catch { }
+    }
+    if ($code.Count -gt 0 -and $codeText -notmatch '(?i)Add-Content|Set-Content|Out-File|ConvertTo-Json|Export-Csv|>>') {
+        $missing += '入口里没有看到保存数据的动作'
+    }
+
+    $ran = @($State.steps | Where-Object {
+        [string]$_.tool -in @('run_ps1', 'write_script')
+    }).Count -gt 0
+    if (-not $ran) { $missing += '没有真正运行过入口脚本' }
+    # ok 只代表“调用发出去了”，write_script/run_ps1 的退出码在 note/obs 里。
+    # 看最后一次主动 run_ps1，而不是 write_script 的自动空跑：
+    # 前者才是“用户会怎么用”，后者只能证明脚本能启动。
+    $runSteps = @($State.steps | Where-Object { [string]$_.tool -eq 'run_ps1' })
+    if ($runSteps.Count -eq 0) {
+        $missing += '没有用 run_ps1 主动跑一次'
+    } else {
+        $lastRun = $runSteps[$runSteps.Count - 1]
+        $lastNote = [string]$lastRun.note
+        $lastObs  = [string]$lastRun.obs
+        $lastCmd  = [string]$lastRun.fp2
+        $lastOk = ($lastNote -match '退出码\s+0') -and ($lastObs -notmatch '运行出错|错误：|错误输出|CommandNotFound|无法将.*识别|不是.*cmdlet|ParserError|MissingArgument|缺少参数')
+        if (-not $lastOk) { $missing += '最后一次主动运行没有成功（看退出码/错误输出）' }
+        # 脚本声明了 param() 却空跑，只能证明“能启动”，不能证明“能记录”。
+        if ($codeText -match 'param\s*\(' -and [string]::IsNullOrWhiteSpace($lastCmd)) {
+            $missing += '最后一次主动运行没有传入真实参数'
+        }
+    }
+
+    if ($code.Count -gt 0 -and $codeText -notmatch '(?i)try\s*\{|catch\s*\{|Validate|Mandatory|throw|if\s*\([^\r\n]*(-not|-eq|-lt|-gt)|IsNullOrEmpty|IsNullOrWhiteSpace|Write-Error|错误：|用法|Usage') {
+        $missing += '没有看到失败提示或参数校验'
+    }
+    if ($Answer -notmatch '用法|运行|命令|输入|记录|查看') {
+        $missing += '最终答复没有告诉用户怎么用'
+    }
+
+    return [pscustomobject]@{
+        Ok      = ($missing.Count -eq 0)
+        Missing = $missing
+        Count   = $files.Count
+    }
+}
+
+function Repair-AnswerTail {
+    # 4B 把 answer 写成“...例如 `.\scripts\...`”时，常在示例中途被截断：
+    # 反引号/字符串没闭合，用户看到半句。README 里已有完整用法，
+    # 这里把断掉的尾巴换成明确指引，不硬补命令（补错更糟）。
+    param([string]$Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return $Text }
+    $t = $Text.Trim()
+    if ($t -match '(?s)(例如|比如)\s*`[^`]*$') {
+        $t = [regex]::Replace($t, '(?s)[，,、]?\s*(例如|比如)\s*`[^`]*$', '。完整用法见 README.md。')
+    }
+    return $t
+}
+
 function Get-Intent {
     param([string]$Text)
     $t = ([string]$Text).Trim()
@@ -720,7 +817,12 @@ function Get-SessionHistory {
     # 原来是 2 轮 / 180 字 —— 问答一来一回就占满了，
     # 用户回答「data」之后，下一轮根本看不到「我在问哪个目录」，
     # 于是又从头问一遍。
-    param([int]$MaxTurns = 4, [int]$MaxCharsPerMsg = 400)
+    #
+    # 现在是两级检索：
+    #   ① 每条会话落盘时已有 summary，先只比 summary，便宜；
+    #   ② 摘要命中/接近截断线的候选才回读原文（content）精排；
+    #   ③ 最后两条永远带上，保证「刚才聊到哪」不断线。
+    param([int]$MaxTurns = 4, [int]$MaxCharsPerMsg = 400, [string]$Task = '')
     $out = @()
     if (-not (Test-Path $SessionFile)) { return $out }
     try {
@@ -728,7 +830,31 @@ function Get-SessionHistory {
     } catch { return $out }
     if ($lines.Count -eq 0) { return $out }
 
-    $take = @($lines | Select-Object -Last ($MaxTurns * 2))
+    $want = [Math]::Max(($MaxTurns * 2), 2)
+    $scan = [Math]::Max(30, ($MaxTurns * 4))
+    $take = @($lines | Select-Object -Last $scan)
+    if ($take.Count -le $want -or [string]::IsNullOrWhiteSpace($Task) -or -not (Get-Command Get-TextSummary -ErrorAction SilentlyContinue)) {
+        # 会话很短 / 没有任务文本 / 记忆模块没加载：走原来的「最近几条」。
+        $short = @()
+        foreach ($l in $take) {
+            try {
+                $o = $l | ConvertFrom-Json
+                $role = [string]$o.role
+                $content = [string]$o.content
+                if (-not $content) { continue }
+                if ($role -notin @('user', 'assistant')) { continue }
+                # note / think 是过程播报，不是用户和模型的正式对话；
+                # 带进历史只会多占 prefill，跳过。
+                if ([string]$o.kind) { continue }
+                if ($content.Length -gt $MaxCharsPerMsg) { $content = $content.Substring(0, $MaxCharsPerMsg) + '…' }
+                $short += @{ role = $role; content = $content; ts = [string]$o.ts }
+            } catch { }
+        }
+        return @($short | Select-Object -Last $want)
+    }
+
+    $recs = @()
+    $idx = 0
     foreach ($l in $take) {
         try {
             $o = $l | ConvertFrom-Json
@@ -736,10 +862,76 @@ function Get-SessionHistory {
             $content = [string]$o.content
             if (-not $content) { continue }
             if ($role -notin @('user', 'assistant')) { continue }
-            if ($content.Length -gt $MaxCharsPerMsg) { $content = $content.Substring(0, $MaxCharsPerMsg) + '…' }
-            # 带上 ts：调用方要靠它判断这条是不是「清除之前」的记录
-            $out += @{ role = $role; content = $content; ts = [string]$o.ts }
+            if ([string]$o.kind) { continue }
+            $sum = [string]$o.summary
+            if ([string]::IsNullOrWhiteSpace($sum)) {
+                $sum = Get-TextSummary -Text $content -MaxLen 140
+            }
+            $recs += [pscustomobject]@{
+                Role    = $role
+                Content = $content
+                Ts      = [string]$o.ts
+                Summary = $sum
+                Index   = $idx
+            }
+            $idx++
         } catch { }
+    }
+    if ($recs.Count -le $want) {
+        $short = @()
+        foreach ($r in $recs) {
+            $c = $r.Content
+            if ($c.Length -gt $MaxCharsPerMsg) { $c = $c.Substring(0, $MaxCharsPerMsg) + '…' }
+            $short += @{ role = $r.Role; content = $c; ts = $r.Ts }
+        }
+        return @($short | Select-Object -Last $want)
+    }
+
+    # ① 摘要粗排
+    $coarse = @()
+    foreach ($r in $recs) {
+        $c = Get-SummaryScore -Task $Task -Summary $r.Summary
+        $coarse += [pscustomobject]@{ Rec = $r; Score = [int]$c.Score }
+    }
+    $ordered = @($coarse | Sort-Object Score -Descending)
+    $coarseTop = 10
+    $cutoff = 0
+    if ($ordered.Count -ge $coarseTop) { $cutoff = [int]$ordered[$coarseTop - 1].Score }
+
+    # ② 候选回读原文精排；截断线附近的也读，宁可多读一段。
+    $fine = @()
+    foreach ($c in $ordered) {
+        $isCandidate = ($fine.Count -lt $coarseTop) -or
+                       ($c.Score -gt 0 -and $c.Score -ge ($cutoff - 3))
+        if (-not $isCandidate) { continue }
+        $t = Get-SummaryScore -Task $Task -Summary $c.Rec.Summary -Text $c.Rec.Content
+        $final = [Math]::Max([int]$c.Score, [int]$t.Score)
+        # 越靠近现在越重要，给一点点加成，避免只挑到很早的相似句。
+        if ($c.Rec.Index -ge ($recs.Count - 4)) { $final += 1 }
+        $fine += [pscustomobject]@{ Rec = $c.Rec; Score = $final }
+    }
+
+    # ③ 只保留真正相关的（分数 ≥5），不要为了凑满 8 条把无关闲聊也塞进去。
+    # 无关历史会挤占第一步 prefill，反而让新任务慢几十秒。
+    $must = @($recs | Select-Object -Last 2)
+    $selected = @($fine | Where-Object { $_.Score -ge 5 } | Sort-Object Score -Descending | Select-Object -First $want | ForEach-Object { $_.Rec })
+    foreach ($m in $must) {
+        if (-not ($selected | Where-Object { $_.Index -eq $m.Index })) { $selected += $m }
+    }
+    $selected = @($selected | Sort-Object Index)
+    # 条数超过上限时，从分数最低、且不是最后两条的开始丢。
+    if ($selected.Count -gt $want) {
+        $keep = @($selected | Select-Object -Last $want)
+        $selected = $keep
+    }
+
+    foreach ($r in $selected) {
+        $content = $r.Content
+        if ($content.Length -gt $MaxCharsPerMsg) { $content = $content.Substring(0, $MaxCharsPerMsg) + '…' }
+        $out += @{ role = $r.Role; content = $content; ts = $r.Ts }
+    }
+    if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
+        Write-Log ("  [两级检索] 会话 " + $recs.Count + " 条 → 摘要粗排 " + $coarseTop + " → 原文精排 " + $fine.Count + " → 带上 " + $out.Count)
     }
     return $out
 }
@@ -796,7 +988,7 @@ function Add-SessionNote {
         # 面板上看起来就是「想法莫名其妙出现在进度下面」，顺序全乱了。
         #
         # 现在改成：找到第一条同类记录就原地替换，位置永远不变。
-        $rec = '{"role":"assistant","kind":' + (To-JsonStr $Kind) + '","content":' + (To-JsonStr $body) +
+        $rec = '{"role":"assistant","kind":' + (To-JsonStr $Kind) + ',"content":' + (To-JsonStr $body) +
                ',"ts":' + (To-JsonStr (Get-Date -Format 'MM-dd HH:mm:ss')) +
                ',"ok":true,"files":[],"raw":""}'
         $kept = @()
@@ -827,19 +1019,41 @@ function Add-SessionNote {
 }
 
 function Add-SessionTurn {
-    param([string]$Role, [string]$Content, [bool]$Ok = $true, [array]$Files = @(), [string]$Raw = '', [string]$Kind = '')
+    param(
+        [string]$Role, [string]$Content, [bool]$Ok = $true, [array]$Files = @(),
+        [string]$Raw = '', [string]$Kind = '',
+        [int]$Tok = 0, [double]$Sec = 0, [double]$Speed = 0,
+        [double]$CacheHit = 0, [int]$CtxUsed = 0, [int]$CtxLimit = 0
+    )
     try {
         $clean = ($Content -replace '\s+', ' ').Trim()
         if ($clean.Length -gt 500) { $clean = $clean.Substring(0, 500) + '…' }
         if ($Raw.Length -gt 4000) { $Raw = $Raw.Substring($Raw.Length - 4000) }
         $fileJson = (($Files | Where-Object { $_ -and $_ -match '\.\w{1,5}$' } | Select-Object -Unique | ForEach-Object { To-JsonStr $_ }) -join ',')
+        # 每段话落盘时顺手生成摘要（纯规则，不调模型）。
+        # 下一轮回顾先看这条摘要，判断相关后再回读 content/raw。
+        $sumText = ''
+        if (Get-Command Get-TextSummary -ErrorAction SilentlyContinue) {
+            $sumText = Get-TextSummary -Text $clean -MaxLen 150
+        }
+        # 每条最终回答带上本轮的用量，面板气泡下面直接显示。
+        # 数字用 InvariantCulture，避免某些区域设置把小数点写成逗号导致 JSON 坏掉。
+        $meterJson = ''
+        if ($Tok -gt 0) { $meterJson += ',"tok":' + [string]$Tok }
+        if ($Sec -gt 0) { $meterJson += ',"sec":' + [string]::Format([Globalization.CultureInfo]::InvariantCulture, '{0:0.0}', [double]$Sec) }
+        if ($Speed -gt 0) { $meterJson += ',"speed":' + [string]::Format([Globalization.CultureInfo]::InvariantCulture, '{0:0.0}', [double]$Speed) }
+        if ($CacheHit -gt 0) { $meterJson += ',"cacheHit":' + [string]::Format([Globalization.CultureInfo]::InvariantCulture, '{0:0.0}', [double]$CacheHit) }
+        if ($CtxUsed -gt 0) { $meterJson += ',"ctxUsed":' + [string]$CtxUsed }
+        if ($CtxLimit -gt 0) { $meterJson += ',"ctxLimit":' + [string]$CtxLimit }
         $line = '{"role":' + (To-JsonStr $Role) +
                 ',"content":' + (To-JsonStr $clean) +
+                ',"summary":' + (To-JsonStr $sumText) +
                 ',"ts":' + (To-JsonStr (Get-Date -Format 'MM-dd HH:mm:ss')) +
                 ',"ok":' + $(if ($Ok) { 'true' } else { 'false' }) +
                 ',"files":[' + $fileJson + ']' +
                 ',"raw":' + (To-JsonStr $Raw) +
-                $(if ($Kind) { ',"kind":' + (To-JsonStr $Kind) } else { '' }) + '}'
+                $(if ($Kind) { ',"kind":' + (To-JsonStr $Kind) } else { '' }) +
+                $meterJson + '}'
         Add-Content -Path $SessionFile -Value $line -Encoding UTF8
 
         # 截断只在偶尔做一次。
@@ -1021,6 +1235,10 @@ function Invoke-Model {
                 ',"max_tokens":' + $(if ($MaxTokens -gt 0) { $MaxTokens } else { [int]$Cfg.maxTokens }) +
                 ',"tools":' + $ToolsJson +
                 ',"tool_choice":' + $choice +
+                # 本地 llama 明确开启 prompt cache：每一步只有尾部新增的
+                # assistant/tool 消息需要 prefill，system+历史前缀直接命中。
+                # API 模式不加这个字段，避免第三方网关拒收未知参数。
+                $(if (-not $script:IsApiMode) { ',"cache_prompt":true' } else { '' }) +
                 # include_usage：llama-server 会在最后一个 chunk 里带 usage + timings。
                 # timings 里有真实的 predicted_per_second（tok/s）和 cache_n/prompt_n（缓存命中），
                 # 面板进度条要显示的就是这两个数 —— 不用再拿字符数瞎估。
@@ -1166,6 +1384,9 @@ function Invoke-Model {
             }
             $cn = 0.0; if ($t.cache_n)   { $cn = [double]$t.cache_n }
             $pn = 0.0; if ($t.prompt_n)  { $pn = [double]$t.prompt_n }
+            $script:LiveState.cacheN  = [int]$cn
+            $script:LiveState.promptN = [int]$pn
+            if ($t.predicted_n) { $script:LiveState.genTok = [int]$t.predicted_n }
             if (($cn + $pn) -gt 0) {
                 $script:LiveState.cacheHit = [math]::Round($cn / ($cn + $pn) * 100, 1)
             }
@@ -1457,6 +1678,25 @@ function Confirm-Delete {    param([string]$Target, [object]$State, [int]$StepNu
 
     if ([string]::IsNullOrWhiteSpace($Target)) { return $false }
 
+    # 训练沙箱里没有面板，也没人点「允许」；如果走正常确认，
+    # 每个删除题都会白等 180 秒后被当成拒绝（local-delete 就是这样丢分的）。
+    # 只允许 train.ps1 显式设置 NAFX_TRAIN_AUTO_APPROVE，且目标必须在
+    # 路径里带 \train\sandbox 的训练工作区内，避免影响真实使用。
+    if ($env:NAFX_TRAIN_AUTO_APPROVE -eq '1') {
+        $wsFull = [IO.Path]::GetFullPath($Workspace).TrimEnd('\')
+        if ($wsFull -match '\\train\\sandbox') {
+            $targetFull = if ([IO.Path]::IsPathRooted($Target)) {
+                [IO.Path]::GetFullPath($Target)
+            } else {
+                [IO.Path]::GetFullPath((Join-Path $wsFull $Target))
+            }
+            if ($targetFull -eq $wsFull -or $targetFull -like ($wsFull + '\*')) {
+                Write-Log ("  [删除确认] 训练沙箱自动批准：$Target")
+                return $true
+            }
+        }
+    }
+
     $askId   = 'd' + [Guid]::NewGuid().ToString('N').Substring(0, 8)
     $askFile = Join-Path $AgentDir 'ask.json'
     $ansFile = Join-Path $AgentDir 'answer.json'
@@ -1697,7 +1937,7 @@ try {
             if ($gt) { $genTs = [datetime]::Parse($gt, [Globalization.CultureInfo]::InvariantCulture) }
         } catch { }
     }
-    $rawHist = @(Get-SessionHistory -MaxTurns 4)
+    $rawHist = @(Get-SessionHistory -MaxTurns 4 -Task $TaskText)
     if ($rawHist.Count -gt 0 -and $genTs -ne [datetime]::MinValue) {
         # 只有带着 ts 且晚于清除时间的才保留
         $sessionMsgs = @($rawHist | Where-Object {
@@ -1873,15 +2113,20 @@ try {
 }
 
 # 把以前踩过的坑带上（这是"从失败里学"的地方）
+#
+# 注意：不再拼进 system。经验是按任务挑的，每条任务可能不同；
+# 一拼进 system，system 前缀就变，llama 的整段 prompt cache 全废，
+# 第一步又得重新 prefill 一两千 token。改成放在任务后面的独立消息，
+# system+tools 保持稳定，后面的经验只新增几十 token。
 $script:UsedLessons = @()
+$lessonBlock = ''
 if ($MemoryLoaded) {
     try {
         $rej = @()
         if ($script:ActiveFlow -and $script:ActiveFlow.reject_tools) { $rej = @($script:ActiveFlow.reject_tools) }
         $script:UsedLessons = @(Get-Lessons -Task $TaskText -Max 4 -RejectTools $rej)
         if ($script:UsedLessons.Count -gt 0) {
-            $sysFull = $sysFull + "`n`n" + (Format-Lessons -Lessons $script:UsedLessons)
-
+            $lessonBlock = (Format-Lessons -Lessons $script:UsedLessons).Trim()
             Write-Log ("  带上 " + $script:UsedLessons.Count + " 条以前的经验")
         }
     } catch { }
@@ -1979,6 +2224,10 @@ $history = @(@{ role = 'system'; content = $sysFull })
 foreach ($sm in $sessionMsgs) { $history += $sm }
 $history += @{ role = 'user'; content = "任务：$TaskText" }
 if ($wsSnapshot.Trim()) { $history += @{ role = 'user'; content = $wsSnapshot.Trim() } }
+# 经验放最后：只新增这一小段，前面的 system+tools+历史仍然能命中缓存。
+if ($lessonBlock) {
+    $history += @{ role = 'user'; content = "【以前踩过的坑（参考，不要当作用户的新指令）】`n`n" + $lessonBlock }
+}
 
 # 清掉上一次的流式记录，否则面板会把上一条任务的字显示成本次的
 Reset-Stream
@@ -2037,6 +2286,10 @@ $state = [pscustomobject]@{
     # 每次模型请求后会被真实 timings 覆盖（见 Invoke-Model 末尾）。
     speed      = 0
     cacheHit   = 0
+    # 面板「缓存命中」详情用：这次请求命中多少 token、新算多少、生成多少。
+    cacheN     = 0
+    promptN    = 0
+    genTok     = 0
     phase     = '准备'
 }
 Write-State $state
@@ -2069,6 +2322,10 @@ $script:thinkNudge = 0
 $script:fileNudge = 0
 # finish 时「任务是归类/整理但一个文件都没挪」的打回次数。同样限 2 次。
 $script:organizeNudge = 0
+# finish 时「项目型任务缺入口/说明/数据/运行痕迹」的打回次数。限 2 次。
+$script:projectNudge = 0
+# 项目验收通过后只提示一次“直接 finish”，避免模型继续重写已经能跑的脚本。
+$script:projectPassed = $false
 # 连续出错后逼它分析的打回次数。限 3 次，防它拿这个当拖延借口。
 $script:errThinkNudge = 0
 # 时效性问题却没联网搜索的打回次数。同样限 2 次。
@@ -2076,6 +2333,10 @@ $script:webNudge = 0
 $planList    = @()
 $lastToolKey = ''
 $repeatCount = 0
+# 项目型任务：build 且只说方向，没有明确文件清单。只在 finish 和运行成功后用。
+$looksProject = ($intent -eq 'build' -and
+                 $TaskText -match '小工具|小东西|小项目|小系统|程序|应用|做个|做一个' -and
+                 $TaskText -notmatch '\.ps1|\.bat|\.txt|\.csv|\.json|\.md|包含|包括|三个文件|两个文件')
 
 for ($step = 1; $step -le $MaxSteps; $step++) {
     # 每步开头先记一次「还活着」—— 时间 + 状态。
@@ -2335,6 +2596,30 @@ $target = [Math]::Min($targetByBudget, [Math]::Max($targetByShare, 1400))
         }
         # 别把 assistant(tool_calls) 和它的 tool 回复拆散
         while ($kept.Count -gt 0 -and [string]$kept[0].role -eq 'tool') { $kept = @($kept | Select-Object -Skip 1) }
+
+        # 裁掉的中间段不要直接丢：压成一条短摘要塞回 system。
+        # 这样早期关键事实（目录名、用户偏好、已经试过的方案）还在，
+        # 只是从「逐字原文」降级成「摘要索引」，需要细节再回读会话文件。
+        $dropped = @()
+        if ($tailStart -gt $hi) { $dropped = @($history[$hi..($tailStart - 1)]) }
+        if ($dropped.Count -gt 2 -and (Get-Command Get-TextSummary -ErrorAction SilentlyContinue)) {
+            $parts = @()
+            foreach ($d in $dropped) {
+                $r = [string]$d.role
+                if ($r -notin @('user', 'assistant')) { continue }
+                $c = ([string]$d.content -replace '\s+', ' ').Trim()
+                if (-not $c) { continue }
+                if ($c.Length -gt 120) { $c = $c.Substring(0, 120) + '…' }
+                $parts += $c
+            }
+            $digest = Get-TextSummary -Text ($parts -join ' / ') -MaxLen 220
+            if ($digest) {
+                $head[0] = @{
+                    role = 'system'
+                    content = ([string]$head[0].content) + "`n`n## 早期对话摘要（已压缩）`n`n- " + $digest + "`n（只是索引；需要细节时回读 session.jsonl 或工作区文件）"
+                }
+            }
+        }
 
         $history = @($head) + @($kept)
         $histTok = Get-HistoryTokens -History $history
@@ -2740,6 +3025,7 @@ Add-SessionNote -Text $bcSay -Kind 'say'
         if (-not $answer.Trim() -and $script:PendingSpeech.Trim()) {
             $answer = $script:PendingSpeech.Trim()
         }
+        $answer = Repair-AnswerTail $answer
 
         # ---- 收尾前查：该联网搜的题有没有真搜 ----
         # 实测题库 6 道联网题全部失分，共同原因是「没用到 web_search」。
@@ -2791,6 +3077,7 @@ Add-SessionNote -Text $bcSay -Kind 'say'
         # 实测「删掉 victim.txt」——delete_path 已经删成功了，
         # 却被这条判成"没写文件"，打回重来三次，最后绕圈收尾。
         $isNotWriteTask = ($TaskText -match '删|移除|重命名|改名|移动|挪|剪切' -or
+                           $TaskText -match '不要(自己)?新建|不要(自己)?创建|不要写文件|别(自己)?新建|别(自己)?创建' -or
                            @($state.steps | Where-Object {
                                [string]$_.tool -in @('delete_path', 'move_path', 'copy_path')
                            }).Count -gt 0)
@@ -2810,6 +3097,26 @@ Add-SessionNote -Text $bcSay -Kind 'say'
                 "光在 answer 里说「内容为...」不算做完——那文件根本不存在。" +
                 "现在用 write_file 真的把它写出来，写完再 finish。") }
             continue
+        }
+
+        # ---- 收尾前查：项目型任务是不是只做了半成品 ----
+        # 真实用户给的是方向，不会列出所有文件。小模型很容易写出一个脚本、
+        # 顺手运行一下，但没有 README、没有落盘、没有失败提示就 finish。
+        # 这里只对“没有明确文件清单”的项目型任务做静态验收；固定文件名的题
+        # （mini/main.ps1/calc.ps1 等）不走这条，避免要求它额外造文件。
+        if ($looksProject -and $script:projectNudge -lt 2) {
+            $audit = Test-ProjectDeliverable -Root $Workspace -State $state -Answer $answer
+            if (-not $audit.Ok) {
+                $script:projectNudge = [int]$script:projectNudge + 1
+                Write-Log ("  [项目验收] 缺：" + ($audit.Missing -join '；'))
+                $history += @{ role = 'user'; content = (
+                    "【项目验收】这已经是一个项目型任务，但现在还缺：" +
+                    ($audit.Missing -join '；') + "。" +
+                    "不要改 answer 蒙混，去把缺的东西补齐：入口能跑的 .ps1、README/用法、数据保存、失败提示。" +
+                    "如果脚本需要参数，用 run_ps1 带上真实参数跑一次（例如 command=`"add 今天开会`"），" +
+                    "不要只 write_script 空跑。补齐后再实际跑一次，最后 finish 时用一两句话告诉用户怎么用。" ) }
+                continue
+            }
         }
 
         # ---- 收尾前查：要「归类/整理」的任务有没有真动文件 ----
@@ -3340,7 +3647,12 @@ Add-SessionNote -Text $bcSay -Kind 'say'
             ([string]$_.tool -in $writeTools) -and ([string]$_.arg -eq $stepArg)
         })
         $writeCount = $prevWrites.Count
-        if ($writeCount -ge 3) {
+        # 最后一次写脚本如果已经跑通了（write_script 自带执行，ok=true），
+        # 就不能再按“改了 4 次”强制收尾——那会把刚修好的版本也判死。
+        # 只有最后一次仍然失败，才说明是在同一个坑里绕。
+        $lastWriteOk = $false
+        if ($state.steps.Count -gt 0) { $lastWriteOk = [bool]$state.steps[$state.steps.Count - 1].ok }
+        if ($writeCount -ge 3 -and -not $lastWriteOk) {
             Write-Log ("  [绕圈] $stepArg 已经被写过 " + ($writeCount + 1) + " 次，强制收尾")
             $state.status = 'failed'
             $state.answer = "同一个文件改了 " + ($writeCount + 1) + " 次还是没搞定，先停下。最后一次的输出在上面的步骤里。"
@@ -3357,11 +3669,17 @@ Add-SessionNote -Text $bcSay -Kind 'say'
     }
 
     $stepFp = $stepArg + '|' + [string]$Action.command
-    $recentSame = @($state.steps | Select-Object -Last 6 | Where-Object {
-        ([string]$_.tool -eq $toolName) -and (([string]$_.arg + '|' + [string]$_.fp2) -eq $stepFp)
-    })
-    # steps 里已经包含当前这一步，减掉它才是「之前重复过几次」
-    $sameToolCount = [Math]::Max(0, $recentSame.Count - 1)
+    # think/say/note 是过程动作，不是“对同一目标重复操作”。
+    # 以前把 3 次 think 算成绕圈，模型每做一步就 think，于是刚写完脚本就被强制收尾。
+    $metaTools = @('think', 'say', 'note', 'finish', 'plan', 'rethink')
+    $sameToolCount = 0
+    if ($toolName -notin $metaTools) {
+        $recentSame = @($state.steps | Select-Object -Last 6 | Where-Object {
+            ([string]$_.tool -eq $toolName) -and (([string]$_.arg + '|' + [string]$_.fp2) -eq $stepFp)
+        })
+        # steps 里已经包含当前这一步，减掉它才是「之前重复过几次」
+        $sameToolCount = [Math]::Max(0, $recentSame.Count - 1)
+    }
     if ($sameToolCount -ge 1) {
         $history += @{ role = 'user'; content = "你刚才已经对 $stepArg 用过 $toolName 了，结果就在上面的观察里。**别对同一个目标重复操作**——要改方式就换工具（比如覆盖了想追加，用 append_file），否则直接 finish。" }
         Write-Log ("  [绕圈] " + $toolName + " 对同一个目标第 " + ($sameToolCount + 1) + " 次")
@@ -3409,8 +3727,14 @@ Add-SessionNote -Text $bcSay -Kind 'say'
     }
 
     # 同一个动作连着做 = 它绕进去了。下一轮强制它 finish，别再耗步数。
-    $toolKey = $toolName + '|' + [string]$call.arguments
-    if ($toolKey -eq $lastToolKey) { $repeatCount++ } else { $repeatCount = 0; $lastToolKey = $toolKey }
+    # think 不算：它是每步之间的正常停顿，不是重复动作。
+    if ($toolName -in $metaTools) {
+        $repeatCount = 0
+        $lastToolKey = ''
+    } else {
+        $toolKey = $toolName + '|' + [string]$call.arguments
+        if ($toolKey -eq $lastToolKey) { $repeatCount++ } else { $repeatCount = 0; $lastToolKey = $toolKey }
+    }
     if ($repeatCount -ge 1) {
         Write-Log ("  [重复] $toolName 连着做了 $($repeatCount + 1) 次")
         # 不用 tool_choice 硬逼（4B 在 forced 模式下会返回空），改成把话说明白
@@ -3442,6 +3766,18 @@ Add-SessionNote -Text $bcSay -Kind 'say'
     if ($state.steps.Count -ge 2) {
         $hint = "`n`n（这一步已经做完。如果上面的结果已经能回答任务，现在就调 finish；" +
                 "不要再调 $toolName 或别的工具去确认一遍。）"
+    }
+    # 项目验收已经满足时，明确告诉它“别再改了”。
+    # 实测：脚本、README、数据、带参数运行都齐了，模型还会反复重写同一个脚本，
+    # 把已经能用的版本越改越差。验收器只答一次，之后直接收尾。
+    if ($looksProject -and $toolName -eq 'run_ps1' -and -not $script:projectPassed) {
+        $auditNow = Test-ProjectDeliverable -Root $Workspace -State $state -Answer '用法见 README'
+        if ($auditNow.Ok) {
+            $script:projectPassed = $true
+            $hint += "`n`n（项目验收已通过：入口、README、数据保存、带参数运行都齐了。" +
+                     "现在直接调 finish，用一两句话告诉用户怎么用；不要再改脚本或重写文件。）"
+            Write-Log '  [项目验收] 通过，提示直接 finish'
+        }
     }
     $history += @{ role = 'tool'; tool_call_id = $callId; content = ($obs + $hint) }
 
@@ -3559,10 +3895,14 @@ try {
 
     $sessOk = ([string]$state.status -eq 'done')
     $sessRaw = ''
+    $sessTok = 0
     foreach ($st1 in @($state.steps)) {
         if ([string]$st1.raw) { $sessRaw += ("== 第{0}步 {1} ==`n{2}`n`n" -f $st1.n, $st1.tool, $st1.raw) }
+        if ($st1.tok) { $sessTok += [int]$st1.tok }
     }
-    Add-SessionTurn -Role 'assistant' -Content $sessText -Ok $sessOk -Files $sessFiles -Raw $sessRaw
+    Add-SessionTurn -Role 'assistant' -Content $sessText -Ok $sessOk -Files $sessFiles -Raw $sessRaw `
+        -Tok $sessTok -Sec ([double]$state.elapsed) -Speed ([double]$state.speed) `
+        -CacheHit ([double]$state.cacheHit) -CtxUsed ([int]$state.ctxUsed) -CtxLimit ([int]$state.ctxLimit)
 } catch { }
 
 # ---------- 记进历史（面板历史抽屉用）----------

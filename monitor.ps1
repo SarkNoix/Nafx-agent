@@ -45,6 +45,20 @@ $env:NAFX_CONFIG = $CfgPath
 $Cfg       = Get-Content $CfgPath -Raw -Encoding UTF8 | ConvertFrom-Json
 if ($Port -le 0) { $Port = [int]$Cfg.monitorPort }
 
+# 模型来源模式：local（本地 llama）/ api（外部接口）。
+# 每次读配置都刷一遍，面板切模式后不用重启。
+$script:CurMode = ([string]$Cfg.modelMode).Trim().ToLower()
+if ($script:CurMode -notin @('local', 'api')) { $script:CurMode = 'local' }
+# 接口模式下有没有配密钥 —— 面板据此提示「先填 key」
+$script:ApiHasKey = $false
+try {
+    $kf = Join-Path $Root 'api-key.json'
+    if (Test-Path $kf) {
+        $kj = Get-Content $kf -Raw -Encoding UTF8 | ConvertFrom-Json
+        if (([string]$kj.apiKey).Trim()) { $script:ApiHasKey = $true }
+    }
+} catch { }
+
 $StateFile = Join-Path $Root 'agent\state.json'
 $HtmlPath  = Join-Path $Root 'agent\dashboard.html'
 $AgentPath = Join-Path $Root 'agent\agent.ps1'
@@ -131,6 +145,9 @@ function Test-ModelUp {
     try {
         if (((Get-Date) - $script:ModelUpAt).TotalSeconds -lt 3) { return $script:ModelUpVal }
     } catch { }
+    # 接口模式不查 llama 端口 —— 那边本来就没在跑，查了永远是 false，
+    # 面板会一直挂「模型没启动」的横幅，可实际上接口模式的模型好好的。
+    if ($script:CurMode -eq 'api') { return $true }
     $ok = $false
     try { $ok = ((Invoke-WebRequest ($script:ModelUrl + '/health') -UseBasicParsing -TimeoutSec 2).StatusCode -eq 200) } catch { $ok = $false }
     $script:ModelUpAt = Get-Date
@@ -561,7 +578,12 @@ if ($script:agentMissStreak -ge 2 -and -not $hasAgent -and -not $hasResult -and 
         step      = [int]$main.step
         maxSteps  = [int]$main.maxSteps
         elapsed   = [double]$main.elapsed
-        model     = [string]$Cfg.modelLabel
+        # 模式：local=本地 llama，api=外部接口。面板顶栏据此显示切换按钮。
+        modelMode   = $script:CurMode
+        modeLabel   = $(if ($script:CurMode -eq 'api') { [string]$Cfg.apiModel } else { [string]$Cfg.modelLabel })
+        apiBase     = [string]$Cfg.apiBase
+        apiHasKey   = $script:ApiHasKey
+        model       = [string]$Cfg.modelLabel
         workspace = [string]$Cfg.workspace
         answer    = [string]$main.answer
         plan      = [string]$main.plan
@@ -596,6 +618,9 @@ if ($script:agentMissStreak -ge 2 -and -not $hasAgent -and -not $hasResult -and 
         # 上面 ctx 六个字段就是这么漏过一次的，别再犯。
         speed     = $(if ($main.PSObject.Properties.Name -contains 'speed') { [double]$main.speed } else { 0 })
         cacheHit  = $(if ($main.PSObject.Properties.Name -contains 'cacheHit') { [double]$main.cacheHit } else { 0 })
+        cacheN    = $(if ($main.PSObject.Properties.Name -contains 'cacheN') { [int]$main.cacheN } else { 0 })
+        promptN   = $(if ($main.PSObject.Properties.Name -contains 'promptN') { [int]$main.promptN } else { 0 })
+        genTok    = $(if ($main.PSObject.Properties.Name -contains 'genTok') { [int]$main.genTok } else { 0 })
         phase     = [string]$main.phase
         workers   = $summary
     }
@@ -624,6 +649,15 @@ function Get-SystemContext {
     $ctxShow = $(if ($ctxReal -gt 0) { $ctxReal } else { [int]$Cfg.context })
 
     return [pscustomobject]@{
+        # ---- 模型来源 ----
+        # 面板顶栏的切换胶囊靠这几个字段：
+        #   modelMode  local / api
+        #   modeLabel  现在用的模型名（本地是这个 gguf 的名字，接口是 deepseek-chat）
+        #   apiHasKey  接口模式有没有配密钥 —— 没配要在按钮上标红
+        modelMode   = $script:CurMode
+        modeLabel   = $(if ($script:CurMode -eq 'api') { [string]$Cfg.apiModel } else { [string]$Cfg.modelLabel })
+        apiBase     = [string]$Cfg.apiBase
+        apiHasKey   = $script:ApiHasKey
         model       = [string]$Cfg.modelLabel
         modelId     = [string]$Cfg.model
         context     = $ctxShow
@@ -1084,8 +1118,21 @@ while ($listener.IsListening) {
                                 elseif ($p.Name -eq 'allowAnyPath' -or $p.Name -eq 'allowGui' -or $p.Name -eq 'allowAdmin') { $cur | Add-Member -NotePropertyName $p.Name -NotePropertyValue ([bool]$p.Value) -Force }
                                 else { $cur | Add-Member -NotePropertyName $p.Name -NotePropertyValue $p.Value -Force }
                             }
+                            # 模式值先校验再写盘 —— 写进去再报错，配置已经被改了
+                            if ($newCfg.PSObject.Properties.Name -contains 'modelMode') {
+                                $mm = ([string]$newCfg.modelMode).Trim().ToLower()
+                                if ($mm -notin @('local', 'api')) {
+                                    Send-Text -Response $resp -Text ('{"ok":false,"msg":"modelMode 只能是 local 或 api"}') -Code 400
+                                    break
+                                }
+                            }
                             [IO.File]::WriteAllText($CfgPath, ($cur | ConvertTo-Json -Depth 4), (New-Object Text.UTF8Encoding($false)))
                             $script:Cfg = $cur
+                            # 模式改了要立刻生效：
+                            # 不刷新的话，面板点完「接口」，顶栏还是写着本地，
+                            # 用户会以为没点成功。
+                            $script:CurMode = ([string]$cur.modelMode).Trim().ToLower()
+                            if ($script:CurMode -notin @('local', 'api')) { $script:CurMode = 'local' }
                             Send-Text -Response $resp -Text '{"ok":true,"msg":"已保存，部分参数重启后生效"}'
                         } catch {
                             Send-Text -Response $resp -Text ('{"ok":false,"msg":' + (J $_.Exception.Message) + '}') -Code 400

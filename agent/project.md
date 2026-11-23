@@ -11,6 +11,15 @@ $n = @(Get-Content 'x.txt' -Encoding UTF8).Count    # 数行数
 数字参数写类型 `param([int]$a)`；带参数跑传 `command="-a 12 -b 3"`；
 改错用 `read_file` 看 → `replace_in_file` 改，别原样重写。
 
+**字符串里的换行**：PowerShell 用反引号加 n（`` `n ``），**不要**把 Markdown 的三重反引号写进代码；
+多行文本用 here-string（`@'` 开头、单独一行 `'@` 结尾），否则字符串会闭合不了、整段脚本 ParserError。
+
+**一个脚本只能有一个 `param()` 块**：两个参数就合到一行
+`param([string]$date = (Get-Date -Format 'yyyy-MM-dd'), [string]$entry = '')`；
+不要写两行 `param`，第二行会被当成命令执行。小工具先做短脚本（20 行内），一个入口、一个数据文件。
+
+**写文件用 `Set-Content -Path` / `Add-Content -Path`**；`Out-File` 的参数叫 `-FilePath`，写 `-Path` 会报参数不存在。
+
 ## "写个工具"就是写脚本，不是手动干活
 
 用户说"写个工具""做个脚本""搞个程序"，**意思是产出一个能反复跑的 .ps1 文件**，
@@ -67,6 +76,28 @@ try/catch 把错误兜住，给人话提示
 做完一块立刻验证，通过再加下一块。
 
 **需求不清楚就问**：「做个管理系统」这种话没信息量，别猜。用 `say` 问：管什么数据？给谁用？存哪？
+
+**但“模糊”不等于“什么都不做”**：真实用户经常只说方向，比如“弄个简单的小工具，帮我记每天的事，能翻历史就行”。这时先在脑子里（或 `plan` 第一行）写一张 3 行目标卡：
+
+- 谁用、解决什么：自己每天记一条，之后能翻看
+- 最小输入 → 输出：一条文本 → 追加保存 → 列表展示
+- 最小验收：入口能跑、数据能留下来、有一行用法说明
+
+能合理默认就直接选一个最小版本做出来，把假设写进 README 和最终答复；只有删除/覆盖别人文件、花钱、登录外部账号这类不可逆的事才停下来问。**不要用“你想要什么”把问题原样推回去。**
+
+**最小项目模板（日志/记录类可直接套，别自己发明命令）**：
+
+```powershell
+param([string]$Entry = '', [switch]$List)
+$log = Join-Path $PSScriptRoot 'daily.log'
+if ($List) { Get-Content $log -Encoding UTF8; return }
+if (-not $Entry) { Write-Host '用法：.\daily.ps1 -Entry "今天做了什么"，或 -List 查看'; exit 1 }
+Add-Content -Path $log -Value ("{0}  {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm'), $Entry) -Encoding UTF8
+Write-Host "已记录：$Entry"
+```
+
+配套 README 只写三行：用途、`.\daily.ps1 -Entry "..."`、`.\daily.ps1 -List`。
+`write_script` 的 `content` 里放**纯代码**，不要用 Markdown 的 ``` 包脚本。
 
 **结果不对先怀疑逻辑，别重跑**：判断条件写对了吗？数据结构对吗？拿个小例子手算该出几个。
 **同一个脚本原样重跑，结果不会变。**

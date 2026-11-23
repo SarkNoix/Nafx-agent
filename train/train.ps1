@@ -17,7 +17,8 @@ param(
     [switch]$NoTune,             # 只考，不改提示词
     [switch]$KeepTuning,         # 不备份/不还原提示词
     [string]$BankPath = '',
-    [switch]$DryRun              # 只打印题目和评分规则，不真的跑
+    [switch]$DryRun,             # 只打印题目和评分规则，不真的跑
+    [string]$TaskId = ''         # 只跑指定题号（逗号分隔），方便改完一题定点回归
 )
 
 $ErrorActionPreference = 'Stop'
@@ -323,11 +324,46 @@ function Invoke-Check {
             $need = [string]$Check[2]
             return @{ ok = $c.Contains($need); why = "内容里找不到「$need」" }
         }
+        'file_matches' {
+            # 同一个要求有多种合法写法时用正则，别把判分绑死在某一种实现上。
+            # 例：参数校验可以 try/catch，也可以 [int]::TryParse，还可以手写正则。
+            $p = Join-Path $Room ([string]$Check[1])
+            if (-not (Test-Path $p)) { return @{ ok = $false; why = "文件 $($Check[1]) 不存在" } }
+            $c = [IO.File]::ReadAllText($p)
+            $re = [string]$Check[2]
+            $okv = [regex]::IsMatch($c, $re)
+            return @{ ok = $okv; why = "内容里没有匹配 /$re/" }
+        }
+        'glob_exists' {
+            # 项目题不规定文件名/目录名，按文件名模式找，避免把“自主”判成“必须叫 xxx”。
+            $pats = @(([string]$Check[1] -split ',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+            $files = @(Get-ChildItem -LiteralPath $Room -Recurse -File -ErrorAction SilentlyContinue)
+            $hit = @($files | Where-Object { $n = $_.Name; @($pats | Where-Object { $n -like $_ }).Count -gt 0 })
+            $okv = ($hit.Count -gt 0)
+            return @{ ok = $okv; why = ('没有找到 ' + ($pats -join ' / ')) }
+        }
+        'glob_matches' {
+            # 在匹配模式的文件里找一段内容，适合“入口脚本里必须有持久化/参数”。
+            $pat = [string]$Check[1]
+            $re = [string]$Check[2]
+            $files = @(Get-ChildItem -LiteralPath $Room -Recurse -File -ErrorAction SilentlyContinue |
+                       Where-Object { $_.Name -like $pat })
+            $hit = $false
+            foreach ($f in $files) {
+                try { $c = [IO.File]::ReadAllText($f.FullName) } catch { continue }
+                if ([regex]::IsMatch($c, $re)) { $hit = $true; break }
+            }
+            return @{ ok = $hit; why = "匹配 $pat 的文件里没有 /$re/" }
+        }
         'file_equals' {
             $p = Join-Path $Room ([string]$Check[1])
             if (-not (Test-Path $p)) { return @{ ok = $false; why = "文件 $($Check[1]) 不存在" } }
             $c = [IO.File]::ReadAllText($p).Trim()
             $need = ([string]$Check[2]).Trim()
+            # 训练时模型多写 CRLF、题库里写 LF，按行比较前先统一换行，避免
+            # 内容完全正确却因为换行符不同被判错。
+            $c = $c -replace "`r`n", "`n"
+            $need = $need -replace "`r`n", "`n"
             $okv = ($c -eq $need)
             return @{ ok = $okv; why = if ($okv) { '' } else { "内容应为「$need」，实际是「$c」" } }
         }
@@ -336,6 +372,20 @@ function Invoke-Check {
             if (-not (Test-Path $p)) { return @{ ok = $false; why = "文件 $($Check[1]) 不存在" } }
             $len = (Get-Item $p).Length
             return @{ ok = ($len -gt 0); why = "文件是空的" }
+        }
+        'file_line_count' {
+            $p = Join-Path $Room ([string]$Check[1])
+            if (-not (Test-Path $p)) { return @{ ok = $false; why = "文件 $($Check[1]) 不存在" } }
+            $want = [int]$Check[2]
+            $got = @(Get-Content -LiteralPath $p -Encoding UTF8).Count
+            return @{ ok = ($got -eq $want); why = "文件有 $got 行，要求 $want 行" }
+        }
+        'file_not_contains' {
+            $p = Join-Path $Room ([string]$Check[1])
+            if (-not (Test-Path $p)) { return @{ ok = $true; why = '' } }
+            $c = [IO.File]::ReadAllText($p)
+            $bad = [string]$Check[2]
+            return @{ ok = (-not $c.Contains($bad)); why = "内容里不该出现「$bad」" }
         }
         'dir_exists' {
             $p = Join-Path $Room ([string]$Check[1])
@@ -364,10 +414,24 @@ function Invoke-Check {
             }
             return @{ ok = $hit; why = ('没有用到 ' + ($wants -join ' 或 ')) }
         }
+        'last_run_ok' {
+            # write_script / run_ps1 的 step.ok 只表示“调用发出去了”，
+            # 脚本本身退出码 -1/1 也算 ok。这里看最后一次运行的真实结果。
+            # 只看主动 run_ps1；write_script 的自动空跑不能算“用户真实用法”。
+            $runs = @($steps | Where-Object { [string]$_.tool -eq 'run_ps1' })
+            if ($runs.Count -eq 0) { return @{ ok = $false; why = '没有用 run_ps1 主动跑过' } }
+            $last = $runs[$runs.Count - 1]
+            $okv = ([string]$last.note -match '退出码\s+0') -and
+                   ([string]$last.obs -notmatch '运行出错|错误：|错误输出|CommandNotFound|无法将.*识别|不是.*cmdlet|ParserError|MissingArgument|缺少参数') -and
+                   (-not [string]::IsNullOrWhiteSpace([string]$last.fp2))
+            return @{ ok = $okv; why = '最后一次运行失败，或没有带参数真正跑通' }
+        }
         'tool_not_used' {
-            $bad = [string]$Check[1]
-            $hit = @($steps | Where-Object { $_.tool -eq $bad }).Count -gt 0
-            return @{ ok = (-not $hit); why = "不该用的 $bad 被用到了" }
+            # 与 tool_used 一样支持逗号分隔：任一出现就算命中。
+            $badRaw = [string]$Check[1]
+            $bads = @($badRaw -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+            $hit = @($steps | Where-Object { $_.tool -in $bads }).Count -gt 0
+            return @{ ok = (-not $hit); why = ('不该用的 ' + ($bads -join ' / ') + ' 被用到了') }
         }
         'no_repeat' {
             $sigs = @($steps | Where-Object { $_.tool -notin @('finish') } | ForEach-Object { "$($_.tool)|$($_.arg)" })
@@ -421,7 +485,15 @@ function Invoke-Check {
             foreach ($s in $steps) {
                 if ($s.tool -notin @('write_file', 'append_file')) { continue }
                 if ([string]$s.arg -match '\.(ps1|bat|json)$') { continue }
-                $t = [IO.File]::ReadAllText((Join-Path $Room ([string]$s.arg)), [Text.Encoding]::UTF8)
+                $p = Join-Path $Room ([string]$s.arg)
+                # 文件可能因为写错路径根本不存在，或者被安全策略拦下。
+                # 这种情况不能把整轮判分带崩，直接算这条检查没通过。
+                if (-not (Test-Path -LiteralPath $p)) {
+                    $bad += "文件 $($s.arg) 不存在"
+                    continue
+                }
+                try { $t = [IO.File]::ReadAllText($p, [Text.Encoding]::UTF8) }
+                catch { $bad += "文件 $($s.arg) 读不出来"; continue }
                 foreach ($m in [regex]::Matches($t, '\d+')) {
                     if ($pool -notmatch ('(?<!\d)' + [regex]::Escape($m.Value) + '(?!\d)')) { $bad += $m.Value }
                 }
@@ -617,7 +689,11 @@ Say '  模型服务 在线' 'Green'
 
 $allTasks = @(Get-Bank)
 if ($Category) { $allTasks = @($allTasks | Where-Object { $_.category -eq $Category }) }
-if ($allTasks.Count -eq 0) { Say '  没有题目（检查 -Category 或题库）' 'Red'; exit 1 }
+if (-not [string]::IsNullOrWhiteSpace($TaskId)) {
+    $ids = @($TaskId -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    $allTasks = @($allTasks | Where-Object { $ids -contains $_.id })
+}
+if ($allTasks.Count -eq 0) { Say '  没有题目（检查 -Category、-TaskId 或题库）' 'Red'; exit 1 }
 Say ("  题库共 {0} 题" -f $allTasks.Count) 'Green'
 
 # 备份原始提示词，训练完可以还原（试运行不备份）
@@ -633,13 +709,17 @@ if ($DryRun) {
     foreach ($t in $allTasks) {
         Say ("[{0}] {1}  (w={2}, 期望≤{3}步)" -f $t.category, $t.id, $t.weight, $t.maxSteps) 'Cyan'
         Say ("     题目: {0}" -f $t.task) 'White'
-        Say ("     评分: {0}" -f (($t.checks | ForEach-Object { ($_ -join ' ') }) -join ' | ')) 'DarkGray'
-        if ($t.forbid.Count -gt 0) { Say ("     扣分: {0}" -f (($t.forbid | ForEach-Object { ($_ -join ' ') }) -join ' | ')) 'DarkRed' }
+        Say ("     评分: {0}" -f (($t.checks | ForEach-Object { 'w{0}: {1}' -f $_.w, (@($_.spec) -join ' ') }) -join ' | ')) 'DarkGray'
+        if ($t.forbid.Count -gt 0) { Say ("     扣分: {0}" -f (($t.forbid | ForEach-Object { 'w{0}: {1}' -f $_.w, (@($_.spec) -join ' ') }) -join ' | ')) 'DarkRed' }
     }
     Say ''
     Say '  试运行结束（没有真的调用模型）' 'Yellow'
     exit 0
 }
+
+# 训练没有真人点删除确认。只在这个进程/子进程里打开沙箱自动批准，
+# agent 侧还会再检查目标必须在 \train\sandbox 内，双重保险。
+$env:NAFX_TRAIN_AUTO_APPROVE = '1'
 
 $history = @()
 $best = 0
@@ -765,6 +845,7 @@ finally {
     # 顺便删掉临时生成的 sandbox-config.json。
     Restore-WorkspaceConfig
     if ($env:NAFX_CONFIG -and $env:NAFX_CONFIG -like '*sandbox-config*') { $env:NAFX_CONFIG = '' }
+    if ($env:NAFX_TRAIN_AUTO_APPROVE -eq '1') { $env:NAFX_TRAIN_AUTO_APPROVE = '' }
     $sandboxCfg2 = Join-Path $TrainDir 'sandbox-config.json'
     if (Test-Path $sandboxCfg2) { Remove-Item $sandboxCfg2 -Force -ErrorAction SilentlyContinue }
     $check = Get-Content $CfgPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -806,6 +887,14 @@ for ($i = 0; $i -lt $history.Count; $i++) {
             if ($d.ok) { continue }
             [void]$sb.AppendLine("         × $($d.why)")
         }
+    }
+    # 分类均分：一眼看出是整体弱，还是某一类拖后腿。
+    foreach ($cg in ($h.results | Group-Object Category)) {
+        $cw = ($cg.Group | Measure-Object -Property Weight -Sum).Sum
+        $cs = 0.0
+        foreach ($r in $cg.Group) { $cs += $r.Score * $r.Weight }
+        $avg = if ($cw -gt 0) { [Math]::Round($cs / $cw, 1) } else { 0 }
+        [void]$sb.AppendLine(("  -- {0}：{1} 分（{2} 题）" -f $cg.Name, $avg, $cg.Count))
     }
     [void]$sb.AppendLine('')
 }

@@ -1393,6 +1393,72 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                 $content = [string]$Action.content
                 if ([string]::IsNullOrWhiteSpace($content)) { throw 'content 里填脚本内容' }
 
+                # 小模型高频错：Out-File 的参数是 -FilePath，不是 -Path
+                # （Set-Content/Add-Content 才有 -Path）。这是等价改名，直接修正并说明。
+                $autoFix = ''
+                if ($content -match '(?i)Out-File\s+-Path\b') {
+                    $content = $content -replace '(?i)Out-File\s+-Path\b', 'Out-File -FilePath'
+                    $autoFix += '（已自动修正 Out-File -Path → -FilePath）'
+                }
+                if ($content -match '(?i)\bAppend-Content\b') {
+                    $content = $content -replace '(?i)\bAppend-Content\b', 'Add-Content'
+                    $autoFix += '（已自动修正 Append-Content → Add-Content）'
+                }
+                # 高频错：双引号里写 "$today: ..."，PowerShell 把冒号当变量作用域，
+                # 报 "Variable reference is not valid. ':' was not followed by..."。
+                # 自动改成 "${today}: ..."；env/global 这类合法作用域不动。
+                $colonVars = [regex]::Matches($content, '\$([A-Za-z_][A-Za-z0-9_]*):')
+                foreach ($cm in $colonVars) {
+                    $vn = $cm.Groups[1].Value
+                    if ($vn -notin @('env', 'global', 'script', 'local', 'private')) {
+                        $content = $content.Replace($cm.Value, '${' + $vn + '}:')
+                        $autoFix += '（已自动修正 "$' + $vn + ':" → "${' + $vn + '}:"）'
+                    }
+                }
+                # 高频错：把 Markdown 的 ``` 写进 PowerShell 字符串末尾，
+                # 造成字符串没闭合。这里只处理“该行引号成单 + 行尾是 ```”的明确形态：
+                # 把行尾 ``` 换成闭引号，别整段乱改。
+                $badLines = @($content -split "`r?`n")
+                $repaired = $false
+                for ($i = 0; $i -lt $badLines.Count; $i++) {
+                    $ln = $badLines[$i]
+                    if ($ln -match '`{3,}\s*$') {
+                        $q = ([regex]::Matches($ln, '(?<!\\)"')).Count
+                        if ($q % 2 -eq 1) {
+                            $badLines[$i] = [regex]::Replace($ln, '`{3,}\s*$', '"')
+                            $repaired = $true
+                        }
+                    }
+                }
+                if ($repaired) {
+                    $content = $badLines -join "`n"
+                    $autoFix += '（已修正行尾三重反引号导致的未闭合字符串）'
+                }
+
+                # 先做语法检查，别把坏脚本落盘再让它跑：
+                # 4B 模型写多行字符串时容易把 Markdown 的 ``` 当换行，
+                # 结果字符串没闭合。原实现只回一句 "char:13"，它看不出哪错，
+                # 会原样重写 4 次。这里直接把错误行和整行代码返回。
+                $parseErrors = $null
+                [System.Management.Automation.Language.Parser]::ParseInput(
+                    $content, [ref]$null, [ref]$parseErrors) | Out-Null
+                if ($parseErrors -and $parseErrors.Count -gt 0) {
+                    $pe = $parseErrors[0]
+                    $ln = [int]$pe.Extent.StartLineNumber
+                    $codeLine = ''
+                    $lines = @($content -split "`r?`n")
+                    if ($ln -ge 1 -and $ln -le $lines.Count) { $codeLine = $lines[$ln - 1] }
+                    throw ("脚本语法错误（第 $ln 行）：$($pe.Message)`n出错的行：$codeLine`n" +
+                           'PowerShell 字符串里换行用 “`n”（反引号 n），不要写 Markdown 的三重反引号；' +
+                           '多行文本改用 here-string（@ 引号 换行 内容 换行 引号 @）。改完再 write_script。')
+                }
+                # 一个 .ps1 只能有一个 param 块。模型常写两行 param，
+                # 第二行会被当成命令执行，报 "param 不是 cmdlet"。
+                if ($content -match '(?ms)^\s*param\s*\([\s\S]*?\)\s*\r?\n\s*param\s*\(') {
+                    throw ('一个脚本只能有一个 param 块。把两个参数合到一行，' +
+                           '例如 param([string]$date = (Get-Date -Format ''yyyy-MM-dd''), [string]$entry = '''')。')
+                }
+
                 # 脚本内容安全检查：删除/关机/改注册表/下载执行 一律拒
                 $risk = Test-ScriptSafety -Code $content
                 if ($risk) { throw ('脚本被安全策略拒绝：' + $risk) }
@@ -1400,8 +1466,15 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                 $dir = Split-Path $full -Parent
                 if ($dir -and -not (Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
                 Write-AiFileText $full $content
-                # 立刻运行，参数放在 command 里（可留空）
+                # 有 param() 的脚本不要用 write_script 空跑：参数全是 null，
+                # 只会得到一条“参数为空”的错误，模型容易反复重写。
+                # 直接让它下一步用 run_ps1 带真实参数，和项目验收口径一致。
                 $runArgs = [string]$Action.command
+                if ($content -match '(?im)^\s*param\s*\(' -and [string]::IsNullOrWhiteSpace($runArgs)) {
+                    $relDisp = Get-RelDisplay $full
+                    return ("已写 $relDisp，但没有空跑：脚本有 param()，空跑参数全是 null。$autoFix`n" +
+                            '下一步用 run_ps1 带真实参数跑，例如 command="-Entry "今天开会"" 或 command="-a 12 -b 3"。')
+                }
                 $argList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $full)
                 if (-not [string]::IsNullOrWhiteSpace($runArgs)) { $argList += ($runArgs -split '\s+') }
                 $sw = [Diagnostics.Stopwatch]::StartNew()
@@ -1432,13 +1505,13 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                 # 或者输出里有 x + y = 0 这种一眼假的算式，都明确告诉它。
                 $warns = @()
                 if ($content -match '(?im)^\s*param\s*\(' -and [string]::IsNullOrWhiteSpace($runArgs)) {
-                    $warns += '脚本声明了 param(...) 但你没填 command 传参数，所以参数全是 null。要测就把参数写进 command，例如 command="12 + 3"。'
+                    $warns += '脚本声明了 param(...) 但你没填 command 传参数，所以参数全是 null。下一步用 run_ps1 带真实参数跑，例如 command="-entry "今天开会""；不要只 write_script。'
                 }
                 if ($out -match '=\s*0\s*$' -and $out -match '[0-9]\s*[+\-*/]\s*[0-9]') {
                     $warns += '输出里的算式结果是 0，但你传的操作数不是 0 —— 多半是参数没传进去，别当成功。'
                 }
                 $warnText = if ($warns.Count -gt 0) { "`n--- 注意 ---`n" + (($warns | ForEach-Object { "- " + $_ }) -join "`n") } else { '' }
-                return "已写 $relDisp 并运行（退出码 $LASTEXITCODE，耗时 $([math]::Round($sw.Elapsed.TotalSeconds,1)) 秒）：`n--- 输出 ---`n$out$warnText"
+                return "已写 $relDisp 并运行（退出码 $LASTEXITCODE，耗时 $([math]::Round($sw.Elapsed.TotalSeconds,1)) 秒）：$autoFix`n--- 输出 ---`n$out$warnText"
             }
             'write_skill' {
                 # 把一套做法写成技能说明（md），以后可以查。path 填技能名
@@ -1661,6 +1734,9 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                 # 但 write_file 写出来的 .ps1 也要跑，这条路不能漏。
                 try {
                     $scriptText = [IO.File]::ReadAllText($full, [Text.Encoding]::UTF8)
+                    if ($scriptText -match '(?i)\bAppend-Content\b') {
+                        throw '脚本里用了不存在的 Append-Content。PowerShell 的追加命令是 Add-Content，改完再跑。'
+                    }
                     $risk = Test-ScriptSafety -Code $scriptText
                     if ($risk) { throw ('这个脚本被安全策略拒绝，没有执行：' + $risk) }
                 } catch [System.Management.Automation.RuntimeException] {
@@ -1695,6 +1771,12 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                 $rs = [string]$r
                 if ($rs.TrimEnd().EndsWith('--- 标准输出 ---')) {
                     $rs += "`n（脚本没输出任何东西。如果它本该打印结果，检查是不是没传参数、或者代码里没写输出。空输出不等于成功。）"
+                }
+                # 4B 常把 PowerShell 参数写成 name=value（像 cmd 那样），
+                # 结果直接 ParserError。这里把正确写法贴给它，别让它再猜。
+                if ($rs -match 'MissingArgument|ParserError|缺少参数|参数错误') {
+                    $rs += "`n（PowerShell 参数不要写 name=value。要写 -name value，例如 " +
+                           "command=`"-entry `"今天开会`"`"；字符串带空格时用双引号包起来。）"
                 }
                 return $rs
             }

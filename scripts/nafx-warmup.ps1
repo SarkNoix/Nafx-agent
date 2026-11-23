@@ -49,6 +49,36 @@ $promptPath = Join-Path $NafxRoot 'agent\prompt.md'
 if (-not (Test-Path $promptPath)) { Say '找不到 agent\prompt.md，跳过预热'; exit 0 }
 $system = [IO.File]::ReadAllText($promptPath, [Text.Encoding]::UTF8)
 
+# 只预热 prompt.md 不够：Qwen 的模板会把 tools 定义也塞进 system 前缀，
+# 不带 tools 的预热和真实请求从 tools 段开始就分叉，第一步照样整段 prefill。
+# 这里按 agent 的 create 流程复刻一份工具定义（最常见的写文件/建目录任务），
+# 让「tools + prompt.md」这一段能命中缓存。
+$toolsJson = ''
+try {
+    $schemaPath = Join-Path $NafxRoot 'agent\tools-schema.json'
+    $flowsPath  = Join-Path $NafxRoot 'agent\flows.json'
+    if ((Test-Path $schemaPath) -and (Test-Path $flowsPath)) {
+        $map = @{}
+        foreach ($s in ((Get-Content $schemaPath -Raw -Encoding UTF8 | ConvertFrom-Json))) {
+            $n = [string]$s.function.name
+            if ($n) { $map[$n] = (ConvertTo-Json -InputObject $s -Depth 10 -Compress) }
+        }
+        $flows = (Get-Content $flowsPath -Raw -Encoding UTF8 | ConvertFrom-Json).flows
+        $flow = @($flows | Where-Object { $_.id -eq 'create' } | Select-Object -First 1)
+        $names = @()
+        if ($flow.Count -gt 0 -and $flow[0].tools) { $names = @($flow[0].tools) }
+        foreach ($extra in @('finish', 'say', 'rethink')) {
+            if ($names -notcontains $extra) { $names += $extra }
+        }
+        $parts = @()
+        foreach ($n in $names) {
+            if ($map.ContainsKey([string]$n)) { $parts += $map[[string]$n] }
+        }
+        if ($parts.Count -gt 0) { $toolsJson = '[' + ($parts -join ',') + ']' }
+    }
+} catch { $toolsJson = '' }
+
+
 $port = 8080
 try {
     $cfg = Get-Content (Join-Path $NafxRoot 'config.json') -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -59,16 +89,12 @@ try {
 try { $h = Invoke-RestMethod "http://127.0.0.1:$port/health" -TimeoutSec 3 } catch { Say '模型服务没起来，跳过预热'; exit 0 }
 if ($h.status -ne 'ok') { Say '模型服务没就绪，跳过预热'; exit 0 }
 
-$body = @{
-    model       = 'nafx-warmup'
-    messages    = @(
-        @{ role = 'system'; content = $system },
-        @{ role = 'user';   content = '热身' }
-    )
-    max_tokens  = 1
-    temperature = 0
-    stream      = $false
-} | ConvertTo-Json -Depth 6 -Compress
+# 手工拼 JSON：tools 段必须和 agent 发的压缩 schema 逐字一致，
+# 用 hashtable + ConvertTo-Json 重新序列化会改字段顺序，缓存就白做了。
+$sysStr = (ConvertTo-Json -InputObject $system -Compress)
+$body = '{"model":"nafx-warmup","messages":[{"role":"system","content":' + $sysStr + '},{"role":"user","content":"热身"}],"max_tokens":1,"temperature":0,"stream":false'
+if ($toolsJson) { $body += ',"tools":' + $toolsJson }
+$body += '}'
 
 # 明确按 UTF-8 发字节，交给 5.1 自己按 charset 编码容易出岔子
 $bytes = [Text.Encoding]::UTF8.GetBytes($body)

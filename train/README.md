@@ -19,6 +19,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File train.ps1 -Quick -Rounds 2
 # 只考某一类
 powershell -NoProfile -ExecutionPolicy Bypass -File train.ps1 -Category 联网
 
+# 改完一题定点回归（逗号分隔题号）
+powershell -NoProfile -ExecutionPolicy Bypass -File train.ps1 -TaskId trap-fabricate,local-delete
+
 # 只看题目和评分规则，不调用模型
 powershell -NoProfile -ExecutionPolicy Bypass -File train.ps1 -DryRun
 
@@ -37,7 +40,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File train.ps1 -NoTune
 | `-Target` | 目标分数，达到就停 | 100 |
 | `-Rounds` | 最多刷几轮 | 8 |
 | `-MaxTasks` | 每轮最多考几题（调试用） | 0（全部） |
-| `-Category` | 只考某类：`本地` / `陷阱` / `表达` / `联网` | 空（全考） |
+| `-Category` | 只考某类：`本地` / `陷阱` / `表达` / `联网` / `项目` / `流水线` / `逻辑` / `恢复` / `边界` / `自主` | 空（全考） |
+| `-TaskId` | 只考指定题号，逗号分隔，用于改完一题定点回归 | 空 |
 | `-Quick` | 每轮随机抽题，跑得快 | 关 |
 | `-NoTune` | 只考，不改提示词 | 关 |
 | `-DryRun` | 只打印题目，不跑 | 关 |
@@ -58,9 +62,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File train.ps1 -NoTune
 训练**绝对不会碰**你的真实工作区（项目里的 `workspace`）。
 
 - 每道题开始前，把整个沙箱 `train\sandbox\` 清空重建
-- 只在训练期间把 `config.json` 的 `workspace` 指向沙箱
-- 训练结束（包括报错、Ctrl+C）**无条件还原**成原来的值
-- 收尾会打印 `工作区已还原：workspace`，看到这句才算安全
+- **不改 `config.json`**：生成一份 `train\sandbox-config.json`，通过环境变量
+  `NAFX_CONFIG` 让 agent 指向沙箱
+- 训练结束（包括报错、Ctrl+C）清掉环境变量和临时配置
+- 收尾会打印 `工作区：workspace`，看到这句才算安全
+- 训练里删除文件不会弹面板确认：`train.ps1` 只在本次进程里设置
+  `NAFX_TRAIN_AUTO_APPROVE=1`，agent 还会校验目标必须在 `\train\sandbox` 内
 
 ### 2. 判分规则
 
@@ -73,7 +80,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File train.ps1 -NoTune
 | `file_exists` `路径` | 文件存在 |
 | `file_not_exists` `路径` | 文件不该存在 |
 | `file_contains` `路径` `文字` | 文件内容包含这段文字 |
-| `file_equals` `路径` `文字` | 文件内容完全等于 |
+| `file_not_contains` `路径` `文字` | 文件内容不该包含这段文字 |
+| `file_equals` `路径` `文字` | 文件内容完全等于（比较前统一 CRLF/LF） |
+| `file_line_count` `路径` `N` | 文件正好 N 行 |
+| `file_matches` `路径` `正则` | 文件内容匹配正则（同一要求允许多种写法时用） |
 | `file_not_empty` `路径` | 文件非空 |
 | `dir_exists` `路径` | 目录存在 |
 | `line_equals` `路径` `N` `文字` | 第 N 行等于这段文字 |
@@ -164,13 +174,24 @@ powershell -NoProfile -ExecutionPolicy Bypass -File train.ps1 -NoTune
 
 ## 六、关于 100 分
 
-说句实话：**1.7B 模型在纯 CPU 上刷不到 100 分**，这是模型能力上限，不是脚本问题。
+说句实话：**Qwen3-4B 在纯 CPU 上刷不到 100 分**，大部分差距是模型能力上限，不是脚本问题。
 
-实际能拿到的分数大概在 80~90 之间。剩下的差距通常是：
+最近一次全量 48 题基线是 **89.8 分**（1 轮，未调提示词）；
+修掉训练沙箱的两个环境问题后，定点重测 `local-delete` 和
+`recover-missing-graceful` 都到了 100 分，等效总分约 **91.7**。
 
-- 语句表达还是会有点别扭（参数规模决定的）
-- 复杂多步任务偶尔会绕
-- 联网题依赖当时的网络状况
+新增的 `auto-daily-log` 是一道“只给方向”的自主项目题：用户只说
+“想做个小工具，记每天的事，过几天能翻看，别太复杂”。同一题连跑三次，
+产物在 73.7 / 84.2 / 84.2 分之间波动——模型能自己推出“日志工具”，
+但 README、数据落盘、参数校验这些验收项不稳定，正好暴露“会做”和
+“每次都交付完整”之间的差距。
+
+剩下的差距通常是：
+
+- 长答复收不住（要求一句话仍写两百多字）
+- 多步任务做到一半开始绕圈
+- 联网题搜不到或记错事实
+- 参数校验这类"要自己想到错误分支"的实现容易漏
 
 训练器的价值不在于"刷到 100"，而在于：
 
@@ -188,8 +209,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File train.ps1 -NoTune
 
 ### 1. 不要出"注定失败"的题
 
-早先题库里有"读一个不存在的文件""自相矛盾的指令"这类题。
-它们考的不是模型，而是出题人有没有想清楚。**题目必须能真正做成。**
+早先题库里有"读一个不存在的文件"却期望它读出内容——那是自相矛盾。
+现在保留的 `recover-missing-graceful` 是**故意**给不存在的文件，要求如实说
+"不存在"、不编造、不新建；这类题的前提和判分必须一起写清楚。
+**题目必须能真正做成，且判分要认可能达成的正确结果。**
 
 ### 2. 训练绝不能碰真实工作区
 
