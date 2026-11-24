@@ -1,6 +1,12 @@
-# Nafx
+# Nafx Agent
 
 **一台普通电脑，一个能自己干活的 AI。**
+
+![Windows](https://img.shields.io/badge/Windows-native-0078D4?logo=windows&logoColor=white)
+![PowerShell](https://img.shields.io/badge/PowerShell-native-5391FE?logo=powershell&logoColor=white)
+![Zero dependencies](https://img.shields.io/badge/dependencies-zero-2ea44f)
+![Local LLM](https://img.shields.io/badge/LLM-local-2ea44f)
+![License](https://img.shields.io/badge/license-MIT-blue)
 
 不用显卡，不用联网，不花一分钱。四核 CPU + 8 GB 内存就能跑起来。
 
@@ -609,7 +615,7 @@ mod/brief-mode.mod.json   极简模式：回答一句话，200 token 封顶
 **⑤ 有些工具要额外装东西。** 63 个工具里绝大多数开箱即用，但读 PDF 要 python+pypdf、
 解 `.7z/.rar` 要 7-Zip、`install` 要 winget、联网类要能上网。
 哪些能用、哪些不能用、缺了会报什么错、怎么自己验证，全在单独一份：
-**[工具与能力边界.md](工具与能力边界.md)**。
+**[工具与能力边界](Document/06-工具与能力边界.md)**。
 
 **⑥ GPU 模式要自己准备运行时。** 面板「设置 → 模型编译方式」有 CPU / GPU 两档，仓库只带 CPU 版 `llama\`。
 选 GPU 前要把 CUDA 版 llama.cpp 解压到 `llama-gpu\`（里面要有 `llama-server.exe` 和配套 dll），
@@ -664,7 +670,7 @@ Nafx/
 ├── 自检.bat              看哪里不对
 ├── config.json           配置（带中文说明）
 ├── config.self.json      个人配置模板（留空 personalPrompt，不写本机路径）
-├── 工具与能力边界.md      哪些工具要装东西、能干什么、限制在哪（**先看这个**）
+├── Document/             项目文档（提示词、工具手册、能力边界）
 ├── launcher.ps1          启动模型服务
 ├── monitor.ps1           面板服务
 ├── switch-model.ps1      换模型的逻辑
