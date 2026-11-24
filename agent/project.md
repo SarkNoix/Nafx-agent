@@ -131,3 +131,32 @@ $total = (Get-Content 某个文件.jsonl -Encoding UTF8 | ForEach-Object {
     ($_ | ConvertFrom-Json).amount
 } | Measure-Object -Sum).Sum
 ```
+
+## 文件类型与运行
+
+多文件先 `file_editor(action="view", paths=[...])`；它会带行号、类型、编辑和运行提示。查后缀用 `file_editor(action="types", find=".py")`。
+
+| 后缀 | 是什么 | 编辑 | 运行 |
+|---|---|---|---|
+| `.ps1` | PowerShell 脚本 | UTF-8 建议 BOM，优先 `write_script` | `file_editor run` / `run_ps1`；有 `param()` 必须传参 |
+| `.bat` `.cmd` | CMD 批处理 | UTF-8 无 BOM，中文首行 `chcp 65001` | `file_editor run` / `run_bat` |
+| `.py` | Python | UTF-8，注意缩进和依赖 | `file_editor run`（`python -u`） |
+| `.js` `.mjs` `.cjs` | JavaScript | UTF-8；区分 Node 与浏览器 | `file_editor run`（Node）；WSH 用 `run_js` |
+| `.sh` | Shell | UTF-8，LF 换行 | `file_editor run`（Git Bash） |
+| `.exe` | 可执行程序 | 二进制，不能文本改 | `file_editor run`，参数放 `command` |
+| `.json` | JSON 数据 | UTF-8，不能加注释 | 不可执行；`file_editor run` 做合法性校验 |
+| `.jsonl` `.csv` | 数据文件 | 保留一行一条 / 表头 | 不可执行；用技能或表格工具 |
+| `.md` `.txt` | 文本/文档 | UTF-8，保留换行 | 不可执行 |
+| `.html` | 页面 | UTF-8，标签闭合 | 浏览器打开或本地 HTTP 服务 |
+| `.zip` `.7z` `.rar` | 压缩包 | 二进制，不能文本改 | `unzip` / `zip_list` |
+| `.pdf` `.docx` `.xlsx` `.png` | 文档/图片 | 二进制，不能文本改 | 对应专用工具 |
+
+**规则**：多文件替换用 `file_editor(action="replace", paths=[...])`；二进制、Office/PDF/图片不要当文本改；编译型（`.java/.c/.cpp/.go/.rs`）本机没编译器就先 `install` 或直说跑不了；运行脚本前检查参数，退出码 0 不代表结果正确。
+
+## Git 与提交
+
+- 先 `git(action="status", path="仓库")`，再 `git(action="diff", path="仓库")`；确认改了什么再动手。
+- 只暂存任务相关文件：`git(action="add", path="仓库", files="a.py;README.md")`；不要无脑 `add .`。
+- 提交：`git(action="commit", path="仓库", message="feat: 说明改了什么")`；提交说明要写动机和结果。
+- `pull` 只做 `--ff-only`；`push` 不带 force；不 `reset --hard` / `clean -f` / `rebase`。
+- Nafx 源码目录本身不是 Git 仓库；需要推送用 `E:\_nafx_push` 这个克隆，先 status 看差异。

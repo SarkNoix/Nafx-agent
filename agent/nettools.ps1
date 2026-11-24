@@ -12,7 +12,9 @@
 
 function Get-NetDir {
     $root = $script:AiRoot
-    if ([string]::IsNullOrWhiteSpace($root)) { $root = 'E:\Nafx\workspace' }
+    if ([string]::IsNullOrWhiteSpace($root)) {
+        $root = Join-Path (Split-Path -Parent $PSScriptRoot) 'workspace'
+    }
     $dir = Join-Path $root 'net'
     if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
     return $dir

@@ -2881,6 +2881,600 @@ header .theme-switch button{white-space:nowrap}
   top:106px;right:15px;bottom:auto;
   max-height:min(72vh,620px);
 }
+
+/* ============================================================
+   第十七轮 · 素 / 墨主题专项打磨（2026-11-24）
+   只作用于 su / mo，不动 light / dark / glass。
+   目标：把“素”做成纸白、把“墨”做成真正的墨黑；
+   同时收掉前几轮遗留在两套主题里的浅色硬编码。
+   ============================================================ */
+
+/* ---------- 1. 变量：纸白 / 墨黑 ---------- */
+html[data-theme="su"]{
+  color-scheme:light;
+  --bg:#f6f5f2; --bg2:#efece6;
+  --panel:#fffefb; --panel2:#f8f6f1; --panel3:#efede6;
+  --fg:#1b1a17; --dim:#5b5953; --faint:#7f7b72;
+  --line:#e5e1d8; --line2:#d4cfc4;
+  --accent:#3f5fdf; --accent2:#5b7bff;
+  --accent-rgb:63,95,223;
+  --ok:#0e8a60; --warn:#a7610b; --err:#c9423c; --run:#3f5fdf;
+  --bubble-user-bg:#f0eee8; --bubble-user-bd:#e7e3da; --bubble-user-fg:#1b1a17;
+  --bubble-ai-bg:transparent; --bubble-ai-bd:transparent;
+  --code-bg:#f3f1eb; --code-bd:#e4e0d6; --code-fg:#3a3832;
+  --inline-bg:#eef1fd; --inline-bd:#dce2f8; --inline-fg:#3150c8;
+  --shadow:0 12px 32px rgba(42,37,27,.08);
+  --shadow-sm:0 1px 2px rgba(42,37,27,.06);
+  --shadow-rgb:42,37,27;
+  --mask:rgba(30,26,18,.34);
+  --primary-fg:#ffffff;
+  --inset-hi:rgba(255,255,255,.65);
+  --ok-bg:rgba(14,138,96,.08); --ok-bd:rgba(14,138,96,.26);
+  --err-bg:rgba(201,66,60,.08); --err-bd:rgba(201,66,60,.26);
+  --run-bg:rgba(63,95,223,.08); --run-bd:rgba(63,95,223,.26);
+  --warn-bg:rgba(167,97,11,.08); --warn-bd:rgba(167,97,11,.26);
+  --blur:none; --panel-alpha:1;
+  --radius:12px; --radius-lg:16px;
+}
+html[data-theme="mo"]{
+  color-scheme:dark;
+  --bg:#0d0f13; --bg2:#11141a;
+  --panel:#15181e; --panel2:#1a1e26; --panel3:#222732;
+  --fg:#eef0f5; --dim:#a7adb8; --faint:#858c99;
+  --line:#272c36; --line2:#353b47;
+  --accent:#6f8cff; --accent2:#8aa3ff;
+  --accent-rgb:111,140,255;
+  --ok:#4cc38a; --warn:#e0b25a; --err:#ef7b70; --run:#6f8cff;
+  --bubble-user-bg:#1c2028; --bubble-user-bd:#272c36; --bubble-user-fg:#eef0f5;
+  --bubble-ai-bg:transparent; --bubble-ai-bd:transparent;
+  --code-bg:#0f1217; --code-bd:#262b35; --code-fg:#c3c9d4;
+  --inline-bg:#1b2233; --inline-bd:#2a344c; --inline-fg:#a8beff;
+  --shadow:0 18px 48px rgba(0,0,0,.46);
+  --shadow-sm:0 1px 3px rgba(0,0,0,.38);
+  --shadow-rgb:0,0,0;
+  --mask:rgba(0,0,0,.62);
+  --primary-fg:#ffffff;
+  --inset-hi:rgba(255,255,255,.035);
+  --ok-bg:rgba(76,195,138,.09); --ok-bd:rgba(76,195,138,.28);
+  --err-bg:rgba(239,123,112,.09); --err-bd:rgba(239,123,112,.28);
+  --run-bg:rgba(111,140,255,.09); --run-bd:rgba(111,140,255,.28);
+  --warn-bg:rgba(224,178,90,.09); --warn-bd:rgba(224,178,90,.28);
+  --blur:none; --panel-alpha:1;
+  --radius:12px; --radius-lg:16px;
+}
+html[data-theme="su"],html[data-theme="mo"]{background:var(--bg)}
+html[data-theme="su"] body,html[data-theme="mo"] body{
+  background:var(--bg);color:var(--fg);
+  font-feature-settings:"kern" 1,"liga" 1;
+}
+html[data-theme="su"] ::selection{background:rgba(63,95,223,.18);color:#1b1a17}
+html[data-theme="mo"] ::selection{background:rgba(111,140,255,.30);color:#ffffff}
+
+/* ---------- 2. 顶栏：安静的一条，只把实时数字往前推 ---------- */
+html[data-theme="su"] header,html[data-theme="mo"] header{
+  background:var(--panel);border-bottom-color:var(--line);
+  box-shadow:0 1px 0 rgba(var(--shadow-rgb),.03);
+}
+@media(min-width:1001px){
+  html[data-theme="su"] header,html[data-theme="mo"] header{padding:0 20px;gap:14px}
+}
+html[data-theme="su"] .brand,html[data-theme="mo"] .brand{font-weight:650;letter-spacing:.35px}
+html[data-theme="su"] .brand > span:last-child,html[data-theme="mo"] .brand > span:last-child{color:var(--fg)}
+html[data-theme="su"] header .ghost,html[data-theme="mo"] header .ghost{
+  border:1px solid transparent;color:var(--dim);
+  transition:background .15s,border-color .15s,color .15s;
+}
+html[data-theme="su"] header .ghost:hover,html[data-theme="mo"] header .ghost:hover{
+  background:var(--panel2);border-color:var(--line);color:var(--fg);
+}
+html[data-theme="su"] .hbar,html[data-theme="mo"] .hbar{color:var(--dim);font-size:11.5px}
+html[data-theme="su"] .hbar b,html[data-theme="mo"] .hbar b{color:var(--fg);font-weight:600}
+html[data-theme="su"] .hbar-live,html[data-theme="mo"] .hbar-live{
+  height:29px;padding:0 12px;gap:8px;border-radius:999px;
+  background:var(--panel2);border:1px solid var(--line);
+  box-shadow:inset 0 1px 1px rgba(255,255,255,.04);
+  color:var(--dim);font-size:11px;
+}
+html[data-theme="su"] .hbar-live .hl-ico,html[data-theme="mo"] .hbar-live .hl-ico{opacity:.55}
+html[data-theme="su"] .hbar-live b,html[data-theme="mo"] .hbar-live b{font-weight:600;font-variant-numeric:tabular-nums}
+html[data-theme="su"] .hbar-live .hl-label,html[data-theme="mo"] .hbar-live .hl-label{color:var(--dim)}
+html[data-theme="su"] .hbar-live .hl-sep,html[data-theme="mo"] .hbar-live .hl-sep{opacity:.42}
+html[data-theme="su"] .theme-switch,html[data-theme="mo"] .theme-switch{
+  padding:4px;gap:2px;border-radius:999px;
+  background:var(--panel2);border:1px solid var(--line);
+  box-shadow:inset 0 1px 2px rgba(var(--shadow-rgb),.04);
+}
+html[data-theme="su"] .theme-switch button,html[data-theme="mo"] .theme-switch button{
+  color:var(--dim);font-size:11.5px;font-weight:500;
+}
+html[data-theme="su"] .theme-switch button:hover,html[data-theme="mo"] .theme-switch button:hover{color:var(--fg)}
+html[data-theme="su"] .theme-switch button.on,html[data-theme="mo"] .theme-switch button.on{
+  color:var(--fg);font-weight:600;
+}
+@media(min-width:761px){
+  html[data-theme="su"] .theme-switch button.on,html[data-theme="mo"] .theme-switch button.on{
+    background:var(--panel);box-shadow:0 1px 3px rgba(var(--shadow-rgb),.14);
+  }
+}
+@media(max-width:760px){
+  /* 窄屏主题组仍保持 5 个纯色点，不显示文字 */
+  html[data-theme="su"] .theme-switch button,html[data-theme="mo"] .theme-switch button{
+    font-size:0;line-height:0;
+  }
+}
+
+/* ---------- 3. 对话：字号、间距、角色层级 ---------- */
+html[data-theme="su"] .thread .msg,html[data-theme="mo"] .thread .msg{margin-bottom:18px}
+html[data-theme="su"] .thread .msg .who,html[data-theme="mo"] .thread .msg .who{
+  color:var(--faint);font-size:11px;font-weight:500;letter-spacing:.05em;
+}
+html[data-theme="su"] .thread .msg.assistant .who,html[data-theme="mo"] .thread .msg.assistant .who{color:var(--accent)}
+html[data-theme="su"] .thread .msg.user .bubble,html[data-theme="mo"] .thread .msg.user .bubble{color:var(--dim)}
+html[data-theme="su"] .thread .msg.assistant .bubble,html[data-theme="mo"] .thread .msg.assistant .bubble{color:var(--fg)}
+html[data-theme="su"] .thread .msg .who-ts,html[data-theme="mo"] .thread .msg .who-ts{color:var(--faint);opacity:.72}
+html[data-theme="su"] .thread .msg.thinking .bubble,html[data-theme="mo"] .thread .msg.thinking .bubble{
+  border:1px dashed var(--line2);border-radius:14px;
+  background:color-mix(in srgb,var(--panel) 60%,transparent);
+  padding:11px 14px;
+}
+html[data-theme="su"] .thread .msg.thinking .who,html[data-theme="mo"] .thread .msg.thinking .who{color:var(--accent)}
+
+/* 完成后的任务卡：给一点纸面/墨面，别只是一根线 */
+html[data-theme="su"] .thread .live-box.done,html[data-theme="mo"] .thread .live-box.done{
+  background:var(--panel);border:1px solid var(--line);border-radius:14px;
+  box-shadow:var(--shadow-sm);overflow:hidden;
+}
+html[data-theme="su"] .thread .live-box.done .live-head,
+html[data-theme="mo"] .thread .live-box.done .live-head{padding:11px 14px;background:transparent;border-bottom:none}
+html[data-theme="su"] .thread .live-box.done .live-head.foldable:hover,
+html[data-theme="mo"] .thread .live-box.done .live-head.foldable:hover{background:var(--panel2)}
+
+/* ---------- 4. 步骤 / 想法 / 工具返回：统一可读的灰阶 ---------- */
+html[data-theme="su"] .thread .step-act .row,html[data-theme="mo"] .thread .step-act .row{color:var(--dim)}
+html[data-theme="su"] .thread .step-act .row::before,html[data-theme="mo"] .thread .step-act .row::before{color:var(--faint)}
+html[data-theme="su"] .thread .step-tool,html[data-theme="mo"] .thread .step-tool{color:var(--accent)}
+html[data-theme="su"] .thread .step-arg,html[data-theme="mo"] .thread .step-arg{color:var(--dim)}
+html[data-theme="su"] .thread .step-sec,html[data-theme="mo"] .thread .step-sec{color:var(--faint)}
+html[data-theme="su"] .thread .think-label,html[data-theme="mo"] .thread .think-label,
+html[data-theme="su"] .thread .step-obs-wrap .label,html[data-theme="mo"] .thread .step-obs-wrap .label{color:var(--faint)}
+html[data-theme="su"] .thread .think-body,html[data-theme="mo"] .thread .think-body,
+html[data-theme="su"] .thread .think-full,html[data-theme="mo"] .thread .think-full{color:var(--dim);line-height:1.75}
+html[data-theme="su"] .thread .step .step-obs,html[data-theme="mo"] .thread .step .step-obs{color:var(--dim);line-height:1.75}
+html[data-theme="su"] .live-stream .ls-label,html[data-theme="mo"] .live-stream .ls-label{color:var(--dim)}
+html[data-theme="su"] .live-stream .ls-count,html[data-theme="mo"] .live-stream .ls-count{color:var(--faint)}
+html[data-theme="su"] .step.live-row,html[data-theme="mo"] .step.live-row{background:var(--panel2);border-color:var(--line)}
+html[data-theme="su"] .step.live-row .live-arg,html[data-theme="mo"] .step.live-row .live-arg{color:var(--dim)}
+@keyframes uiLiveSu{
+  0%,100%{background:color-mix(in srgb,var(--accent) 4%,var(--panel2));border-color:var(--line)}
+  50%{background:color-mix(in srgb,var(--accent) 9%,var(--panel2));border-color:var(--line2)}
+}
+@keyframes uiLiveMo{
+  0%,100%{background:color-mix(in srgb,var(--accent) 5%,var(--panel2));border-color:var(--line)}
+  50%{background:color-mix(in srgb,var(--accent) 10%,var(--panel2));border-color:var(--line2)}
+}
+html[data-theme="su"] .step.live-row{animation:uiLiveSu 2.8s ease-in-out infinite}
+html[data-theme="mo"] .step.live-row{animation:uiLiveMo 2.8s ease-in-out infinite}
+
+/* ---------- 5. 底部操作区：命令条 / 输入框 / 发送 ---------- */
+html[data-theme="su"] .composer,html[data-theme="mo"] .composer{
+  background:var(--panel);border-top:1px solid var(--line);
+  box-shadow:0 -8px 24px rgba(var(--shadow-rgb),.03);
+  padding:14px 20px 12px;
+}
+html[data-theme="su"] .cmdbar,html[data-theme="mo"] .cmdbar{
+  margin-bottom:10px;padding:2px 0 7px;border-bottom:1px solid var(--line);
+}
+html[data-theme="su"] .cmdbar .lbl,html[data-theme="mo"] .cmdbar .lbl{
+  color:var(--dim);font-size:10.5px;font-weight:600;letter-spacing:.08em;
+}
+html[data-theme="su"] .cmdchip,html[data-theme="mo"] .cmdchip{
+  background:var(--panel2);border-color:var(--line);color:var(--dim);
+  border-radius:999px;padding:3px 9px;transition:.16s;
+}
+html[data-theme="su"] .cmdchip:hover,html[data-theme="mo"] .cmdchip:hover{
+  background:var(--panel3);border-color:var(--line2);color:var(--fg);
+}
+html[data-theme="su"] .cmdchip.done,html[data-theme="mo"] .cmdchip.done{color:var(--ok);border-color:var(--ok-bd);background:var(--ok-bg)}
+html[data-theme="su"] .mode-btn,html[data-theme="mo"] .mode-btn{
+  height:28px;padding:0 12px;border-radius:999px;
+  background:transparent;border:1px solid var(--line);color:var(--dim);
+  font-size:12px;font-weight:500;
+}
+html[data-theme="su"] .mode-btn.on,html[data-theme="mo"] .mode-btn.on{
+  background:var(--accent);border-color:var(--accent);color:var(--primary-fg);
+  box-shadow:0 2px 8px rgba(var(--accent-rgb),.24);
+}
+html[data-theme="su"] .mode-hint,html[data-theme="mo"] .mode-hint{color:var(--faint);font-size:11px}
+html[data-theme="su"] .composer textarea,html[data-theme="mo"] .composer textarea{
+  background:var(--panel2);border:1px solid var(--line);color:var(--fg);
+  border-radius:16px;box-shadow:inset 0 1px 2px rgba(var(--shadow-rgb),.04);
+  caret-color:var(--accent);
+}
+html[data-theme="su"] .composer textarea::placeholder,html[data-theme="mo"] .composer textarea::placeholder{color:var(--faint)}
+html[data-theme="su"] .composer textarea:focus,html[data-theme="mo"] .composer textarea:focus{
+  border-color:var(--accent);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.12);
+}
+html[data-theme="su"] .composer #send,html[data-theme="mo"] .composer #send{
+  width:46px;height:46px;min-width:46px;padding:0;border:none;border-radius:50%;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  color:var(--primary-fg);
+  box-shadow:0 4px 14px rgba(var(--accent-rgb),.30);
+  transition:transform .16s,box-shadow .16s,filter .16s;
+}
+html[data-theme="su"] .composer #send:hover,html[data-theme="mo"] .composer #send:hover{
+  transform:translateY(-1px);filter:brightness(1.04);
+  box-shadow:0 6px 18px rgba(var(--accent-rgb),.38);
+}
+html[data-theme="su"] .composer .hint,html[data-theme="mo"] .composer .hint{color:var(--faint);opacity:.9}
+@media(max-width:760px){
+  html[data-theme="su"] .composer,html[data-theme="mo"] .composer{padding:10px 12px 10px}
+}
+
+/* ---------- 6. 侧栏 / 抽屉 / 系统面板：去掉残留白块 ---------- */
+html[data-theme="su"] .side,html[data-theme="mo"] .side{
+  background:var(--panel);border-right:1px solid var(--line);padding:12px 10px;
+}
+html[data-theme="su"] .side-block > h3,html[data-theme="mo"] .side-block > h3{
+  color:var(--fg);font-size:12.5px;font-weight:600;letter-spacing:.02em;
+}
+html[data-theme="su"] .side-block > h3 .cnt,html[data-theme="mo"] .side-block > h3 .cnt{
+  color:var(--faint);font-size:10px;font-weight:500;
+  padding:2px 7px;border:1px solid var(--line);border-radius:999px;background:var(--panel2);
+}
+html[data-theme="su"] .side-actions,html[data-theme="mo"] .side-actions{
+  border-top:1px solid var(--line);padding-top:10px;
+}
+html[data-theme="su"] .side-actions button,html[data-theme="mo"] .side-actions button{
+  border:1px solid var(--line);background:var(--panel2);color:var(--dim);
+}
+html[data-theme="su"] .side-actions button:hover,html[data-theme="mo"] .side-actions button:hover{
+  background:var(--panel3);border-color:var(--line2);color:var(--fg);
+}
+html[data-theme="su"] .side-actions button.danger:hover,html[data-theme="mo"] .side-actions button.danger:hover{
+  background:var(--err-bg);border-color:var(--err-bd);color:var(--err);
+}
+html[data-theme="su"] .side input[type="text"],html[data-theme="mo"] .side input[type="text"],
+html[data-theme="su"] .side select,html[data-theme="mo"] .side select{
+  background:var(--panel2);border:1px solid var(--line);color:var(--fg);
+}
+html[data-theme="su"] .side input[type="text"]:focus,html[data-theme="mo"] .side input[type="text"]:focus,
+html[data-theme="su"] .side select:focus,html[data-theme="mo"] .side select:focus{border-color:var(--accent)}
+html[data-theme="su"] .auto-status,html[data-theme="mo"] .auto-status{
+  background:var(--panel2);border-color:var(--line);color:var(--dim);
+}
+html[data-theme="su"] .auto-status.on,html[data-theme="mo"] .auto-status.on{
+  background:color-mix(in srgb,var(--accent) 8%,var(--panel2));
+  border-color:color-mix(in srgb,var(--accent) 30%,var(--line));color:var(--fg);
+}
+html[data-theme="su"] .cfg-cell,html[data-theme="mo"] .cfg-cell{background:var(--panel2);border-color:var(--line)}
+html[data-theme="su"] .cfg-cell i,html[data-theme="mo"] .cfg-cell i{color:var(--dim)}
+html[data-theme="su"] .cfg-cell b,html[data-theme="mo"] .cfg-cell b{color:var(--fg)}
+html[data-theme="su"] .fgroup-h,html[data-theme="mo"] .fgroup-h{color:var(--dim)}
+html[data-theme="su"] .fgroup-h .fgl,html[data-theme="mo"] .fgroup-h .fgl{color:var(--fg)}
+
+html[data-theme="su"] .drawer,html[data-theme="mo"] .drawer{
+  background:var(--panel);border-left:1px solid var(--line);
+  box-shadow:-14px 0 36px rgba(var(--shadow-rgb),.16);
+}
+html[data-theme="su"] .drawer-head,html[data-theme="mo"] .drawer-head{
+  background:var(--panel);border-bottom-color:var(--line);
+}
+html[data-theme="su"] .drawer .ghost,html[data-theme="mo"] .drawer .ghost{color:var(--dim)}
+html[data-theme="su"] .drawer .ghost:hover,html[data-theme="mo"] .drawer .ghost:hover{background:var(--panel2);color:var(--fg)}
+html[data-theme="su"] .mbox,html[data-theme="mo"] .mbox{background:var(--panel2);border-color:var(--line)}
+html[data-theme="su"] .mbox-head,html[data-theme="mo"] .mbox-head{
+  background:var(--panel3);border-bottom-color:var(--line);color:var(--dim);
+}
+html[data-theme="su"] .mbox-pre,html[data-theme="mo"] .mbox-pre{background:var(--panel2);color:var(--code-fg)}
+html[data-theme="su"] #sysPanel,html[data-theme="mo"] #sysPanel{
+  background:var(--panel);border-color:var(--line2);
+  box-shadow:0 18px 48px rgba(var(--shadow-rgb),.20);
+}
+html[data-theme="su"] .sys-row,html[data-theme="mo"] .sys-row{border-bottom-color:var(--line)}
+html[data-theme="su"] .sys-row span:first-child,html[data-theme="mo"] .sys-row span:first-child{color:var(--dim)}
+html[data-theme="su"] .sys-row span:last-child,html[data-theme="mo"] .sys-row span:last-child{color:var(--fg)}
+
+/* ---------- 7. 滚动条与控件细节 ---------- */
+html[data-theme="su"] ::-webkit-scrollbar,html[data-theme="mo"] ::-webkit-scrollbar{width:8px;height:8px}
+html[data-theme="su"] ::-webkit-scrollbar-thumb,html[data-theme="mo"] ::-webkit-scrollbar-thumb{
+  background:color-mix(in srgb,var(--dim) 32%,transparent);border-radius:999px;
+}
+html[data-theme="su"] ::-webkit-scrollbar-thumb:hover,html[data-theme="mo"] ::-webkit-scrollbar-thumb:hover{
+  background:color-mix(in srgb,var(--dim) 52%,transparent);
+}
+html[data-theme="su"] ::-webkit-scrollbar-track,html[data-theme="mo"] ::-webkit-scrollbar-track{background:transparent}
+html[data-theme="su"] textarea,html[data-theme="mo"] textarea,
+html[data-theme="su"] input,html[data-theme="mo"] input,
+html[data-theme="su"] select,html[data-theme="mo"] select{color-scheme:inherit}
+html[data-theme="su"] .tag,html[data-theme="mo"] .tag{border-radius:999px;padding:2px 9px}
+html[data-theme="su"] .tag.done,html[data-theme="mo"] .tag.done{background:var(--ok-bg);border-color:var(--ok-bd);color:var(--ok)}
+
+/* ============================================================
+   第十八轮 · 显示与设置（2026-11-24）
+   设置抽屉重做成分组卡片：模型 / 接口 / 运行 / 采样 / 权限 / 高级。
+   仍走主题变量，五套主题通用。
+   ============================================================ */
+
+/* 显示：字体渲染和滚动条稳定 */
+html,body{text-rendering:optimizeLegibility}
+body{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+.thread,.drawer-body,.side{overscroll-behavior:contain}
+.thread,.drawer-body{scrollbar-gutter:stable}
+.msg .bubble,.live-head .tt{overflow-wrap:anywhere}
+.msg .bubble{text-wrap:pretty}
+
+/* 设置抽屉：比普通抽屉宽一点，给两列字段留空间 */
+#settingsDrawer{width:min(560px,96vw)}
+#settingsDrawer .drawer-head{height:62px;padding:0 20px}
+#settingsDrawer .drawer-head h2{font-size:16px;letter-spacing:.02em}
+#settingsDrawer .drawer-body{padding:14px 16px 0;scrollbar-gutter:stable}
+
+.set-loading{
+  display:flex;align-items:center;justify-content:center;gap:9px;
+  min-height:140px;color:var(--dim);font-size:12.5px;
+}
+.set-loading.set-error{color:var(--err);line-height:1.6;text-align:center;padding:0 18px}
+
+/* 顶部摘要 */
+.set-summary{
+  display:flex;align-items:flex-start;justify-content:space-between;gap:12px;
+  padding:14px 14px 13px;margin-bottom:10px;
+  border:1px solid var(--line);border-radius:14px;
+  background:linear-gradient(135deg,var(--panel) 0%,var(--panel2) 100%);
+  box-shadow:inset 0 1px 0 var(--inset-hi);
+}
+.set-sum-main{min-width:0;flex:1}
+.set-kicker{font-size:10px;font-weight:600;letter-spacing:.12em;color:var(--faint);margin-bottom:3px}
+.set-model-name{
+  font-size:17px;font-weight:650;line-height:1.35;color:var(--fg);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.set-sum-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-top:7px;color:var(--dim);font-size:10.5px}
+.set-pill{
+  display:inline-flex;align-items:center;height:19px;padding:0 8px;border-radius:999px;
+  color:var(--accent);background:rgba(var(--accent-rgb),.09);
+  border:1px solid rgba(var(--accent-rgb),.24);font-size:10px;font-weight:600;
+}
+.set-save-state{
+  flex-shrink:0;padding:3px 8px;border-radius:999px;font-size:10px;
+  border:1px solid var(--line);color:var(--faint);background:var(--panel);
+}
+.set-save-state.dirty{color:var(--accent);border-color:rgba(var(--accent-rgb),.28);background:rgba(var(--accent-rgb),.07)}
+.set-save-state.saved{color:var(--ok);border-color:var(--ok-bd);background:var(--ok-bg)}
+.set-save-state.error{color:var(--err);border-color:var(--err-bd);background:var(--err-bg)}
+
+.set-tip{
+  display:flex;align-items:flex-start;gap:7px;padding:8px 11px;margin-bottom:12px;
+  border:1px solid var(--line);border-radius:9px;background:var(--panel2);
+  color:var(--dim);font-size:10.5px;line-height:1.55;
+}
+.set-tip > span:first-child{color:var(--accent);font-size:12px;line-height:1.25;flex-shrink:0}
+
+/* 分组卡片 */
+.set-group{
+  margin:0 0 12px;padding:13px 14px 12px;
+  border:1px solid var(--line);border-radius:14px;background:var(--panel2);
+  box-shadow:inset 0 1px 0 var(--inset-hi);
+}
+.set-group-head{
+  display:flex;align-items:baseline;justify-content:space-between;gap:12px;
+  padding-bottom:9px;margin-bottom:12px;border-bottom:1px solid var(--line);
+  color:var(--fg);font-size:12.5px;font-weight:650;letter-spacing:.02em;
+}
+.set-group-note{color:var(--faint);font-size:10px;font-weight:400;text-align:right;line-height:1.4}
+
+.set-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 14px;align-items:start}
+.set-field{min-width:0}
+.set-field.wide{grid-column:1/-1}
+.set-field label{
+  display:flex;align-items:center;gap:6px;margin-bottom:5px;
+  color:var(--dim);font-size:11.5px;font-weight:600;line-height:1.35;
+}
+.set-field input,.set-field select{
+  width:100%;height:38px;padding:0 11px;border-radius:9px;
+  border:1px solid var(--line);background:var(--panel);color:var(--fg);
+  font-family:inherit;font-size:12.5px;outline:none;
+  transition:border-color .15s,box-shadow .15s,background .15s;
+}
+.set-field input:hover,.set-field select:hover{border-color:var(--line2)}
+.set-field input:focus,.set-field select:focus{
+  border-color:var(--accent);
+  box-shadow:0 0 0 3px rgba(var(--accent-rgb),.12);
+}
+.set-field input::placeholder{color:var(--faint)}
+.set-field select{cursor:pointer}
+.set-restart{
+  display:inline-flex;align-items:center;height:17px;padding:0 5px;
+  border:1px solid rgba(var(--accent-rgb),.22);border-radius:5px;
+  background:rgba(var(--accent-rgb),.06);color:var(--accent);
+  font-size:9px;font-weight:500;letter-spacing:0;white-space:nowrap;
+}
+.set-help{color:var(--faint);font-size:10.3px;line-height:1.55;margin-top:5px;overflow-wrap:anywhere}
+
+/* 开关 */
+.set-toggle-list{display:flex;flex-direction:column;gap:7px;margin-top:12px}
+.set-toggle{
+  display:flex;align-items:center;gap:12px;padding:9px 11px;
+  border:1px solid var(--line);border-radius:10px;background:var(--panel);
+}
+.set-toggle.danger{border-color:var(--err-bd);background:var(--err-bg)}
+.set-toggle-txt{min-width:0;flex:1}
+.set-toggle-txt b{display:block;color:var(--fg);font-size:12px;font-weight:600;line-height:1.4}
+.set-toggle.danger .set-toggle-txt b{color:var(--err)}
+.set-toggle-txt .set-help{margin-top:2px}
+.set-switch{position:relative;display:block;width:38px;height:22px;flex:0 0 38px;cursor:pointer}
+.set-switch input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer}
+.set-switch > span{
+  position:absolute;inset:0;border-radius:999px;background:var(--panel3);
+  border:1px solid var(--line2);transition:background .18s,border-color .18s;
+}
+.set-switch > span::after{
+  content:'';position:absolute;width:16px;height:16px;left:2px;top:2px;
+  border-radius:50%;background:var(--faint);transition:left .18s,background .18s;
+}
+.set-switch input:checked + span{background:rgba(var(--accent-rgb),.14);border-color:rgba(var(--accent-rgb),.42)}
+.set-switch input:checked + span::after{left:18px;background:var(--accent)}
+.set-switch input:focus-visible + span{outline:2px solid var(--accent);outline-offset:2px}
+
+/* 高级设置：默认折叠 */
+.set-adv{
+  margin:0 0 12px;border:1px solid var(--line);border-radius:14px;
+  background:var(--panel2);overflow:hidden;
+}
+.set-adv summary{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:12px 14px;cursor:pointer;list-style:none;
+  color:var(--dim);font-size:12.5px;font-weight:650;
+}
+.set-adv summary::-webkit-details-marker{display:none}
+.set-adv summary::after{content:'⌄';font-size:13px;color:var(--faint);transition:transform .18s}
+.set-adv[open] summary{color:var(--fg);border-bottom:1px solid var(--line)}
+.set-adv[open] summary::after{transform:rotate(180deg)}
+.set-adv-hint{color:var(--faint);font-size:10px;font-weight:400;margin-left:auto}
+.set-adv .set-grid{padding:12px 14px 14px}
+.set-adv .set-toggle{grid-column:1/-1}
+
+.set-field.has-error label{color:var(--err)}
+.set-field.has-error input,.set-field.has-error select{
+  border-color:var(--err);
+  background:var(--err-bg);
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--err) 10%,transparent);
+}
+.set-pill.api{color:var(--warn);background:var(--warn-bg);border-color:var(--warn-bd)}
+
+/* 底部保存条：滚动时贴着底部 */
+.set-footer{
+  position:sticky;bottom:-16px;z-index:2;
+  margin:18px -16px 0;padding:12px 16px calc(12px + env(safe-area-inset-bottom));
+  display:flex;flex-wrap:wrap;align-items:center;gap:10px;
+  background:var(--panel);border-top:1px solid var(--line);
+}
+.set-footer-note{flex:1;min-width:150px;color:var(--faint);font-size:10.5px;line-height:1.5}
+.set-footer-actions{display:flex;gap:8px;margin-left:auto}
+.set-footer-actions button{height:36px;padding:0 13px;border-radius:9px;font-size:12.5px;white-space:nowrap}
+.set-footer-actions .primary{min-width:104px}
+.set-footer-actions .ghost{background:var(--panel2);border:1px solid var(--line);color:var(--dim)}
+.set-footer-actions .ghost:hover{background:var(--panel3);border-color:var(--line2);color:var(--fg)}
+.set-footer-actions .danger-soft{
+  background:var(--err-bg);border:1px solid var(--err-bd);color:var(--err);
+}
+.set-footer-actions .danger-soft:hover{background:color-mix(in srgb,var(--err) 14%,transparent);border-color:var(--err)}
+.set-footer-actions button:disabled{opacity:.55;cursor:default}
+
+@media(max-width:620px){
+  #settingsDrawer{width:100vw;max-width:100vw}
+  #settingsDrawer .drawer-head{height:56px;padding:0 14px}
+  #settingsDrawer .drawer-body{padding:12px 12px 0}
+  .set-summary{padding:12px}
+  .set-model-name{font-size:16px}
+  .set-group{padding:12px 11px}
+  .set-grid{grid-template-columns:1fr;gap:11px}
+  .set-field.wide{grid-column:auto}
+  .set-footer{margin:16px -12px 0;padding:10px 12px calc(10px + env(safe-area-inset-bottom))}
+  .set-footer-actions{width:100%;margin-left:0}
+  .set-footer-actions .primary{flex:1}
+}
+
+/* ============================================================
+   第十九轮 · 素色降温 + 按钮留白（2026-11-24）
+   ① 素：从偏暖的纸白退到中性冷灰白，不再发黄；
+   ② 顶栏功能键、模式键、设置保存键加高/加内边距。
+   ============================================================ */
+html[data-theme="su"]{
+  --bg:#f3f4f7; --bg2:#e9ecf1;
+  --panel:#ffffff; --panel2:#f6f7fa; --panel3:#eceff4;
+  --fg:#1b1e23; --dim:#5f6570; --faint:#858b96;
+  --line:#e2e5eb; --line2:#d1d6df;
+  --accent:#3f5fdf; --accent2:#5b7bff; --accent-rgb:63,95,223;
+  --bubble-user-bg:#eef1f6; --bubble-user-bd:#e4e8ef; --bubble-user-fg:#1b1e23;
+  --code-bg:#f5f7fa; --code-bd:#e2e5eb; --code-fg:#3d434b;
+  --shadow:0 12px 32px rgba(24,31,44,.08);
+  --shadow-sm:0 1px 2px rgba(24,31,44,.06);
+  --shadow-rgb:24,31,44;
+  --mask:rgba(19,24,33,.32);
+  --inset-hi:rgba(255,255,255,.70);
+}
+html[data-theme="su"] ::selection{background:rgba(63,95,223,.16);color:#1b1e23}
+.theme-switch button[data-theme-btn="su"]{--dot:#f4f6f9;border-color:#d5dae1}
+
+/* 顶栏功能键：加高、拉开内边距，但保持单行 */
+header #btnModel,header #btnQueue,header #btnHist,header #btnSettings{
+  height:32px;padding:0 11px;font-size:12.5px;border-radius:9px;
+  letter-spacing:.02em;
+}
+@media(min-width:1001px){
+  header #btnModel,header #btnQueue,header #btnHist,header #btnSettings{padding:0 13px}
+}
+@media(max-width:760px){
+  header #btnModel,header #btnQueue,header #btnHist,header #btnSettings{
+    height:32px;padding:0 9px;font-size:12px;
+  }
+  .theme-switch{height:30px}
+}
+
+/* 输入区上方模式键：同样留一点呼吸 */
+.mode-row{gap:8px;margin-bottom:10px}
+.mode-btn{min-height:31px;padding:6px 14px;font-size:12.5px;border-radius:18px}
+
+/* 设置：输入框和底部操作按钮加高 */
+.set-field label{margin-bottom:6px}
+.set-field input,.set-field select{height:40px;padding:0 12px}
+.set-toggle{padding:10px 12px}
+#settingsDrawer .set-footer-actions{gap:10px}
+#settingsDrawer .set-footer-actions button{
+  height:40px;padding:0 16px;border-radius:10px;font-size:13px;
+}
+#settingsDrawer .set-footer-actions .primary{min-width:116px}
+
+/* ============================================================
+   Markdown 正文样式：与现有气泡/主题变量共用，不另起配色
+   ============================================================ */
+.msg .bubble .md-p{margin:0 0 9px;line-height:1.72}
+.msg .bubble .md-p:last-child{margin-bottom:0}
+.msg .bubble .md-h{margin:13px 0 6px;color:var(--fg);line-height:1.35;font-weight:650}
+.msg .bubble .md-h:first-child{margin-top:0}
+.msg .bubble h3.md-h{font-size:15.5px}
+.msg .bubble h4.md-h{font-size:14px}
+.msg .bubble h5.md-h{font-size:13px;color:var(--dim)}
+.msg .bubble .md-list{margin:4px 0 9px;padding-left:22px}
+.msg .bubble .md-list:last-child{margin-bottom:0}
+.msg .bubble .md-list li{margin:3px 0;padding-left:1px;line-height:1.65}
+.msg .bubble .md-list li::marker{color:var(--accent);font-weight:600}
+.msg .bubble .md-quote{
+  margin:9px 0;padding:7px 11px;border-left:3px solid var(--accent);
+  border-radius:0 7px 7px 0;background:var(--panel2);color:var(--dim);
+}
+.msg .bubble .md-hr{border:0;border-top:1px solid var(--line2);margin:12px 0}
+.msg .bubble a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(var(--accent-rgb),.3)}
+.msg .bubble a:hover{border-bottom-color:var(--accent)}
+.msg .bubble strong{color:var(--fg);font-weight:650}
+.msg .bubble em{font-style:italic}
+.msg .bubble del{color:var(--faint)}
+
+.msg .bubble .md-code{
+  margin:10px 0;border:1px solid var(--code-bd);border-radius:8px;
+  background:var(--code-bg);overflow:hidden;
+}
+.msg .bubble .md-code-cap{
+  padding:5px 10px;border-bottom:1px solid var(--code-bd);
+  color:var(--faint);font-family:ui-monospace,Consolas,monospace;
+  font-size:10px;line-height:1.4;letter-spacing:.05em;text-transform:uppercase;
+}
+.msg .bubble .md-code .code-block{
+  margin:0;border:0;border-radius:0;background:transparent;
+}
+.msg .bubble .md-table{
+  margin:8px 0 10px;max-width:100%;overflow-x:auto;
+  border:1px solid var(--line);border-radius:8px;
+}
+.msg .bubble .md-table table{
+  border-collapse:collapse;width:100%;font-size:12.3px;line-height:1.55;
+}
+.msg .bubble .md-table th,.msg .bubble .md-table td{
+  padding:6px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;
+}
+.msg .bubble .md-table th{background:var(--panel2);color:var(--dim);font-weight:650;white-space:nowrap}
+.msg .bubble .md-table tr:last-child td{border-bottom:0}
 </style>
 </head>
 <body>
@@ -3275,18 +3869,172 @@ function esc(s){
   return String(s).split('&').join('&amp;').split('<').join('&lt;')
     .split('>').join('&gt;').split('"').join('&quot;');
 }
-function fmtMsg(s){
-  var t = String(s || ''), out = '', parts = t.split(/```/);
-  for (var i = 0; i < parts.length; i++){
-    if (i % 2 === 1){
-      var code = parts[i].replace(/^[a-zA-Z0-9]+\r?\n/, '');
-      out += '<pre class="code-block">' + esc(code.replace(/\s+$/, '')) + '</pre>';
+/* Markdown 渲染（只生成白名单标签，先转义再解析，避免 HTML 注入） */
+function inlineMd(s){
+  var raw = String(s == null ? '' : s);
+  var token = '\u0001MDC';
+  var codes = [], parts = raw.split(/(`[^`\n]+`)/g), out = '';
+  for (var pi = 0; pi < parts.length; pi++){
+    var part = parts[pi];
+    if (part.length >= 2 && part.charAt(0) === '`' && part.charAt(part.length - 1) === '`'){
+      out += token + codes.length + token;
+      codes.push('<code class="inline-code">' + esc(part.slice(1, -1)) + '</code>');
     } else {
-      out += esc(parts[i])
-        .replace(/`([^`\n]+)`/g, '<code class="inline-code">$1</code>')
-        .replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
+      out += esc(part);
     }
   }
+  out = out.replace(/\[([^\]]+)\]\(((?:[^()\s]|\([^()]*\))+)\)/g, function(_, label, href){
+    if (!/^(https?:\/\/|mailto:|#|\/)/i.test(href)) return label;
+    return '<a href="' + esc(href) + '" target="_blank" rel="noopener noreferrer">' + label + '</a>';
+  });
+  out = out.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+  out = out.replace(/~~([^~\n]+)~~/g, '<del>$1</del>');
+  out = out.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+  for (var ci = 0; ci < codes.length; ci++){
+    out = out.split(token + ci + token).join(codes[ci]);
+  }
+  return out;
+}
+
+function fmtMsg(s){
+  var src = String(s == null ? '' : s).replace(/\r\n?/g, '\n');
+  var lines = src.split('\n'), out = '', i = 0;
+  var para = [];
+  function flushPara(){
+    if (!para.length) return;
+    out += '<p class="md-p">' + para.map(inlineMd).join('<br>') + '</p>';
+    para = [];
+  }
+  function listMatch(line){
+    var u = /^\s{0,3}([-*+])\s+(.+)$/.exec(line);
+    if (u) return {ord:false, text:u[2]};
+    var o = /^\s{0,3}(\d+)[.)]\s+(.+)$/.exec(line);
+    if (o) return {ord:true, start:parseInt(o[1], 10) || 1, text:o[2]};
+    return null;
+  }
+  function tableSep(line){
+    var t = line.trim().replace(/^\|/, '').replace(/\|$/, '');
+    return /^\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\s*$/.test(t);
+  }
+  function cells(line){
+    var s = line.trim().replace(/^\|/, '').replace(/\|$/, ''), arr = [], buf = '', inCode = false;
+    for (var ci = 0; ci < s.length; ci++){
+      var ch = s.charAt(ci);
+      if (ch === '`') inCode = !inCode;
+      if (ch === '|' && !inCode){
+        arr.push(buf); buf = '';
+      } else {
+        buf += ch;
+      }
+    }
+    arr.push(buf);
+    return arr.map(function(x){ return x.trim(); });
+  }
+  function isBlockStart(line, next){
+    return /^\s*(```|~~~)/.test(line) ||
+      /^\s{0,3}(#{1,6})\s+/.test(line) ||
+      /^\s{0,3}>/.test(line) ||
+      /^\s{0,3}((\*\s*){3,}|(-\s*){3,}|(_\s*){3,})$/.test(line) ||
+      !!listMatch(line) ||
+      (line.indexOf('|') >= 0 && tableSep(next || ''));
+  }
+
+  while (i < lines.length){
+    var line = lines[i];
+
+    if (/^\s*$/.test(line)) { flushPara(); i++; continue; }
+
+    var fence = /^\s*(```|~~~)\s*([A-Za-z0-9_+.-]*)\s*$/.exec(line);
+    if (fence){
+      flushPara();
+      var lang = fence[2] || '', code = [];
+      i++;
+      while (i < lines.length && !/^\s*(```|~~~)\s*$/.test(lines[i])){ code.push(lines[i]); i++; }
+      if (i < lines.length) i++;
+      out += '<div class="md-code">' +
+        (lang ? '<div class="md-code-cap">' + esc(lang) + '</div>' : '') +
+        '<pre class="code-block">' + esc(code.join('\n')) + '</pre></div>';
+      continue;
+    }
+
+    var heading = /^\s{0,3}(#{1,6})\s+(.*)$/.exec(line);
+    if (heading){
+      flushPara();
+      var level = heading[1].length, tag = level <= 2 ? 'h3' : (level === 3 ? 'h4' : 'h5');
+      out += '<' + tag + ' class="md-h">' + inlineMd(heading[2].replace(/\s+#+\s*$/, '')) + '</' + tag + '>';
+      i++; continue;
+    }
+
+    if (/^\s{0,3}((\*\s*){3,}|(-\s*){3,}|(_\s*){3,})$/.test(line)){
+      flushPara();
+      out += '<hr class="md-hr">';
+      i++; continue;
+    }
+
+    if (/^\s{0,3}>/.test(line)){
+      flushPara();
+      var quote = [];
+      while (i < lines.length && /^\s{0,3}>/.test(lines[i])){
+        quote.push(inlineMd(lines[i].replace(/^\s{0,3}>\s?/, '')));
+        i++;
+      }
+      out += '<blockquote class="md-quote">' + quote.join('<br>') + '</blockquote>';
+      continue;
+    }
+
+    if (line.indexOf('|') >= 0 && i + 1 < lines.length && tableSep(lines[i + 1])){
+      flushPara();
+      var head = cells(line), alignRow = cells(lines[i + 1]), rows = [];
+      var align = alignRow.map(function(a){
+        a = a.trim();
+        var l = a.charAt(0) === ':', r = a.charAt(a.length - 1) === ':';
+        return (l && r) ? 'center' : (r ? 'right' : 'left');
+      });
+      i += 2;
+      while (i < lines.length && lines[i].indexOf('|') >= 0 && !/^\s*$/.test(lines[i])){
+        rows.push(cells(lines[i])); i++;
+      }
+      var th = '', tb = '';
+      for (var hi = 0; hi < head.length; hi++){
+        th += '<th style="text-align:' + (align[hi] || 'left') + '">' + inlineMd(head[hi]) + '</th>';
+      }
+      for (var ri = 0; ri < rows.length; ri++){
+        tb += '<tr>';
+        for (var hj = 0; hj < head.length; hj++){
+          tb += '<td style="text-align:' + (align[hj] || 'left') + '">' + inlineMd(rows[ri][hj] || '') + '</td>';
+        }
+        tb += '</tr>';
+      }
+      out += '<div class="md-table"><table><thead><tr>' + th + '</tr></thead><tbody>' + tb + '</tbody></table></div>';
+      continue;
+    }
+
+    var lm = listMatch(line);
+    if (lm){
+      flushPara();
+      var ordered = lm.ord, start = lm.start || 1, items = [];
+      while (i < lines.length){
+        var cur = listMatch(lines[i]);
+        if (cur && cur.ord === ordered){
+          items.push(inlineMd(cur.text));
+          i++;
+        } else if (items.length && !/^\s*$/.test(lines[i]) && !isBlockStart(lines[i], lines[i + 1])){
+          items[items.length - 1] += '<br>' + inlineMd(lines[i].trim());
+          i++;
+        } else {
+          break;
+        }
+      }
+      out += '<' + (ordered ? 'ol' : 'ul') + ' class="md-list"' + (ordered && start !== 1 ? ' start="' + start + '"' : '') + '>';
+      for (var li = 0; li < items.length; li++) out += '<li>' + items[li] + '</li>';
+      out += '</' + (ordered ? 'ol' : 'ul') + '>';
+      continue;
+    }
+
+    para.push(line);
+    i++;
+  }
+  flushPara();
   return out;
 }
 function fmtTime(s){
@@ -5814,36 +6562,230 @@ function histDetail(h){
   return out;
 }
 
-$('btnSettings').onclick = function(){
+function openSettings(){
   openDrawer('settingsDrawer');
   var body = $('settingsBody');
-  body.innerHTML = '<div style="color:var(--dim)">读取中…</div>';
+  body.innerHTML = '<div class="set-loading"><span class="spinner"></span><span>读取配置…</span></div>';
   fetchJson('/api/config').then(function(cfg){
-    var fields = [
-      ['model','模型路径','text',1], ['modelLabel','模型名称','text',0],
-      ['context','总上下文','number',1], ['parallel','并行路数','number',1],
-      ['maxTokens','单步输出上限','number',1], ['maxSteps','最多步数','number',0],
-      ['taskTimeoutSeconds','任务超时(秒)','number',0], ['stepTimeoutSeconds','单步超时(秒)','number',0],
-      ['temperature','temperature','text',1], ['topP','topP','text',1]
-    ];
-    var out = '';
-    for (var i=0;i<fields.length;i++){
-      var f = fields[i], v = cfg[f[0]];
-      if (v === null || v === undefined) v = '';
-      out += '<div class="field"><label>' + f[1] + (f[3] ? ' <span class="tag">重启生效</span>' : '') + '</label>' +
-        '<input data-k="' + f[0] + '" type="' + f[2] + '" value="' + esc(v) + '"></div>';
+    var mode = String(cfg.modelMode || 'local');
+
+    function helpText(k){
+      var s = cfg['_' + k + '说明'];
+      return s ? '<div class="set-help">' + esc(s) + '</div>' : '';
     }
-    out += '<div style="display:flex;gap:9px;margin-top:20px">' +
-      '<button class="primary" id="btnSave" style="flex:1">保存</button>' +
-      '<button id="btnRestart" class="danger">重启服务</button></div>';
+    function restartTag(){
+      return '<span class="set-restart" title="重启后生效">↻ 重启</span>';
+    }
+    function field(key,label,opts){
+      opts = opts || {};
+      var v = cfg[key];
+      if (v === null || v === undefined) v = '';
+      var kind = opts.kind || 'text';
+      var attrs = ' data-k="' + key + '" data-kind="' + kind + '"';
+      if (opts.min !== undefined) {
+        attrs += ' min="' + opts.min + '" max="' + opts.max + '" step="' + opts.step + '"';
+      }
+      if (opts.placeholder) attrs += ' placeholder="' + esc(opts.placeholder) + '"';
+      var control;
+      if (kind === 'checkbox') {
+        control = '<label class="set-switch"><input type="checkbox"' + attrs + (v ? ' checked' : '') + '><span></span></label>';
+      } else if (kind === 'select') {
+        control = '<select' + attrs + '>';
+        var choices = opts.options || [];
+        for (var i = 0; i < choices.length; i++) {
+          var c = choices[i];
+          control += '<option value="' + esc(c[0]) + '"' + (String(c[0]) === String(v) ? ' selected' : '') + '>' + esc(c[1]) + '</option>';
+        }
+        control += '</select>';
+      } else {
+        control = '<input type="' + (opts.type || (kind === 'number' ? 'number' : 'text')) + '"' + attrs + ' value="' + esc(v) + '">';
+      }
+      return '<div class="set-field' + (opts.wide ? ' wide' : '') + (opts.danger ? ' danger' : '') + '">' +
+        '<label>' + label + (opts.restart ? restartTag() : '') + '</label>' + control +
+        (opts.help ? '<div class="set-help">' + esc(opts.help) + '</div>' : helpText(opts.helpKey || key)) + '</div>';
+    }
+    function toggle(key,label,helpKey,opts){
+      opts = opts || {};
+      return '<div class="set-toggle' + (opts.danger ? ' danger' : '') + '">' +
+        '<div class="set-toggle-txt"><b>' + label + '</b>' +
+        (opts.help ? '<div class="set-help">' + esc(opts.help) + '</div>' : helpText(helpKey || key)) + '</div>' +
+        '<label class="set-switch"><input type="checkbox" data-k="' + key + '" data-kind="bool"' +
+        (cfg[key] ? ' checked' : '') + '><span></span></label></div>';
+    }
+    function group(title,note,inner){
+      return '<div class="set-group"><div class="set-group-head"><span>' + title + '</span><span class="set-group-note">' + note + '</span></div>' + inner + '</div>';
+    }
+
+    var out = '<div class="set-summary">' +
+      '<div class="set-sum-main">' +
+        '<div class="set-kicker">当前模型</div>' +
+        '<div class="set-model-name" id="setModelName">' + esc(cfg.modelLabel || '未命名') + '</div>' +
+        '<div class="set-sum-meta"><span class="set-pill' + (mode === 'api' ? ' api' : '') + '" id="setModePill">' + (mode === 'api' ? '接口模式' : '本地运行') + '</span>' +
+          '<span>ctx ' + esc(cfg.context || '—') + '</span><span>并行 ' + esc(cfg.parallel || 1) + '</span></div>' +
+      '</div>' +
+      '<div class="set-save-state" id="cfgSaveState">已读取</div>' +
+    '</div>' +
+    '<div class="set-tip"><span>↻</span><span>带重启标记的项保存后要重启服务；保存只写配置，不会自动重启。</span></div>';
+
+    out += group('模型与来源', '换模型 / 本地或接口', '<div class="set-grid">' +
+      field('model','模型文件路径',{wide:true,restart:true,placeholder:'models/xxx.gguf'}) +
+      field('modelLabel','显示名称',{placeholder:'面板顶栏显示的名字'}) +
+      field('modelMode','模型来源',{kind:'select',options:[
+        ['local','本地 llama（离线、免费、慢）'],
+        ['api','接口模式（快、需 api-key）']
+      ]}) +
+    '</div>');
+
+    out += group('接口模式', '只有 modelMode=api 时使用', '<div class="set-grid">' +
+      field('apiBase','API 根地址',{wide:true,placeholder:'https://api.deepseek.com/v1'}) +
+      field('apiModel','接口模型名',{placeholder:'deepseek-chat'}) +
+      field('apiContext','接口上下文上限',{kind:'number',min:1024,max:131072,step:1024}) +
+    '</div>');
+
+    out += group('运行参数', '影响速度、上下文和单次任务上限', '<div class="set-grid">' +
+      field('context','总上下文',{kind:'number',min:1024,max:32768,step:512,restart:true}) +
+      field('threads','CPU 线程（0=自动）',{kind:'number',min:0,max:32,step:1,restart:true}) +
+      field('maxTokens','单步输出上限',{kind:'number',min:100,max:4000,step:10,restart:true}) +
+      field('maxSteps','最多步数',{kind:'number',min:5,max:100,step:1}) +
+      field('loadMode','加载模式',{kind:'select',restart:true,options:[
+        ['mmap','mmap · 省内存'],
+        ['mlock','mlock · 全锁内存'],
+        ['mmap+mlock','mmap+mlock · 混合']
+      ]}) +
+      field('parallel','并行任务数',{kind:'number',min:1,max:4,step:1,restart:true}) +
+      field('stepTimeoutSeconds','单步超时（秒）',{kind:'number',min:30,max:1800,step:10,help:'一步最长等多久；慢机器可以调到 300 以上。'}) +
+      field('taskTimeoutSeconds','任务超时（秒）',{kind:'number',min:60,max:7200,step:60,help:'整个任务最多跑多久；到点会强制收尾。'}) +
+      field('runTimeoutSeconds','单条命令超时（秒）',{kind:'number',min:5,max:600,step:5,help:'单条命令 / 脚本最长运行时间。'}) +
+      field('maxOutputChars','单次工具输出上限',{kind:'number',min:200,max:8000,step:100}) +
+    '</div>');
+
+    out += group('采样', '越低越稳，越高越发散', '<div class="set-grid">' +
+      field('temperature','temperature（随机性）',{kind:'number',min:0,max:2,step:0.05,help:'越低越死板、越稳；干活建议 0.2 - 0.4。'}) +
+      field('topP','topP（采样范围）',{kind:'number',min:0.1,max:1,step:0.05,help:'越小越保守；不确定就保持 0.7。'}) +
+    '</div>');
+
+    out += group('权限与工作区', '高风险开关请按需打开', '<div class="set-grid">' +
+      field('workspace','工作目录',{wide:true,placeholder:'workspace'}) +
+    '</div>' +
+      '<div class="set-toggle-list">' +
+        toggle('allowAnyPath','允许访问工作区外路径','allowAnyPath') +
+        toggle('allowGui','允许操作窗口 / GUI','',{help:'允许 agent 操作窗口、鼠标键盘。'}) +
+        toggle('allowAdmin','管理员权限（高风险）','',{danger:true,help:'允许以管理员权限运行；只在必要时打开。'}) +
+      '</div>');
+
+    out += '<details class="set-adv"><summary><span>启动 / 内存 / 缓存</span><span class="set-adv-hint">重启生效</span></summary>' +
+      '<div class="set-grid">' +
+        toggle('warmupOnStart','启动后自动预热提示词','warmupOnStart') +
+        field('kvCacheTypeK','KV 缓存 K 类型',{kind:'select',restart:true,help:'K 缓存精度；内存紧选 q8_0 / q4_0。',options:[
+          ['f16','f16 · 不压缩'],['q8_0','q8_0 · 8bit'],['q4_0','q4_0 · 4bit']
+        ]}) +
+        field('kvCacheTypeV','KV 缓存 V 类型',{kind:'select',restart:true,help:'V 缓存精度；和 K 保持一致最稳。',options:[
+          ['f16','f16 · 不压缩'],['q8_0','q8_0 · 8bit'],['q4_0','q4_0 · 4bit']
+        ]}) +
+        field('flashAttn','Flash Attention',{kind:'select',restart:true,help:'量化 KV 缓存时建议开；CPU 上不一定更快。',options:[
+          ['off','off'],['on','on'],['auto','auto']
+        ]}) +
+      '</div></details>';
+
+    out += '<div class="set-footer">' +
+      '<div class="set-footer-note">带 ↻ 的项需重启服务才会生效。</div>' +
+      '<div class="set-footer-actions">' +
+        '<button class="ghost" id="btnSettingsReload">重新读取</button>' +
+        '<button class="danger-soft" id="btnRestart">重启服务</button>' +
+        '<button class="primary" id="btnSave">保存</button>' +
+      '</div>' +
+    '</div>';
+
     body.innerHTML = out;
+
+    function setSaveState(text, cls){
+      var el = $('cfgSaveState');
+      if (!el) return;
+      el.textContent = text;
+      el.className = 'set-save-state' + (cls ? ' ' + cls : '');
+    }
+    function fieldLabel(el){
+      var p = el && el.closest ? el.closest('.set-field, .set-toggle') : null;
+      var l = p ? p.querySelector('label, b') : null;
+      return l ? l.textContent.replace(/↻.*$/,'').trim() : '该项';
+    }
+    function collect(){
+      var data = {}, bad = [], fields = body.querySelectorAll('[data-k]');
+      var prevErr = body.querySelectorAll('.set-field.has-error');
+      for (var j = 0; j < prevErr.length; j++) prevErr[j].classList.remove('has-error');
+      for (var i = 0; i < fields.length; i++) {
+        var el = fields[i], key = el.getAttribute('data-k'), kind = el.getAttribute('data-kind');
+        if (kind === 'bool') { data[key] = !!el.checked; continue; }
+        var raw = String(el.value === null || el.value === undefined ? '' : el.value).trim();
+        if (kind === 'number') {
+          var n = Number(raw);
+          if (!raw || !isFinite(n) ||
+              (el.min !== '' && n < Number(el.min)) ||
+              (el.max !== '' && n > Number(el.max))) {
+            var wrap = el.closest ? el.closest('.set-field') : null;
+            if (wrap) wrap.classList.add('has-error');
+            bad.push(fieldLabel(el));
+            continue;
+          }
+          data[key] = n;
+        } else {
+          data[key] = raw;
+        }
+      }
+      return {data:data, bad:bad};
+    }
+
+    body.oninput = function(e){
+      if (e.target && e.target.getAttribute && e.target.getAttribute('data-k')) setSaveState('有未保存改动','dirty');
+      var wrap = e.target && e.target.closest ? e.target.closest('.set-field') : null;
+      if (wrap) wrap.classList.remove('has-error');
+      var name = body.querySelector('[data-k="modelLabel"]');
+      if (name && $('setModelName')) $('setModelName').textContent = name.value || '未命名';
+    };
+    body.onchange = function(e){
+      if (e.target && e.target.getAttribute && e.target.getAttribute('data-k')) setSaveState('有未保存改动','dirty');
+      var wrap = e.target && e.target.closest ? e.target.closest('.set-field') : null;
+      if (wrap) wrap.classList.remove('has-error');
+      var modeEl = body.querySelector('[data-k="modelMode"]');
+      if (modeEl && $('setModePill')) {
+        $('setModePill').textContent = modeEl.value === 'api' ? '接口模式' : '本地运行';
+        $('setModePill').className = 'set-pill' + (modeEl.value === 'api' ? ' api' : '');
+      }
+    };
+
     $('btnSave').onclick = function(){
-      var data = {}, ins = body.querySelectorAll('input[data-k]');
-      for (var j=0;j<ins.length;j++) data[ins[j].getAttribute('data-k')] = ins[j].value;
-      fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data)})
+      var c = collect();
+      if (c.bad.length) {
+        toast('这些项需要检查：' + c.bad.join('、'), true);
+        setSaveState('有未保存改动','dirty');
+        var badEl = body.querySelector('.set-field.has-error');
+        if (badEl) {
+          badEl.scrollIntoView({block:'center'});
+          var inp = badEl.querySelector('input,select');
+          if (inp) setTimeout(function(){ inp.focus({preventScroll:true}); }, 260);
+        }
+        return;
+      }
+      var btn = this, old = btn.textContent;
+      btn.disabled = true; btn.textContent = '保存中…';
+      setSaveState('保存中','dirty');
+      fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(c.data)})
         .then(function(r){ return r.json(); })
-        .then(function(j){ toast(j && j.ok ? '已保存' : ((j&&j.msg)||'失败'), !(j&&j.ok)); })
-        .catch(function(e){ toast('保存失败：'+e.message, true); });
+        .then(function(j){
+          btn.disabled = false; btn.textContent = old;
+          if (j && j.ok) {
+            setSaveState('已保存','saved');
+            toast('已保存；带 ↻ 的项重启后生效');
+          } else {
+            setSaveState('保存失败','error');
+            toast((j && j.msg) || '保存失败', true);
+          }
+        })
+        .catch(function(e){
+          btn.disabled = false; btn.textContent = old;
+          setSaveState('保存失败','error');
+          toast('保存失败：' + e.message, true);
+        });
     };
     $('btnRestart').onclick = function(){
       if (!confirm('重启模型服务？约 20 秒。')) return;
@@ -5851,8 +6793,13 @@ $('btnSettings').onclick = function(){
       fetch('/api/restart', {method:'POST'}).catch(function(){});
       setTimeout(tick, 3000);
     };
+    $('btnSettingsReload').onclick = openSettings;
+    setSaveState('已读取','clean');
+  }).catch(function(e){
+    body.innerHTML = '<div class="set-loading set-error">读取配置失败：' + esc(e.message) + '</div>';
   });
-};
+}
+$('btnSettings').onclick = openSettings;
 
 /* ---------- 输入 ---------- */
 function autoGrow(){

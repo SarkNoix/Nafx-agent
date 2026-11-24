@@ -31,6 +31,14 @@ $cfgName  = if ($env:NAFX_CONFIG) { [string]$env:NAFX_CONFIG } else { 'config.js
 $cfgPath  = if ([IO.Path]::IsPathRooted($cfgName)) { $cfgName } else { Join-Path $Root $cfgName }
 $Cfg      = Get-Content $cfgPath -Raw -Encoding UTF8 | ConvertFrom-Json
 
+# api-key.json 顶部带 # 填写说明，直接 ConvertFrom-Json 会失败。
+# 这里只剥整行注释，正文仍是严格 JSON。
+function Read-JsonFile([string]$Path) {
+    $text = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
+    $clean = (($text -split "`r?`n") | Where-Object { $_.TrimStart() -notmatch '^#' }) -join "`n"
+    return ($clean | ConvertFrom-Json)
+}
+
 # ---- 加载 mod（<项目根>\mod\*.mod.json）----
 # mod 能在不改源码的前提下改配置、改工具、加人设、塞文档。
 # 必须在读 Cfg 之后、用 Cfg.maxSteps 之前，否则 mod 改的 maxSteps 不生效。
@@ -103,7 +111,7 @@ if ($script:IsApiMode) {
     $keyFile = Join-Path $Root 'api-key.json'
     try {
         if (Test-Path $keyFile) {
-            $kj = Get-Content $keyFile -Raw -Encoding UTF8 | ConvertFrom-Json
+            $kj = Read-JsonFile $keyFile
             $script:ApiKey = ([string]$kj.apiKey).Trim()
         }
     } catch { }
@@ -250,6 +258,14 @@ function Get-ProjectPromptFor {
     # 处理数据文件
     if ($t -match 'jsonl|json|csv|日志|数据|表格') {
         $pick += @('处理 jsonl 这类文件')
+    }
+    # 文件类型、编辑、运行
+    if ($t -match '文件类型|后缀|扩展名|多文件|运行.*(脚本|程序|文件)|\.(ps1|bat|cmd|py|js|mjs|cjs|sh|exe|json|html|zip)\b') {
+        $pick += @('文件类型与运行')
+    }
+    # Git / 版本管理
+    if ($t -match '(?i)git|提交|暂存|commit|diff|版本|仓库|push|pull|分支|clone') {
+        $pick += @('Git 与提交')
     }
     # 真要做完整项目才给设计方法论（最贵的那段，585+312 tok）
     # 这个关键词原来含「小项目」「完整」，结果「在 mini 目录下建个小项目，
@@ -683,12 +699,12 @@ function Get-ToolNamesFor {
     # 把 write_file 砍掉了，模型只好用 run_cmd echo > 绕，写出路径错的空文件。
     switch ($Intent) {
         'chat'    { return @('say', 'finish') }
-        'query'   { return @('think', 'web_search', 'web_fetch', 'read_file', 'list_dir', 'say', 'finish') }
-        'build'   { return @('think', 'write_file', 'read_file', 'replace_in_file', 'run_cmd', 'make_dir', 'say', 'finish') }
-        'analyze' { return @('think', 'list_dir', 'read_file', 'run_cmd', 'write_file', 'say', 'finish') }
-        default   { return @('think', 'list_dir', 'read_file', 'write_file', 'append_file',
+        'query'   { return @('think', 'web_search', 'web_fetch', 'file_editor', 'read_file', 'list_dir', 'say', 'finish') }
+        'build'   { return @('think', 'file_editor', 'write_script', 'write_file', 'read_file', 'replace_in_file', 'run_ps1', 'run_cmd', 'make_dir', 'git', 'web_search', 'web_fetch', 'say', 'finish') }
+        'analyze' { return @('think', 'file_editor', 'list_dir', 'read_file', 'run_cmd', 'write_file', 'web_search', 'web_fetch', 'git', 'say', 'finish') }
+        default   { return @('think', 'file_editor', 'list_dir', 'read_file', 'write_file', 'append_file',
                              'make_dir', 'delete_path', 'run_cmd', 'find_files', 'grep_file',
-                             'web_search', 'say', 'finish') }
+                             'git', 'web_search', 'web_fetch', 'say', 'finish') }
     }
 }
 
@@ -701,6 +717,13 @@ function Get-ExtraToolsByTask {
     if ($TaskText -match 'http|https|接口|api|API|状态码|请求.*(地址|网址|链接|服务)|curl|调.*接口') { $need += 'http_request' }
     if ($TaskText -match 'pdf|PDF') { $need += 'pdf_read' }
     if ($TaskText -match '提醒|弹窗|通知|做完.*(叫|喊|告诉)|完成.*(叫|喊|告诉)') { $need += 'notify' }
+    # 多文件查看/编辑、后缀识别、按类型运行
+    if ($TaskText -match '多文件|多个文件|批量.*(改|替换|查看|编辑)|跨文件|后缀|扩展名|文件类型|怎么运行|运行.*(脚本|程序|文件)|查看.*(两个|三个|几个).*文件') { $need += 'file_editor' }
+    # Git：只给工具，不替用户做决定
+    if ($TaskText -match '(?i)git|提交|暂存|commit|diff|版本|仓库|push|pull|分支|clone') { $need += 'git' }
+    # 不会/不确定/最新/官方用法：先联网，别凭记忆
+    if ($TaskText -match '不会|不确定|最新|官网|官方文档|教程|用法|怎么用|报错|错误码|版本|api|sdk|依赖|库') { $need += 'web_search'; $need += 'web_fetch' }
+    if ($TaskText -match '上网|联网|搜索|搜一下|搜资料|查资料|百度|谷歌') { $need += 'web_search'; $need += 'web_fetch' }
     # 网络调试：抓包 / 拦截改包 / 发裸包 / 查端口。一次最多补两三个，别把上下文顶爆。
     if ($TaskText -match '抓包|抓流量|抓.{0,12}(包|请求|流量)|pcap|pktmon|wireshark') { $need += 'net_capture'; $need += 'net_packets'; $need += 'net_ports' }
     if ($TaskText -match '拦截|改包|改请求|重写请求|代理|mock|proxy') { $need += 'net_proxy'; $need += 'net_http' }
@@ -758,6 +781,7 @@ function Trim-ToolsToBudget {
 
     # 无论如何都要留的：没它们干不成活
     $mustKeep = @('think', 'note', 'finish', 'say', 'rethink', 'plan', 'skill',
+                  'file_editor', 'git', 'web_search', 'web_fetch',
                   'read_file', 'write_file', 'append_file', 'list_dir')
 
     $list = @($Names)
@@ -1100,6 +1124,27 @@ function Format-ToolCallMessage {
     }
     elseif ($tool -eq 'web_fetch') {
         $args['path'] = [string]$Act.path
+    }
+    elseif ($tool -eq 'file_editor') {
+        $args['action'] = [string]$Act.action
+        $p = [string]$Act.path
+        if ([string]::IsNullOrWhiteSpace($p) -and $Act.paths) {
+            $p = (@($Act.paths) | ForEach-Object { [string]$_ }) -join "`n"
+        }
+        $args['path'] = $p
+        if ($Act.find) { $args['find'] = [string]$Act.find }
+        if ($Act.replace) { $args['replace'] = [string]$Act.replace }
+        if ($Act.content) { $args['content'] = [string]$Act.content }
+        if ($Act.line) { $args['line'] = [string]$Act.line }
+        if ($Act.end_line) { $args['end_line'] = [string]$Act.end_line }
+        if ($Act.command) { $args['command'] = [string]$Act.command }
+    }
+    elseif ($tool -eq 'git') {
+        $args['action'] = [string]$Act.action
+        $args['path'] = [string]$Act.path
+        if ($Act.files) { $args['files'] = [string]$Act.files }
+        if ($Act.message) { $args['message'] = [string]$Act.message }
+        if ($Act.command) { $args['command'] = [string]$Act.command }
     }
     elseif ($tool -eq 'replace_in_file') {
         $args['path'] = [string]$Act.path
@@ -2960,7 +3005,15 @@ Add-SessionNote -Text $bcSay -Kind 'say'
     }
     if ($argsObj) {
         foreach ($p in $argsObj.PSObject.Properties) {
-            $act | Add-Member -NotePropertyName $p.Name -NotePropertyValue ([string]$p.Value) -Force
+            # paths 是数组参数，不能走 [string] 强转：那样会变成 "a b"，
+            # 文件名里有空格时直接拆错。这里保留成换行分隔，交给 file_editor 解析。
+            $pv = $p.Value
+            if ($p.Name -in @('paths','files') -and $pv -is [System.Array]) {
+                $pv = (@($pv) | ForEach-Object { [string]$_ }) -join "`n"
+            } else {
+                $pv = [string]$pv
+            }
+            $act | Add-Member -NotePropertyName $p.Name -NotePropertyValue $pv -Force
         }
     }
     $act = Repair-ActionStrings $act

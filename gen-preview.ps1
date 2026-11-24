@@ -51,6 +51,19 @@ Write-Host ('  源文件  ' + $Source) -ForegroundColor DarkGray
 #    · 侧栏工作区有文件、工具列表有内容
 # ------------------------------------------------------------
 $now = (Get-Date).ToString('MM-dd HH:mm:ss')
+$schemaPath = Join-Path $Root 'agent\tools-schema.json'
+$promptPath = Join-Path $Root 'agent\prompt.md'
+$schemaRaw = if (Test-Path $schemaPath) { Get-Content $schemaPath -Raw -Encoding UTF8 } else { '[]' }
+$schemaItems = $schemaRaw | ConvertFrom-Json
+$toolNames = @()
+foreach ($item in $schemaItems) {
+    if ($item.function -and $item.function.name) { $toolNames += [string]$item.function.name }
+}
+$toolCount = $toolNames.Count
+$toolTokens = if ($schemaRaw.Length -gt 0) { [int][Math]::Round($schemaRaw.Length / 3.5) } else { 0 }
+$promptText = if (Test-Path $promptPath) { Get-Content $promptPath -Raw -Encoding UTF8 } else { '' }
+$promptBytes = if (Test-Path $promptPath) { (Get-Item $promptPath).Length } else { 0 }
+$promptTokens = [int][Math]::Round($promptText.Length / 2.5)
 
 $mockSession = @'
 [
@@ -123,10 +136,13 @@ $mockSystem = @'
   "apiHasKey":false
 }
 '@
+# 预览里的系统数据跟着真实 schema / prompt 走，避免面板预览越看越旧。
+$mockSystem = $mockSystem.Replace('"promptBytes":10107', ('"promptBytes":' + $promptBytes)).
+                            Replace('"promptTokens":4043', ('"promptTokens":' + $promptTokens)).
+                            Replace('"toolCount":56', ('"toolCount":' + $toolCount)).
+                            Replace('"toolTokens":9345', ('"toolTokens":' + $toolTokens))
 
-$mockTools = @'
-["think","plan","read_file","write_file","append_file","replace_in_file","list_dir","find_files","grep_file","make_dir","delete_path","move_path","copy_path","run_cmd","run_ps1","write_script","zip_list","unzip","web_search","web_fetch","download_file","sys_info","now","syshelp","help","win_doc","skill","note","say","finish","http_request","pdf_read","notify"]
-'@
+$mockTools = (ConvertTo-Json -InputObject @($toolNames) -Compress)
 
 $mockFiles = @'
 [{"name":"data","dir":true},{"name":"test","dir":true},

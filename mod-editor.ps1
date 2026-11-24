@@ -12,7 +12,6 @@
 # ============================================================
 
 param([int]$Port = 8070)
-[IO.File]::WriteAllText('E:\Nafx\logs\p1.txt', 'param 之后能跑到', (New-Object Text.UTF8Encoding($false)))
 
 
 $ErrorActionPreference = 'Stop'
@@ -95,9 +94,9 @@ try {
                     Send-Bytes -Response $res -Bytes ([Text.Encoding]::UTF8.GetBytes($html)) -ContentType 'text/html; charset=utf-8'
                 }
                 '/api/tools' {
-                    # 工具名 + 描述 + 分组。51 个平铺太长，编辑器里要折叠和搜索。
+                    # 工具名 + 描述 + 分组。全部平铺太长，编辑器里要折叠和搜索。
                     $groups = @{
-                        '文件' = @('write_file','read_file','list_dir','hash_file','read_lines','zip_list','diff_files','replace_in_file','set_line','append_file','make_dir','find_files','file_info','move_path','copy_path','grep_file','delete_path')
+                        '文件' = @('file_editor','write_file','read_file','list_dir','hash_file','read_lines','zip_list','diff_files','replace_in_file','set_line','append_file','make_dir','find_files','file_info','move_path','copy_path','grep_file','delete_path')
                         '执行' = @('run_cmd','run_ps','run_ps1','run_bat','run_js','run_python','write_script')
                         '系统' = @('sys_info','clipboard','env_get','open_app','kill_process','ps','install')
                         '网络' = @('download_file','web_search','web_fetch')
@@ -105,6 +104,7 @@ try {
                         '查询' = @('now','date_calc','unit_convert','project_doc','help','syshelp','win_doc')
                         '流程' = @('say','rethink','plan','learn','finish')
                         '技能' = @('skill','write_skill','unzip')
+                        '版本' = @('git')
                     }
                     $nameToGroup = @{}
                     foreach ($gName in $groups.Keys) { foreach ($tn in $groups[$gName]) { $nameToGroup[$tn] = $gName } }

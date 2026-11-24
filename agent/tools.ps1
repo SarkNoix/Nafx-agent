@@ -3,7 +3,11 @@
 #  所有文件操作被限制在 $AiRoot 目录内（沙箱）
 # ============================================================
 
-$script:AiRoot = 'D:\AI\workspace'
+$script:AiRoot = if ($PSScriptRoot) {
+    Join-Path (Split-Path -Parent $PSScriptRoot) 'workspace'
+} else {
+    Join-Path $env:USERPROFILE 'workspace'
+}
 $script:MaxOutput = 3000      # 返回给模型的最长观察字符数
 $script:RunTimeout = 30       # 运行 bat/ps1 的超时秒数
 $script:AiAllowAnyPath = $false   # 允许任意绝对路径（默认关，只许 workspace）
@@ -35,6 +39,20 @@ try {
     $netMod = Join-Path $script:ToolDir 'nettools.ps1'
     if (Test-Path $netMod) { . $netMod; $script:NetReady = $true }
 } catch { $script:NetReady = $false }
+
+# 模型专属文件查看器/编辑器/运行器
+$script:EditorReady = $false
+try {
+    $editorMod = Join-Path $script:ToolDir 'editor.ps1'
+    if (Test-Path $editorMod) { . $editorMod; $script:EditorReady = $true }
+} catch { $script:EditorReady = $false }
+
+# Git 工具
+$script:GitReady = $false
+try {
+    $gitMod = Join-Path $script:ToolDir 'git.ps1'
+    if (Test-Path $gitMod) { . $gitMod; $script:GitReady = $true }
+} catch { $script:GitReady = $false }
 
 function Set-AiRoot {
     param(
@@ -503,6 +521,16 @@ function Invoke-AiTool {
                 return "已写入 $(Get-RelDisplay $full)（$($content.Length) 字符）。写入成功，不用再读一遍验证，直接 finish。"
             }
 
+            'file_editor' {
+                if (-not $script:EditorReady) { throw '文件编辑器模块没有加载成功（agent\editor.ps1），暂时不能用。' }
+                return Invoke-FileEditor $Action
+            }
+
+            'git' {
+                if (-not $script:GitReady) { throw 'Git 模块没有加载成功（agent\git.ps1），暂时不能用。' }
+                return Invoke-GitTool $Action
+            }
+
             'append_file' {
                 $full = Resolve-AiPath $Action.path
                 Assert-CanWrite -Full $full -RelPath ([string]$Action.path)
@@ -634,7 +662,8 @@ function Invoke-AiTool {
                 }
                 $sz = if ($it.Length -ge 1MB) { [math]::Round($it.Length/1MB,1).ToString() + ' MB' } elseif ($it.Length -ge 1KB) { [math]::Round($it.Length/1KB,1).ToString() + ' KB' } else { $it.Length.ToString() + ' B' }
                 $ro = if ($it.IsReadOnly) { '，只读' } else { '' }
-                return "$($Action.path)：$sz，改于 $($it.LastWriteTime.ToString('yyyy-MM-dd HH:mm'))$ro"
+                $type = Get-FileTypeInfo $full
+                return "$($Action.path)：$sz，改于 $($it.LastWriteTime.ToString('yyyy-MM-dd HH:mm'))$ro`n类型：$($type.Kind)`n编辑：$($type.Edit)`n运行：$($type.Run)"
             }
 
             'move_path' {
@@ -2553,7 +2582,7 @@ function Read-ScriptOutput {
     if ($bytes.Length -eq 0) { return '' }
     $strict = New-Object System.Text.UTF8Encoding($false, $true)
     try { return $strict.GetString($bytes) }
-    catch { return [Text.Encoding]::GetEncoding(0).GetString($bytes) }
+    catch { return [Text.Encoding]::GetEncoding(936).GetString($bytes) }
 }
 
 function Invoke-ChildScript {

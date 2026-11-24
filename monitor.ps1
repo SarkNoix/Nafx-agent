@@ -43,6 +43,14 @@ if (-not [IO.Path]::IsPathRooted($CfgPath)) { $CfgPath = Join-Path $Root $CfgPat
 # 传给子进程（agent.ps1 靠这个知道用哪套配置）
 $env:NAFX_CONFIG = $CfgPath
 $Cfg       = Get-Content $CfgPath -Raw -Encoding UTF8 | ConvertFrom-Json
+
+# 读取允许整行 # 注释的 JSON（api-key.json 顶部有填写说明）。
+# 只去掉整行注释，不会碰字符串里的 #。
+function Read-LooseJson([string]$Path) {
+    $text = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
+    $clean = (($text -split "`r?`n") | Where-Object { $_.TrimStart() -notmatch '^#' }) -join "`n"
+    return ($clean | ConvertFrom-Json)
+}
 if ($Port -le 0) { $Port = [int]$Cfg.monitorPort }
 
 # 模型来源模式：local（本地 llama）/ api（外部接口）。
@@ -54,7 +62,7 @@ $script:ApiHasKey = $false
 try {
     $kf = Join-Path $Root 'api-key.json'
     if (Test-Path $kf) {
-        $kj = Get-Content $kf -Raw -Encoding UTF8 | ConvertFrom-Json
+        $kj = Read-LooseJson $kf
         if (([string]$kj.apiKey).Trim()) { $script:ApiHasKey = $true }
     }
 } catch { }
@@ -135,7 +143,13 @@ function Get-AgentProcessList {
         if (((Get-Date) - $script:ProcCacheAt).TotalSeconds -lt 3) { return ,$script:ProcCacheList }
     } catch { }
     $list = @()
-    try { $list = @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue) } catch { }
+    try {
+        # 面板自身可能由 powershell.exe 启动，也可能由 pwsh.exe 启动；
+        # 两边都收，免得换 PowerShell 版本后看不到/管不住 agent 进程。
+        foreach ($name in @('powershell.exe', 'pwsh.exe')) {
+            $list += @(Get-CimInstance Win32_Process -Filter "Name='$name'" -ErrorAction SilentlyContinue)
+        }
+    } catch { }
     $script:ProcCacheAt = Get-Date
     $script:ProcCacheList = $list
     return ,$list
@@ -631,18 +645,25 @@ if ($script:agentMissStreak -ge 2 -and -not $hasAgent -and -not $hasResult -and 
 function Get-SystemContext {
     $promptPath = Join-Path $Root 'agent\prompt.md'
     $toolsPath  = Join-Path $Root 'agent\tools-schema.json'
-    $promptLen = 0; $toolCount = 0; $toolLen = 0
-    try { if (Test-Path $promptPath) { $promptLen = (Get-Item $promptPath).Length } } catch { }
+    $promptLen = 0; $promptChars = 0; $toolCount = 0; $toolLen = 0; $toolChars = 0
+    try {
+        if (Test-Path $promptPath) {
+            $promptLen = (Get-Item $promptPath).Length
+            $promptChars = (Get-Content $promptPath -Raw -Encoding UTF8).Length
+        }
+    } catch { }
     try {
         if (Test-Path $toolsPath) {
             $toolLen = (Get-Item $toolsPath).Length
-            $tj = Get-Content $toolsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            $toolRaw = Get-Content $toolsPath -Raw -Encoding UTF8
+            $toolChars = $toolRaw.Length
+            $tj = $toolRaw | ConvertFrom-Json
             $toolCount = @($tj).Count
         }
     } catch { }
 
     $slots = 0
-    try { $slots = @((Invoke-WebRequest 'http://127.0.0.1:8080/slots' -UseBasicParsing -TimeoutSec 3).Content | ConvertFrom-Json).Count } catch { }
+    try { $slots = @((Invoke-WebRequest ($script:ModelUrl + '/slots') -UseBasicParsing -TimeoutSec 3).Content | ConvertFrom-Json).Count } catch { }
 
     $ctxReal = 0
     try { if (Test-ModelUp) { $ctxReal = [int](Get-RealContext) } } catch { }
@@ -671,9 +692,9 @@ function Get-SystemContext {
         workspace   = [string]$Cfg.workspace
         allowAnyPath = [bool]$Cfg.allowAnyPath
         promptBytes = $promptLen
-        promptTokens = [int][Math]::Round($promptLen / 2.5)
+        promptTokens = [int][Math]::Round($promptChars / 2.5)
         toolCount   = $toolCount
-        toolTokens   = [int][Math]::Round($toolLen / 3.5)
+        toolTokens   = [int][Math]::Round($toolChars / 3.5)
         running     = $Workers.Count
         isAdmin     = $script:IsAdminNow
         # 模型服务活着吗？面板据此显示「模型没启动，点这里拉起来」的横幅。
@@ -709,8 +730,7 @@ try { [IO.File]::WriteAllText((Join-Path $Root 'agent\panel.pid'), "$PID", (New-
 # 启动时清理上次残留的 agent 进程
 # 面板重启会丢掉 $Workers 记录，那些进程就成了"没人管的孤儿"，会一直占模型槽位
 try {
-    $orphans = @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue |
-                 Where-Object { $_.CommandLine -match 'agent\.ps1' })
+    $orphans = @(Get-AgentProcessList | Where-Object { $_.CommandLine -match 'agent\.ps1' })
     foreach ($o in $orphans) {
         try { & cmd /c "taskkill /F /PID $($o.ProcessId)" 2>&1 | Out-Null } catch { }
     }
@@ -1128,6 +1148,9 @@ while ($listener.IsListening) {
                             }
                             [IO.File]::WriteAllText($CfgPath, ($cur | ConvertTo-Json -Depth 4), (New-Object Text.UTF8Encoding($false)))
                             $script:Cfg = $cur
+                            # 端口/地址改了，健康检查地址也要立刻跟着换，
+                            # 否则面板还会去探旧端口。
+                            $script:ModelUrl = 'http://' + [string]$cur.host + ':' + [string][int]$cur.port
                             # 模式改了要立刻生效：
                             # 不刷新的话，面板点完「接口」，顶栏还是写着本地，
                             # 用户会以为没点成功。
@@ -1151,8 +1174,12 @@ while ($listener.IsListening) {
                             $body = Read-Body $ctx.Request | ConvertFrom-Json
                             $mode = [string]$body.mode
                             if ($mode -notin @('cpu','gpu')) { throw 'mode 必须是 cpu 或 gpu' }
-                            $dirName = if ($mode -eq 'gpu') { 'llama-gpu' } else { 'llama' }
-                            $srv = Join-Path $Root ($dirName + '\llama-server.exe')
+                            $dirName = if ($mode -eq 'gpu') {
+                                if ($Cfg.llamaGpuDir) { [string]$Cfg.llamaGpuDir } else { 'llama-gpu' }
+                            } else {
+                                if ($Cfg.llamaCpuDir) { [string]$Cfg.llamaCpuDir } else { 'llama' }
+                            }
+                            $srv = Join-Path $Root ($dirName.Trim('\') + '\llama-server.exe')
                             if (-not (Test-Path $srv)) {
                                 Send-Text -Response $resp -Text ('{"ok":false,"msg":' + (J "没找到 $dirName\llama-server.exe。请先把 $mode 版编译文件放进 $dirName 文件夹再初始化。") + '}') -Code 400
                                 break
@@ -1421,7 +1448,7 @@ while ($listener.IsListening) {
                     # 按命令行匹配杀，宁可多杀也别漏。
                     $killed = 0
                     try {
-                        foreach ($kp in @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue)) {
+                        foreach ($kp in @(Get-AgentProcessList)) {
                             $kcl = [string]$kp.CommandLine
                             if ($kcl -match 'agent\.ps1' -or $kcl -match 'autopilot\.ps1') {
                                 try { Stop-Process -Id $kp.ProcessId -Force -ErrorAction SilentlyContinue; $killed++ } catch { }
@@ -1522,7 +1549,8 @@ while ($listener.IsListening) {
                     if ($method -ne 'POST') { Send-Text -Response $resp -Text '{"ok":false}' -Code 405; break }
                     $n = 0
                     try {
-                        foreach ($pr in @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'")) {
+                        $script:ProcCacheAt = [datetime]::MinValue
+                        foreach ($pr in @(Get-AgentProcessList)) {
                             $cl = [string]$pr.CommandLine
                             if ($cl -match 'autopilot\.ps1') {
                                 try { Stop-Process -Id $pr.ProcessId -Force -ErrorAction SilentlyContinue; $n++ } catch { }

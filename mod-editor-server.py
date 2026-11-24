@@ -30,7 +30,7 @@ DEFAULT_PORT = 8070
 
 # ---------------- 工具分组 ----------------
 GROUPS = {
-    '文件': ['write_file','read_file','list_dir','hash_file','read_lines','zip_list',
+    '文件': ['file_editor','write_file','read_file','list_dir','hash_file','read_lines','zip_list',
              'diff_files','replace_in_file','set_line','append_file','make_dir',
              'find_files','file_info','move_path','copy_path','grep_file','delete_path'],
     '执行': ['run_cmd','run_ps','run_ps1','run_bat','run_js','run_python','write_script'],
@@ -40,6 +40,7 @@ GROUPS = {
     '查询': ['now','date_calc','unit_convert','project_doc','help','syshelp','win_doc'],
     '流程': ['say','rethink','plan','learn','finish'],
     '技能': ['skill','write_skill','unzip'],
+    '版本': ['git'],
 }
 NAME_TO_GROUP = {}
 for g, names in GROUPS.items():

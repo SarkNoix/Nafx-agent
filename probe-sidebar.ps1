@@ -129,109 +129,71 @@ Start-Sleep -Seconds 3
 # ------------------------------------------------------------
 $probe = @'
 (function(){
-  var out = { theme: document.documentElement.getAttribute('data-theme'), suspects: [], selects: [] };
+  var out = { steps: [] };
+  var b = document.querySelector('.side-block');
+  if (!b) return JSON.stringify({ err: 'no side-block' });
+  var h = b.querySelector('h3');
+  var kid = null;
+  for (var j = 0; j < b.children.length; j++){ if (b.children[j].tagName.toLowerCase() !== 'h3'){ kid = b.children[j]; break; } }
 
-  // 1. 把所有 select 都列出来，看它们在哪儿
-  var sels = document.querySelectorAll('select');
-  for (var i = 0; i < sels.length; i++){
-    var s = sels[i];
-    var cs = getComputedStyle(s);
-    var r = s.getBoundingClientRect();
-    out.selects.push({
-      idx: i,
-      parentTag: s.parentElement ? s.parentElement.tagName.toLowerCase() : '',
-      parentCls: s.parentElement ? (s.parentElement.className||'').toString().slice(0,40) : '',
-      id: s.id || '',
-      cls: (s.className||'').toString().slice(0,30),
-      rect: { top: Math.round(r.top), left: Math.round(r.left), w: Math.round(r.width), h: Math.round(r.height) },
-      css: { position: cs.position, zIndex: cs.zIndex, top: cs.top, left: cs.left, display: cs.display, visibility: cs.visibility, opacity: cs.opacity }
-    });
+  function snap(tag){
+    var cs = kid ? getComputedStyle(kid) : null;
+    return {
+      step: tag,
+      closed: b.classList.contains('closed'),
+      blockH: b.offsetHeight,
+      kidH: kid ? kid.offsetHeight : -1,
+      inlineMaxH: kid ? (kid.style.maxHeight || '(none)') : '',
+      cssMaxH: cs ? cs.maxHeight : '',
+      opacity: cs ? cs.opacity : '',
+      titleVisible: h ? h.offsetHeight > 0 : false
+    };
   }
 
-  // 2. 找所有 position:fixed / absolute 且盖住左侧栏的元素
-  var all = document.querySelectorAll('body *');
-  for (var j = 0; j < all.length; j++){
-    var e = all[j];
-    var cs2 = getComputedStyle(e);
-    if (cs2.position !== 'fixed' && cs2.position !== 'absolute') continue;
-    if (cs2.display === 'none' || cs2.visibility === 'hidden') continue;
-    var rr = e.getBoundingClientRect();
-    if (rr.width < 20 || rr.height < 20) continue;
-    // 只关心盖住左侧 340px 区域内的
-    if (rr.left > 400 || rr.right < 0) continue;
-    out.suspects.push({
-      tag: e.tagName.toLowerCase(),
-      cls: (e.className||'').toString().slice(0,45),
-      id: e.id || '',
-      rect: { top: Math.round(rr.top), left: Math.round(rr.left), w: Math.round(rr.width), h: Math.round(rr.height) },
-      css: { position: cs2.position, zIndex: cs2.zIndex, display: cs2.display, opacity: cs2.opacity, pointerEvents: cs2.pointerEvents }
-    });
+  out.steps.push(snap('初始'));
+
+  // 如果当前是展开的，先收起，再展开
+  if (!b.classList.contains('closed')){
+    h.click();
+    out.steps.push(snap('点了收起（立即）'));
   }
-  return JSON.stringify(out);
+
+  // 等 400ms 让过渡结束
+  return new Promise(function(resolve){
+    setTimeout(function(){
+      out.steps.push(snap('400ms 后'));
+      // 再点一次展开
+      h.click();
+      out.steps.push(snap('点了展开（立即）'));
+      setTimeout(function(){
+        out.steps.push(snap('又 400ms 后'));
+        resolve(JSON.stringify(out));
+      }, 400);
+    }, 400);
+  });
 })()
 '@
 
 $res = Eval-Js -Expr $probe
 Write-Host ''
-Write-Host '  ============ 所有 select 的位置 ============' -ForegroundColor Cyan
+Write-Host '  ============ 折叠/展开实测 ============' -ForegroundColor Cyan
 if (-not $res -or -not $res.result -or -not $res.result.result.value) {
     Write-Host '  没拿到结果' -ForegroundColor Red
+    if ($res) { Write-Host ('  raw: ' + ($res | ConvertTo-Json -Depth 4 -Compress)) -ForegroundColor DarkGray }
 } else {
     $data = $res.result.result.value | ConvertFrom-Json
-    Write-Host ('  主题: ' + $data.theme) -ForegroundColor Yellow
-    Write-Host ''
-    foreach ($s in $data.selects) {
-        Write-Host ('  select #' + $s.idx + '  id=' + $s.idx + '  class=' + $s.cls) -ForegroundColor White
-        Write-Host ('    父级: ' + $s.parentTag + '.' + $s.parentCls)
-        Write-Host ('    位置: top=' + $s.rect.top + ' left=' + $s.rect.left + ' w=' + $s.rect.w + ' h=' + $s.rect.h)
-        Write-Host ('    样式: position=' + $s.css.position + ' zIndex=' + $s.css.zIndex + ' top=' + $s.css.top + ' left=' + $s.css.left)
-    }
-    Write-Host ''
-    Write-Host '  ============ 左侧盖住的东西 ============' -ForegroundColor Cyan
-    foreach ($s in $data.suspects) {
-        Write-Host ('  ' + $s.tag + '#' + $s.id + '.' + $s.cls) -ForegroundColor Yellow
-        Write-Host ('    位置: top=' + $s.rect.top + ' left=' + $s.rect.left + ' w=' + $s.rect.w + ' h=' + $s.rect.h)
-        Write-Host ('    position=' + $s.css.position + ' zIndex=' + $s.css.zIndex + ' display=' + $s.css.display + ' pointerEvents=' + $s.css.pointerEvents)
+    foreach ($s in $data.steps) {
+        $mark = if ($s.closed) { '[收起]' } else { '[展开]' }
+        Write-Host ('  ' + $mark + ' ' + $s.step) -ForegroundColor White
+        Write-Host ('      卡片高=' + $s.blockH + '  子元素高=' + $s.kidH + '  行内maxH=' + $s.inlineMaxH) -ForegroundColor DarkGray
+        Write-Host ('      CSS maxH=' + $s.cssMaxH + '  opacity=' + $s.opacity + '  标题在=' + $s.titleVisible) -ForegroundColor DarkGray
+        if (-not $s.closed -and [int]$s.kidH -le 0) {
+            Write-Host '      >>> 展开状态但内容高度为 0！' -ForegroundColor Red
+        }
     }
 }
-Write-Host ''
-Write-Host '  ============ 点击测试 ============' -ForegroundColor Cyan
-$click = @'
-(function(){
-  var blocks = document.querySelectorAll('.side-block');
-  var b = null;
-  for (var i = 0; i < blocks.length; i++){ if (blocks[i].classList.contains('closed')) { b = blocks[i]; break; } }
-  if (!b) return JSON.stringify({ err: '没有折叠的卡片可测' });
-  var h = b.querySelector('h3');
-  var before = { closed: b.classList.contains('closed') };
-  h.click();
-  var kid = null;
-  for (var j = 0; j < b.children.length; j++){ if (b.children[j].tagName.toLowerCase() !== 'h3') { kid = b.children[j]; break; } }
-  var cs = kid ? getComputedStyle(kid) : null;
-  return JSON.stringify({
-    title: h.textContent.trim().slice(0,20),
-    closedBefore: before.closed,
-    closedAfter: b.classList.contains('closed'),
-    inlineMaxH: kid ? (kid.style.maxHeight || '(无)') : '',
-    cssMaxH: cs ? cs.maxHeight : '',
-    cssOpacity: cs ? cs.opacity : '',
-    scrollH: kid ? kid.scrollHeight : 0,
-    offsetH: kid ? kid.offsetHeight : 0
-  });
-})()
-'@
-$res2 = Eval-Js -Expr $click
-if ($res2 -and $res2.result -and $res2.result.result.value) {
-    $c = $res2.result.result.value | ConvertFrom-Json
-    Write-Host ('  点的是: ' + $c.title)
-    Write-Host ('  closed: ' + $c.closedBefore + ' → ' + $c.closedAfter)
-    Write-Host ('  行内maxH=' + $c.inlineMaxH + '  CSS maxH=' + $c.cssMaxH)
-    Write-Host ('  opacity=' + $c.cssOpacity + '  scrollH=' + $c.scrollH + '  offsetH=' + $c.offsetH)
-    $good = (-not $c.closedAfter) -and ([double]$c.cssOpacity -gt 0) -and ([int]$c.offsetH -gt 0)
-    Write-Host ('  ' + $(if ($good) { '✓ 点击后正常展开' } else { '✗ 点击后仍然看不见内容' })) -ForegroundColor $(if ($good) { 'Green' } else { 'Red' })
-} else {
-    Write-Host '  点击测试没拿到结果' -ForegroundColor Red
-}
+Write-Host ''Write-Host '  ============ 完 ============' -ForegroundColor Cyan
+
 
 # ------------------------------------------------------------
 #  清理

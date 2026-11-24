@@ -7,6 +7,15 @@ echo   Nafx
 echo   ----------------------------------------
 echo.
 
+rem ---------- 0) Agent monitor ----------
+rem 单独一个可见窗口，实时显示面板 / llama / 模型 / tools 的日志。
+rem 已经开着就不重复开；没有才启动。
+powershell -NoProfile -ExecutionPolicy Bypass -Command "if (@(Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'powershell.exe' -and $_.ProcessId -ne $PID -and $_.CommandLine -like '*Agent monitor.ps1*' }).Count -gt 0) { exit 0 } else { exit 1 }" >nul 2>&1
+if errorlevel 1 (
+    start "Agent monitor" powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%ROOT%Agent monitor.ps1"
+    echo   [monitor] Agent monitor 已打开
+)
+
 rem ---------- 1) 模型服务 ----------
 tasklist /fi "imagename eq llama-server.exe" 2>nul | find /i "llama-server.exe" >nul
 if errorlevel 1 (

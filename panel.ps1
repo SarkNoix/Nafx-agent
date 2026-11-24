@@ -18,15 +18,31 @@ function Test-Up {
     try { return ((Invoke-WebRequest $Url -UseBasicParsing -TimeoutSec 2).StatusCode -eq 200) } catch { return $false }
 }
 
+function Test-IsPanelProcess($proc) {
+    if (-not $proc) { return $false }
+    if ($proc.ProcessName -notin @('powershell', 'pwsh')) { return $false }
+    $info = Get-CimInstance Win32_Process -Filter "ProcessId=$($proc.Id)" -ErrorAction SilentlyContinue
+    return [bool]($info -and $info.CommandLine -and $info.CommandLine -like '*monitor.ps1*')
+}
+
 function Stop-Panel {
     $panelId = Get-PanelPid
+    $stopped = $false
+    $psProcs = @()
+    foreach ($name in @('powershell.exe', 'pwsh.exe')) {
+        $psProcs += Get-CimInstance Win32_Process -Filter "Name='$name'" -ErrorAction SilentlyContinue
+    }
+    # 先停看门狗。否则杀掉面板 10 秒后它又会被拉起来，用户以为“停止服务”没生效。
+    $psProcs | Where-Object { $_.CommandLine -and $_.CommandLine -like '*watchdog.ps1*' -and $_.ProcessId -ne $PID } |
+        ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop } catch { } }
     if ($panelId -gt 0) {
         $p = Get-Process -Id $panelId -ErrorAction SilentlyContinue
-        if ($p) { try { $p.Kill() } catch { } }
-    } else {
-        # 没有 pid 文件时退回命令行匹配（排除自己）
-        Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue |
-            Where-Object { $_.CommandLine -and $_.CommandLine -like '*-File*monitor.ps1*' -and $_.ProcessId -ne $PID } |
+        # 只杀命令行确实是 monitor.ps1 的进程；pid 文件过期时不能误杀同号进程。
+        if (Test-IsPanelProcess $p) { try { $p.Kill(); $stopped = $true } catch { } }
+    }
+    if (-not $stopped) {
+        # pid 缺失或过期时退回命令行匹配，兼容 powershell.exe 和 pwsh.exe。
+        $psProcs | Where-Object { $_.CommandLine -and $_.CommandLine -like '*monitor.ps1*' -and $_.ProcessId -ne $PID } |
             ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop } catch { } }
     }
     Remove-Item $PidFile -Force -ErrorAction SilentlyContinue

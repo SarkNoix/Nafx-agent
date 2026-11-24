@@ -1,7 +1,7 @@
 ﻿# 生成 mod-editor-standalone.html：把配置/工具/mods 数据内联进 HTML，
 # 这样双击就能用，不需要任何服务（8GB 内存下 8070 经常起不来）。
 $ErrorActionPreference = 'Stop'
-$Root = 'E:\Nafx'
+$Root = $PSScriptRoot
 
 $htmlPath = Join-Path $Root 'mod-editor.html'
 $outPath  = Join-Path $Root 'mod-editor-standalone.html'
@@ -43,7 +43,7 @@ Write-Output ("1) 配置 " + @($cfgCheck.PSObject.Properties).Count + " 项")
 
 # ---------- 2) 工具（带分组）----------
 $groups = @{
-    '文件' = @('write_file','read_file','list_dir','hash_file','read_lines','zip_list','diff_files','replace_in_file','set_line','append_file','make_dir','find_files','file_info','move_path','copy_path','grep_file','delete_path')
+    '文件' = @('file_editor','write_file','read_file','list_dir','hash_file','read_lines','zip_list','diff_files','replace_in_file','set_line','append_file','make_dir','find_files','file_info','move_path','copy_path','grep_file','delete_path')
     '执行' = @('run_cmd','run_ps','run_ps1','run_bat','run_js','run_python','write_script')
     '系统' = @('sys_info','clipboard','env_get','open_app','kill_process','ps','install')
     '网络' = @('download_file','web_search','web_fetch')
@@ -51,6 +51,7 @@ $groups = @{
     '查询' = @('now','date_calc','unit_convert','project_doc','help','syshelp','win_doc')
     '流程' = @('say','rethink','plan','learn','finish')
     '技能' = @('skill','write_skill','unzip')
+    '版本' = @('git')
 }
 $nameToGroup = @{}
 foreach ($gName in $groups.Keys) { foreach ($tn in $groups[$gName]) { $nameToGroup[$tn] = $gName } }

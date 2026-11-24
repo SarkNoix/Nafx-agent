@@ -213,7 +213,10 @@ if (-not (Test-AiUp)) {
     $argLine = ($argList | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }) -join ' '
     $outLog = Join-Path $LogDir 'server.out.log'
     $errLog = Join-Path $LogDir 'server.err.log'
-    $cmdLine = '/c start "" /b /d "' + (Join-Path $Root 'llama') + '" "' + $Server + '" ' + $argLine +
+    # 工作目录必须跟实际 llama 目录一致：GPU 模式的 DLL 在 llama-gpu，
+    # 原来这里写死 llama，切到 GPU 后可能找不到同目录的依赖。
+    $llamaWork = Join-Path $Root ($LlamaDir.Trim('\'))
+    $cmdLine = '/c start "" /b /d "' + $llamaWork + '" "' + $Server + '" ' + $argLine +
                ' > "' + $outLog + '" 2> "' + $errLog + '"'
     Start-Process -FilePath 'cmd.exe' -ArgumentList $cmdLine -WindowStyle Hidden | Out-Null
 
@@ -289,8 +292,11 @@ try {
     if (Test-Path $wdScript) {
         $wdRunning = $false
         try {
-            foreach ($wp in @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue)) {
-                if ([string]$wp.CommandLine -match 'watchdog\.ps1') { $wdRunning = $true; break }
+            foreach ($name in @('powershell.exe', 'pwsh.exe')) {
+                foreach ($wp in @(Get-CimInstance Win32_Process -Filter "Name='$name'" -ErrorAction SilentlyContinue)) {
+                    if ([string]$wp.CommandLine -match 'watchdog\.ps1') { $wdRunning = $true; break }
+                }
+                if ($wdRunning) { break }
             }
         } catch { }
         if (-not $wdRunning) {

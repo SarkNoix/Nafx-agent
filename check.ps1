@@ -13,17 +13,35 @@ $ws = Resolve-AppPath $Cfg.workspace
 $modelUrl = "http://$($Cfg.host):$($Cfg.port)/health"
 $panelUrl = "http://$($Cfg.host):$($Cfg.monitorPort)/"
 
+# 和 launcher.ps1 用同一套 llama 目录规则：cpu 用 llama\，gpu 用 llama-gpu\。
+$llamaMode = if ($Cfg.llamaMode) { [string]$Cfg.llamaMode } else { 'cpu' }
+$llamaDir  = if ($llamaMode -eq 'gpu') {
+    if ($Cfg.llamaGpuDir) { [string]$Cfg.llamaGpuDir } else { 'llama-gpu' }
+} else {
+    if ($Cfg.llamaCpuDir) { [string]$Cfg.llamaCpuDir } else { 'llama' }
+}
+$llamaServer = Join-Path $Root ($llamaDir.Trim('\') + '\llama-server.exe')
+$modelMode = if ($Cfg.modelMode) { [string]$Cfg.modelMode } else { 'local' }
+
 function Test-Url([string]$u) {
     try { return ((Invoke-WebRequest $u -UseBasicParsing -TimeoutSec 3).StatusCode -eq 200) }
     catch { return $false }
 }
 
 $rows = @()
-$rows += [pscustomobject]@{ 项目 = '模型文件'; 状态 = $(if (Test-Path $model) { '正常' } else { '缺失' }); 说明 = $model }
-$rows += [pscustomobject]@{ 项目 = '推理服务'; 状态 = $(if (Test-Url $modelUrl) { '在线' } else { '未启动' }); 说明 = "端口 $($Cfg.port)" }
+if ($modelMode -eq 'api') {
+    $rows += [pscustomobject]@{ 项目 = '模型文件'; 状态 = '不需要'; 说明 = '接口模式，用远端模型' }
+} else {
+    $rows += [pscustomobject]@{ 项目 = '模型文件'; 状态 = $(if (Test-Path $model) { '正常' } else { '缺失' }); 说明 = $model }
+}
+$rows += [pscustomobject]@{ 项目 = '推理服务'; 状态 = $(if ($modelMode -eq 'api') { '不需要' } elseif (Test-Url $modelUrl) { '在线' } else { '未启动' }); 说明 = $(if ($modelMode -eq 'api') { [string]$Cfg.apiBase } else { "端口 $($Cfg.port)" }) }
 $rows += [pscustomobject]@{ 项目 = '监视面板'; 状态 = $(if (Test-Url $panelUrl) { '在线' } else { '未启动' }); 说明 = "端口 $($Cfg.monitorPort)" }
 $rows += [pscustomobject]@{ 项目 = '工作目录'; 状态 = $(if (Test-Path $ws) { '正常' } else { '缺失' }); 说明 = $ws }
-$rows += [pscustomobject]@{ 项目 = 'llama 程序'; 状态 = $(if (Test-Path (Join-Path $Root 'llama\llama-server.exe')) { '正常' } else { '缺失' }); 说明 = 'llama\llama-server.exe' }
+if ($modelMode -eq 'api') {
+    $rows += [pscustomobject]@{ 项目 = 'llama 程序'; 状态 = '不需要'; 说明 = '接口模式，不走本地 llama' }
+} else {
+    $rows += [pscustomobject]@{ 项目 = 'llama 程序'; 状态 = $(if (Test-Path $llamaServer) { '正常' } else { '缺失' }); 说明 = ($llamaDir.Trim('\') + '\llama-server.exe') }
+}
 
 Write-Host ''
 Write-Host '  Nafx 自检' -ForegroundColor Cyan

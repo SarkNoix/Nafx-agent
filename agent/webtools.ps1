@@ -204,10 +204,38 @@ function Invoke-WebSearch {
     # Bing 的每条自然结果都在 <li class="b_algo"> 里
     $blocks = [regex]::Matches($html, '(?is)<li class="b_algo".*?</li>')
     if ($blocks.Count -eq 0) {
+        # Bing 偶尔会把 HTML 结果换成别的前端模板，b_algo 一个都匹配不到。
+        # 这时退回同一台 Bing 的 RSS 端点：结构稳定，标题/链接/摘要都全，
+        # 而且不需要再猜一次页面模板。
+        try {
+            $rssUrl = "https://www.bing.com/search?format=rss&q=$q&setlang=zh-CN&count=$Count"
+            $rssPage = Invoke-WebRaw $rssUrl -TimeoutSeconds $script:WebSearchTimeout
+            $xml = [xml]$rssPage.Text
+            $items = @($xml.rss.channel.item)
+            foreach ($it in $items) {
+                if ($results.Count -ge $Count) { break }
+                $title = [string]$it.title
+                $link = [string]$it.link
+                $snippet = [string]$it.description
+                if ([string]::IsNullOrWhiteSpace($title)) { continue }
+                $snippet = [System.Net.WebUtility]::HtmlDecode($snippet)
+                $snippet = ($snippet -replace '\s+', ' ').Trim()
+                if ($snippet.Length -gt 300) { $snippet = $snippet.Substring(0,300) + '…' }
+                $results += [pscustomobject]@{
+                    Title   = $title.Trim()
+                    Url     = $link
+                    Snippet = $snippet
+                }
+            }
+            if ($results.Count -gt 0) {
+                return [pscustomobject]@{ Query = $Query; Results = $results; Note = '（HTML 结果没解析到，已用 Bing RSS 兜底）' }
+            }
+        } catch { }
+
         return [pscustomobject]@{
             Query   = $Query
             Results = @()
-            Note    = '没有解析到结果。可能是关键词太生僻，或搜索引擎返回了异常页面。'
+            Note    = '没有解析到结果。可能是关键词太生僻，或搜索引擎返回了异常页面。可以换一种说法再搜，或改用 win_doc 查 Windows 命令。'
         }
     }
 
