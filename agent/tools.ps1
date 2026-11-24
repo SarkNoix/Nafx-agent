@@ -2492,7 +2492,9 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                     foreach ($p in $Action.PSObject.Properties) {
                         # 跳过元数据字段。「tool='think'」和「n=1 / ok=True」这类不是想法，
                         # 不跳的话连「全空」都会被当成有想法（工具名本身就算内容了）。
-                        if ($p.Name -in @('tool', 'n', 'ok', 'raw', 'sec', 'arg', 'note', 'obs')) { continue }
+                        # act.think 是 agent.ps1 塞进来的整段原始响应，不是想法本体；
+                        # 不跳过它，会把外层 JSON 回显成计划。
+                        if ($p.Name -in @('tool', 'think', 'n', 'ok', 'raw', 'sec', 'arg', 'note', 'obs')) { continue }
                         $v = [string]$p.Value
                         if ($v.Length -gt $what.Length) { $what = $v }
                     }

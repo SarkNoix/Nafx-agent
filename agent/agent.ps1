@@ -24,6 +24,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# 进程启动计时：从脚本第一行跑到第一次把请求发给模型用了多久。
+# 排查「准备请求很慢」时靠它区分：是 agent 自己慢，还是在等模型吐第一个字。
+$script:BootWatch = [Diagnostics.Stopwatch]::StartNew()
+
 $AgentDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 $Root     = Split-Path -Parent $AgentDir
 # 配置文件名优先取环境变量（面板启动 agent 时会传），默认 config.json
@@ -143,6 +147,10 @@ $script:LiveHbFile    = $StateFile.Replace('.json', '.hb.json')   # 心跳专用
 $script:LiveState     = $null    # 主循环开始后指向当前 state 对象
 $script:LiveClock     = $null    # 指向 $clock，用来算已用时间
 $script:LiveChars     = 0
+# 上一个任务「第一步真正发给模型的请求体」存在这里。
+# 预热脚本照着它原样重放：开机预热和真实请求逐字一致，第一个任务不用从头 prefill
+# （实测缓存没命中时第一步要等 119 秒）。
+$script:PrefixFile = Join-Path $LogDir 'last-request.json'
 
 # ---- 真实上下文长度 ----
 # 问 llama 一次要它实际的 n_ctx，拿 config.json 的值当兜底。
@@ -1255,8 +1263,57 @@ function Write-LivePhase {
     } catch { }
 }
 
+function Convert-ArgumentsToJson($Arguments) {
+    if ($null -eq $Arguments) { return '{}' }
+    if ($Arguments -is [string]) {
+        $s = [string]$Arguments
+        if ($s.Trim()) { return $s }
+        return '{}'
+    }
+    try { return (ConvertTo-Json -InputObject $Arguments -Depth 8 -Compress) } catch { return '{}' }
+}
+
+# 从正文里扫出顶层 JSON 对象。模型有时不按数组输出，而是直接吐：
+#   {"name":"think","arguments":{...}}
+# 之前只认 [...] 数组，这种单对象会被当成纯文字，连续空转三次后判失败。
+function Get-JsonObjectSegments([string]$Text) {
+    $segments = @()
+    if ([string]::IsNullOrWhiteSpace($Text)) { return $segments }
+    $depth = 0
+    $start = -1
+    $inString = $false
+    $escape = $false
+    for ($i = 0; $i -lt $Text.Length; $i++) {
+        $ch = $Text[$i]
+        if ($inString) {
+            if ($escape) { $escape = $false }
+            elseif ($ch -eq [char]92) { $escape = $true }
+            elseif ($ch -eq [char]34) { $inString = $false }
+            continue
+        }
+        if ($ch -eq [char]34) {
+            $inString = $true
+            continue
+        }
+        if ($ch -eq [char]123) {
+            if ($depth -eq 0) { $start = $i }
+            $depth++
+        } elseif ($ch -eq [char]125) {
+            if ($depth -gt 0) {
+                $depth--
+                if ($depth -eq 0 -and $start -ge 0) {
+                    $segments += $Text.Substring($start, $i - $start + 1)
+                    $start = -1
+                }
+            }
+        }
+    }
+    return $segments
+}
+
 function Invoke-Model {
-    param([array]$Messages, [string]$ToolsJson = '', [switch]$ForceTool, [switch]$ForceFinish, [int]$MaxTokens = 0)
+    param([array]$Messages, [string]$ToolsJson = '', [switch]$ForceTool, [switch]$ForceFinish, [int]$MaxTokens = 0,
+          [string]$SaveRequest = '')
 
     $msgJson = foreach ($m in $Messages) {
         $role = [string]$m.role
@@ -1290,6 +1347,17 @@ function Invoke-Model {
                 ',"stream_options":{"include_usage":true}' +
                 ',"stream":true}'
     $bytes = [Text.Encoding]::UTF8.GetBytes($jsonBody)
+    # 第一步的请求体落盘，给预热脚本重放用（见 $script:PrefixFile）。
+    # 只在本地 llama 模式存：接口模式的请求体里没有 cache_prompt，重放没意义。
+    if ($SaveRequest -and -not $script:IsApiMode) {
+        try {
+            [IO.File]::WriteAllText($SaveRequest, $jsonBody, (New-Object Text.UTF8Encoding($false)))
+        } catch { }
+        if ($script:BootWatch) {
+            $script:BootWatch.Stop()
+            try { Write-Log ("  [计时] 进程启动 → 第一次请求发出：" + [math]::Round($script:BootWatch.Elapsed.TotalSeconds, 1) + ' 秒') } catch { }
+        }
+    }
 
     # ---- 流式请求 ----
     # Invoke-WebRequest 是一次性把响应全收完才返回的，看不到中间过程。
@@ -1332,6 +1400,9 @@ function Invoke-Model {
             # 面板就能显示成会动的「正在想… 已 42 字」。
             $liveChars = 0
             $lastLive = Get-Date
+            # 首字时间：模型把全部输入算完、吐出第一个字之前，面板上什么都看不到。
+            # 这段时间才是用户说的「连接模型很慢」，单独计。
+            $ttft = 0.0
             while (-not $reader.EndOfStream) {
                 $line = $reader.ReadLine()
                 if (-not $line) { continue }
@@ -1348,6 +1419,7 @@ function Invoke-Model {
                 if (-not $chunk.choices) { continue }
                 $d = $chunk.choices[0].delta
                 if ($chunk.choices[0].finish_reason) { $finishReason = [string]$chunk.choices[0].finish_reason }
+                if ($ttft -eq 0 -and $d -and ($d.content -or $d.tool_calls)) { $ttft = $sw.Elapsed.TotalSeconds }
 
                 # 纯文本分片
                 if ($d.content) {
@@ -1416,6 +1488,21 @@ function Invoke-Model {
     if ($resp) { try { $resp.Close() } catch { } }
     $sw.Stop()
 
+    # ---- 计时：等首字 / 逐字生成，分开记 ----
+    # 首字慢 = 输入要重新算（缓存没命中）；生成慢 = CPU 逐 token 推理。
+    # 两者的优化方向完全不同，混成一个总时间就没法判断该修哪边。
+    $script:LastTtft = [math]::Round($ttft, 1)
+    $script:LastGenSec = [math]::Round([Math]::Max(0, $sw.Elapsed.TotalSeconds - $ttft), 1)
+    if ($script:LastTimings) {
+        try {
+            $pn = 0; if ($script:LastTimings.prompt_n) { $pn = [int]$script:LastTimings.prompt_n }
+            $cn = 0; if ($script:LastTimings.cache_n)   { $cn = [int]$script:LastTimings.cache_n }
+            $script:LastTtft = [math]::Round($ttft, 1)
+            Write-Log ("  [计时] 等首字 " + $script:LastTtft + " 秒（输入 " + ($pn + $cn) + " tok，命中 " + $cn + "，重算 " + $pn +
+                       "）· 生成 " + $script:LastGenSec + " 秒")
+        } catch { }
+    }
+
     # ---- 把真实 timings 写进 LiveState（面板进度条的数据源）----
     # 有 timings（include_usage 生效）就用真实值：
     #   speed    = predicted_per_second，真 tok/s
@@ -1479,10 +1566,7 @@ function Invoke-Model {
                     $nm = [string]$a.name
                     if (-not $nm) { $good = $false; break }
                     if (-not $script:ToolSchemaMap.ContainsKey($nm)) { $good = $false; break }
-                    $argJson = ''
-                    if ($null -ne $a.arguments) {
-                        $argJson = ConvertTo-Json -InputObject $a.arguments -Depth 8 -Compress
-                    }
+                    $argJson = Convert-ArgumentsToJson $a.arguments
                     $parsed += [pscustomobject]@{
                         id        = 'call_' + [Guid]::NewGuid().ToString('N').Substring(0, 8)
                         name      = $nm
@@ -1490,6 +1574,30 @@ function Invoke-Model {
                     }
                 }
                 if ($good -and $parsed.Count -gt 0) { $calls = $parsed }
+            } catch { }
+        }
+    }
+
+    # ---- 兼容「正文里直接写单个/多个 JSON 对象」----
+    # 这次 01:04 的失败就是这种：模型输出
+    #   {"name":"think","arguments":{"content":"..."}}
+    # 不是数组，也没有 tool_calls，于是被当成纯文字空转。
+    # 这里按顶层大括号切分，取第一个 name 已注册的对象。
+    if ($calls.Count -eq 0 -and $msg.content) {
+        $segments = @(Get-JsonObjectSegments ([string]$msg.content))
+        foreach ($seg in $segments) {
+            try {
+                $obj = $seg | ConvertFrom-Json
+                $nm = [string]$obj.name
+                if (-not $nm) { continue }
+                if (-not $script:ToolSchemaMap.ContainsKey($nm)) { continue }
+                $argJson = Convert-ArgumentsToJson $obj.arguments
+                $calls = @([pscustomobject]@{
+                    id        = 'call_' + [Guid]::NewGuid().ToString('N').Substring(0, 8)
+                    name      = $nm
+                    arguments = $argJson
+                })
+                break
             } catch { }
         }
     }
@@ -2384,6 +2492,7 @@ $looksProject = ($intent -eq 'build' -and
                  $TaskText -notmatch '\.ps1|\.bat|\.txt|\.csv|\.json|\.md|包含|包括|三个文件|两个文件')
 
 for ($step = 1; $step -le $MaxSteps; $step++) {
+    $stepT0 = Get-Date
     # 每步开头先记一次「还活着」—— 时间 + 状态。
     # 之前只有模型真正开始吐字时心跳才更新，
     # 模型服务挂掉、卡在重试阶段的那几十秒里，面板上时间是 0、状态还是「准备」，
@@ -2431,11 +2540,14 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
         break
     }
 
-    # 这一步的 phase 先给个「准备请求」，别停在「思考中」——
-    # 从这行到模型真正吐字还有 3-5 秒（拼 JSON、建连接、等首字节），
-    # 这段时间面板不动，看着像卡死。
-    $state.phase = '正在准备请求…'
+    # 这一步的 phase 先给个「等模型首字」，别停在「思考中」——
+    # 从这行到模型真正吐字，是模型在算全部输入（缓存没命中时实测要 119 秒）。
+    # 原来写的是「正在准备请求…」，让人以为是 agent 自己慢；其实请求早就发出去了。
+    # 心跳会把它刷成「正在等模型首字 · 已等 N 秒」，每一秒都在动。
+    $state.phase = '正在等模型首字…'
     Write-State $state
+    $script:ReqStartAt = Get-Date
+    try { Write-Log ("  [计时] 第 $step 步准备 " + [math]::Round(((Get-Date) - $stepT0).TotalSeconds, 1) + ' 秒（进程启动至今 ' + [math]::Round($clock.Elapsed.TotalSeconds, 1) + ' 秒）') } catch { }
 
     # ---- 上下文预算兜底 ----
     # 发之前估一下总量：历史 + 工具 schema + 这次输出 ≤ context - 输出余量。
@@ -2739,7 +2851,7 @@ $target = [Math]::Min($targetByBudget, [Math]::Max($targetByShare, 1400))
         $hbRunspace = $null; $hbPs = $null; $hbHandle = $null
         try {
             $hbScript = {
-                param($StateFile, $Clock, $HbFile)
+                param($StateFile, $Clock, $HbFile, $ReqStart)
                 while ($true) {
                     Start-Sleep -Milliseconds 1500
                     try {
@@ -2747,7 +2859,13 @@ $target = [Math]::Min($targetByBudget, [Math]::Max($targetByShare, 1400))
                         if (-not $raw) { continue }
                         $o = $raw | ConvertFrom-Json
                         if ([string]$o.status -ne 'running') { break }
-                        if ([string]$o.phase -notlike '正在*') { $o.phase = '正在请求模型…' }
+                        $phNow = [string]$o.phase
+                        if ($phNow -like '正在等模型首字*') {
+                            # 等首字期间把秒数刷出来：用户看到「已等 37 秒」在走，
+                            # 就知道是在等模型，不是面板卡死。
+                            $phNow = '正在等模型首字 · 已等 ' + [int]((Get-Date) - $ReqStart).TotalSeconds + ' 秒'
+                        } elseif ($phNow -notlike '正在*') { $phNow = '正在请求模型…' }
+                        $o.phase = $phNow
                         $o.elapsed = [double]$Clock.Elapsed.TotalSeconds
                         $j = $o | ConvertTo-Json -Depth 6 -Compress
                         [IO.File]::WriteAllText($HbFile, $j, (New-Object Text.UTF8Encoding($false)))
@@ -2758,11 +2876,12 @@ $target = [Math]::Min($targetByBudget, [Math]::Max($targetByShare, 1400))
             $hbRunspace.Open()
             $hbPs = [powershell]::Create()
             $hbPs.Runspace = $hbRunspace
-            [void]$hbPs.AddScript($hbScript.ToString()).AddArgument($script:LiveStateFile).AddArgument($script:LiveClock).AddArgument($script:LiveHbFile)
+            [void]$hbPs.AddScript($hbScript.ToString()).AddArgument($script:LiveStateFile).AddArgument($script:LiveClock).AddArgument($script:LiveHbFile).AddArgument($script:ReqStartAt)
             $hbHandle = $hbPs.BeginInvoke()
         } catch { $hbRunspace = $null }
 
-        $res = Invoke-Model -Messages $history -ToolsJson $toolsJson -ForceTool:($noToolCount -gt 0) -MaxTokens $mt0
+        $res = Invoke-Model -Messages $history -ToolsJson $toolsJson -ForceTool:($noToolCount -gt 0) -MaxTokens $mt0 `
+            -SaveRequest:$(if ($step -eq 1) { $script:PrefixFile } else { '' })
 
         # 拿到结果就停心跳
         if ($hbPs) { try { $hbPs.Stop() } catch { } }
@@ -3039,9 +3158,9 @@ Add-SessionNote -Text $bcSay -Kind 'say'
 
     $think = [string]$act.think
     # think 工具的想法在 content 参数里，不在 act.think。
-    # 不补这一条，面板上「想法」那一栏对 think 步骤永远是空的 ——
-    # 而 think 恰恰是模型唯一认真写推理的地方。
-    if ($toolName -eq 'think' -and -not $think.Trim()) {
+    # act.think 是这一步的原始响应，think 工具会把它当成「最长字段」回显；
+    # 这里优先取真正的 content，别把外层 JSON 当想法播报。
+    if ($toolName -eq 'think') {
         $think = [string]$act.content
         if (-not $think.Trim()) { $think = [string]$act.command }
     }

@@ -4945,7 +4945,7 @@ function refreshGenbar(st){
   if (hint) hint.style.visibility = running ? 'hidden' : '';
   if (!running) return;
 
-  $('gbPhase').textContent = st.phase || '正在准备请求…';
+  $('gbPhase').textContent = st.phase || '正在等模型首字…';
 
   var sp = (typeof st.speed === 'number' && st.speed > 0) ? st.speed : 0;
   var spdTxt = '';
@@ -5053,7 +5053,7 @@ function liveStepInfo(st){
   /* 从 state.phase 派生「正在进行中的一步」的人话文案。
      agent 的 phase 有三类：
        生成中：正在写 write_file · 300 字 / 正在想 · 120 字
-       连接中：正在连接模型… / 正在准备请求…
+       连接中：正在连接模型… / 正在等模型首字 · 已等 N 秒 / 正在准备请求…
        执行中：编辑文件 / 跑命令 / 读取文件（toolPhrase 的短动词） */
   var ph = String(st.phase || '');
   var m = ph.match(/^正在写\s+(\S+)/);
@@ -5066,7 +5066,7 @@ function liveStepInfo(st){
     return { tool: phrase, arg: arg };
   }
   if (/^正在想/.test(ph)) return { tool: '思考中', arg: (function(){ var mm = ph.match(/(\d+)\s*字/); return mm ? ('已写 ' + mm[1] + ' 字') : ''; })() };
-  if (/正在连接|正在准备/.test(ph)) return { tool: ph.replace(/…$/, ''), arg: '' };
+  if (/正在连接|正在准备|正在等模型首字/.test(ph)) return { tool: ph.replace(/…$/, ''), arg: '' };
   if (ph) return { tool: ph + '…', arg: '' };
   return { tool: '准备下一步…', arg: '' };
 }

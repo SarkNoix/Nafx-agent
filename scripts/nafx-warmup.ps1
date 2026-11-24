@@ -96,6 +96,40 @@ $body = '{"model":"nafx-warmup","messages":[{"role":"system","content":' + $sysS
 if ($toolsJson) { $body += ',"tools":' + $toolsJson }
 $body += '}'
 
+# ---- 优先：重放上一次任务「第一步真正发出去」的请求体 ----
+#
+# 上面那份手工拼的（prompt.md 原文 + create 流程的工具）和真实请求对不上：
+# agent 发的是「精简后的 system（3125 → 1467 tok）+ 16 个默认工具 + 会话历史」。
+# 实测 11-25 01:01：预热完 29 分钟后的第一个任务，4751 个输入 token 里
+# 有 2764 个要重算，光等首字就 119 秒 —— 预热基本白做。
+#
+# agent 每次任务第一步都会把请求体原样存到 agent\logs\last-request.json。
+# 这里只做字符串级替换（max_tokens → 1、stream → false），不解析再序列化：
+# 重新序列化会改动工具定义里的空格，token 就不一样了，缓存照样不命中。
+$replay = $false
+try {
+    $snap = Join-Path $NafxRoot 'agent\logs\last-request.json'
+    if (Test-Path $snap) {
+        # 提示词 / 工具定义改过之后，旧快照就过期了，别拿它预热。
+        $newestSrc = (Get-Item $snap).LastWriteTime
+        foreach ($dep in @('agent\prompt.md', 'agent\tools-schema.json', 'agent\flows.json')) {
+            $dp = Join-Path $NafxRoot $dep
+            if ((Test-Path $dp) -and ((Get-Item $dp).LastWriteTime -gt $newestSrc)) { $newestSrc = (Get-Item $dp).LastWriteTime }
+        }
+        $snapTime = (Get-Item $snap).LastWriteTime
+        if ($snapTime -ge $newestSrc) {
+            $raw = [IO.File]::ReadAllText($snap, [Text.Encoding]::UTF8)
+            if ($raw.Length -gt 2000 -and $raw.Contains('"messages":[{"role":"system"')) {
+                $r2 = [regex]::Replace($raw, '"max_tokens":\d+', '"max_tokens":1')
+                $r2 = [regex]::Replace($r2, '"stream":true', '"stream":false')
+                $r2 = [regex]::Replace($r2, '"temperature":[0-9.]+', '"temperature":0')
+                $body = $r2
+                $replay = $true
+            }
+        }
+    }
+} catch { $replay = $false }
+
 # 明确按 UTF-8 发字节，交给 5.1 自己按 charset 编码容易出岔子
 $bytes = [Text.Encoding]::UTF8.GetBytes($body)
 
@@ -111,8 +145,8 @@ $sec = ((Get-Date) - $t0).TotalSeconds
 
 $logDir = Join-Path $NafxRoot 'logs'
 if (Test-Path $logDir) {
-    $line = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss') + '  预热 prompt_n=' + $r.timings.prompt_n +
-            ' cache_n=' + $r.timings.cache_n + '  用时 ' + [math]::Round($sec, 1) + ' 秒'
+    $line = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss') + '  预热' + $(if ($replay) { '（重放上次真实请求）' } else { '（prompt.md 拼装）' }) +
+            ' prompt_n=' + $r.timings.prompt_n + ' cache_n=' + $r.timings.cache_n + '  用时 ' + [math]::Round($sec, 1) + ' 秒'
     [IO.File]::AppendAllText((Join-Path $logDir 'warmup.log'), $line + "`r`n", (New-Object Text.UTF8Encoding($false)))
 }
 
