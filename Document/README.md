@@ -1,7 +1,8 @@
 # Nafx 提示词与文档总览
 
-> 生成时间：2026-11-24
+> 生成时间：2026-11-25
 > 说明：本文件夹是当前提示词与说明文档的**快照**。源文件仍在原位置，日常修改以源文件为准；需要对外交付或对照时再看这里。
+> 2026-11-25 更新：01 / 02 / 03 / 06 / 10 / 11 / 13 / 14 全部重新同步；面板说明补了累计用量、五套主题、接口模式、事件记录器。
 
 ---
 
@@ -134,18 +135,23 @@ PowerShell 语法、管道、文件操作、进程/服务、网络请求等参�
 
 ## 三、当前实时指标的数据链路
 
-面板顶栏和气泡下的计量不是估算，链路如下：
+面板上的数字不是估算，链路如下：
 
-1. `agent/agent.ps1` 每次模型请求后读取 llama-server 的 `timings`：
+1. **本次请求**：`agent/agent.ps1` 每次模型请求后读 llama-server 的 `timings`（接口模式读服务商的 `usage`）：
    - `predicted_per_second` → 生成速度 tok/s
    - `cache_n` / `prompt_n` → 缓存命中率、命中 token、新算 token
    - `predicted_n` → 本次生成 token
-2. 写入 `agent/state.json`（面板 `/api/state` 快通道，运行中约 350ms 一次）。
-3. 最终回答落盘时，把本轮汇总的 `tok/sec/speed/cacheHit/ctxUsed/ctxLimit` 写进 `agent/logs/session.jsonl`。
-4. 面板 `renderLiveMeter()` 更新顶栏；`msgMeter()` 在最终回答气泡下渲染持久计量。
-5. 点顶栏胶囊展开明细：缓存命中、命中 token、新算 token、生成速度、生成 token、上下文已用/实际、输入预算、提示词/历史/工具拆分。
+   - 接口模式：`prompt_tokens` / `completion_tokens` / `prompt_cache_hit_tokens`
+2. 写 `agent/state.json`（面板 `/api/state` 快通道，运行中约 350ms 一次），气泡和明细用。
+3. **累计用量**：同一次请求顺手把输入 / 输出 / 缓存命中的 token 累加进 `agent/logs/usage.json`
+   （跨任务、重启不清零）；接口模式再按 `config.json` 的 `apiPriceIn` / `apiPriceCacheHit` / `apiPriceOut`
+   折成花费。本地模式优先用 `timings` 的 `cache_n`——llama 自带的 `usage` 没有缓存命中字段，用它会算成 0。
+4. `monitor.ps1` 的 `Get-MergedState` 每次把 `usage.json` 读出来，挂在 `state.usage` 上。
+5. 面板 `renderLiveMeter()` 用 `state.usage` 更新顶栏三格（总用量 / 累计缓存 / 输出或花费）；
+   点开的明细是「累计」+「本次请求」两段。
+6. 最终回答落盘时，把本轮汇总写进 `agent/logs/session.jsonl`；`msgMeter()` 在气泡下渲染这一次的计量。
 
-关键点：**顶栏走 state 快通道，不再等 3.6 秒的慢通道；任务结束会立即补拉一次 session，避免最后一条回答延迟十几秒才上屏。**
+关键点：**顶栏是累计（总量口径），气泡和明细里的「本次请求」才是单次口径**；两套数共用同一个 state，不额外发请求。
 
 ---
 

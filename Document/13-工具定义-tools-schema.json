@@ -3,7 +3,7 @@
     "type": "function",
     "function": {
       "name": "write_file",
-      "description": "写文件。新建或整个覆盖。改某一行用 set_line，末尾追加用 append_file，别用 write_file 覆盖整个文件。",
+      "description": "写文件。新建或整个覆盖。改某一行用 set_line，末尾追加用 append_file，别用 write_file 覆盖整个文件。要按后缀运行/多文件查看用 file_editor。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -27,7 +27,7 @@
     "type": "function",
     "function": {
       "name": "read_file",
-      "description": "读整个文件的内容。只看某几行用 read_lines，找关键词用 grep_file，都别用它硬读大文件。",
+      "description": "读整个文件的内容。只看某几行用 read_lines，找关键词用 grep_file；一次看多个文件/要看文件类型用 file_editor(action=\"view\")。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -38,6 +38,119 @@
         },
         "required": [
           "path"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "file_editor",
+      "description": "模型专用多文件查看/编辑器。action=view 一次看多个文件（带行号、类型、编辑/运行提示）；write 新建或整写一个文件；replace 在一个或多个文件里精确替换；append/insert 追加或插入；run 按后缀运行；types 查后缀怎么编辑/运行。多文件、看类型、跨文件替换优先用它；单个简单改动仍可用 read_file/replace_in_file。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "view",
+              "write",
+              "replace",
+              "append",
+              "insert",
+              "run",
+              "types"
+            ],
+            "description": "要做什么：view 查看；write 新建/整写；replace 跨文件精确替换；append 末尾追加；insert 第 N 行前插入；run 运行；types 查后缀指南。"
+          },
+          "path": {
+            "type": "string",
+            "description": "文件路径（相对工作区）。view/replace 可写多个路径，用换行或分号分隔；也能传一个目录。"
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "多文件路径数组（可选）；view/replace 时优先用它。"
+          },
+          "content": {
+            "type": "string",
+            "description": "write/append/insert 的内容。"
+          },
+          "find": {
+            "type": "string",
+            "description": "replace 要精确替换的原文（不是正则）；types 时可填后缀过滤，如 .ps1。"
+          },
+          "replace": {
+            "type": "string",
+            "description": "replace 替换成的新文字；可以为空。"
+          },
+          "line": {
+            "type": "string",
+            "description": "view 的起始行，或 insert 的行号（从 1 开始）。"
+          },
+          "end_line": {
+            "type": "string",
+            "description": "view 的结束行（可选）。"
+          },
+          "command": {
+            "type": "string",
+            "description": "run 传给程序的参数；types 没有 find 时也可填后缀。"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "git",
+      "description": "在 workspace 或指定目录使用 Git。没明确要求不要 init/commit/push。先 status 看状态、diff 看改动；只 add 任务相关文件，commit 写清楚说明；pull 只允许 --ff-only，push 不允许 force；reset --hard / clean -f / rebase 一律不做。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "status",
+              "diff",
+              "log",
+              "show",
+              "branch",
+              "remote",
+              "add",
+              "commit",
+              "fetch",
+              "pull",
+              "push",
+              "init",
+              "clone"
+            ],
+            "description": "Git 动作。查看用 status/diff/log/show/branch/remote；写入用 add/commit；同步用 fetch/pull/push；init/clone 只在用户明确要求时用。"
+          },
+          "path": {
+            "type": "string",
+            "description": "仓库目录（相对工作区，默认当前工作区）；可以是仓库子目录。clone 时是克隆目标目录，不填则按 URL 最后一段落到工作区。"
+          },
+          "files": {
+            "type": "string",
+            "description": "add 的文件/目录，多个用换行或分号分隔；必填，只加任务相关文件，不要无脑 add 全部。"
+          },
+          "message": {
+            "type": "string",
+            "description": "commit 的提交说明，必须写清这次改了什么。"
+          },
+          "command": {
+            "type": "string",
+            "description": "log 的条数、show 的版本引用（默认 HEAD）、clone 的仓库 URL（http(s)/ssh/git@/file://）。"
+          }
+        },
+        "required": [
+          "action"
         ]
       }
     }
@@ -744,7 +857,7 @@
     "type": "function",
     "function": {
       "name": "run_ps1",
-      "description": "跑一个 .ps1 脚本文件。要写脚本就用 write_script（写+跑一步完成），别拆成两步。",
+      "description": "跑一个 .ps1 脚本文件。要写脚本就用 write_script（写+跑一步完成），别拆成两步；py/js/bat/exe 等按后缀运行用 file_editor(action=\"run\")。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -790,7 +903,7 @@
     "type": "function",
     "function": {
       "name": "run_js",
-      "description": "跑 .js 脚本（Windows 自带 JScript，不用装 Node）",
+      "description": "跑 .js 脚本（Windows 自带 JScript，不用装 Node）。Node 脚本（console.log/import）改用 file_editor(action=\"run\")。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -982,13 +1095,13 @@
     "type": "function",
     "function": {
       "name": "say",
-      "description": "问用户。只在真的缺信息、猜不出来的时候用 —— 会卡住等你回答。进度播报用 note，别用这个。",
+      "description": "问用户。只在真的缺信息、猜不出来的时候用 —— 会卡住等你回答。进度播报用 note，别用这个。文字支持行内 Markdown。",
       "parameters": {
         "type": "object",
         "properties": {
           "message": {
             "type": "string",
-            "description": "要问用户的话。说清楚缺什么、为什么要问，一句话讲完"
+            "description": "要问用户的话。说清楚缺什么、为什么要问，一句话讲完；支持行内 Markdown"
           }
         },
         "required": [
@@ -1087,13 +1200,13 @@
     "type": "function",
     "function": {
       "name": "finish",
-      "description": "收尾并给答案。**是工具不是文字**，要在 tool_calls 里调，别直接输出 \"finish(...)\" 这行字。",
+      "description": "收尾并给答案。**是工具不是文字**，要在 tool_calls 里调，别直接输出 \"finish(...)\" 这行字。答案支持 Markdown，面板会渲染。",
       "parameters": {
         "type": "object",
         "properties": {
           "answer": {
             "type": "string",
-            "description": "给用户的最终答案，一句话说清结果"
+            "description": "给用户的最终答案；支持 Markdown（短段落、列表、`**结论**`、代码围栏），面板会渲染"
           }
         },
         "required": [
@@ -1106,13 +1219,13 @@
     "type": "function",
     "function": {
       "name": "note",
-      "description": "对用户说一句话，说完立刻继续（不等待回答）。多步任务里每做完一步用它交代进度：「note.txt 挪好了，还剩 2 个 log，接着挪」。**不是问问题** —— 要问用 say。",
+      "description": "对用户说一句话，说完立刻继续（不等待回答）。多步任务里每做完一步用它交代进度：「note.txt 挪好了，还剩 2 个 log，接着挪」。**不是问问题** —— 要问用 say。文字支持行内 Markdown，但保持短。",
       "parameters": {
         "type": "object",
         "properties": {
           "content": {
             "type": "string",
-            "description": "要对用户说的话，一句，说清做了什么、接下来干什么"
+            "description": "要对用户说的话，一句，说清做了什么、接下来干什么；支持行内 Markdown，别写大段"
           }
         },
         "required": [
