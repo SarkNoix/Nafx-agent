@@ -1068,7 +1068,8 @@ main{position:relative;z-index:1;flex:1;display:flex;min-height:0}
   clip-path:inset(15px var(--clipR,100%) 15px 12px round 13px);will-change:clip-path}
 .reason-fx{position:absolute;inset:0;pointer-events:none;overflow:visible;z-index:5}
 .reason-star{position:absolute;left:0;top:0;border-radius:99px;pointer-events:none;
-  background:radial-gradient(circle,rgba(255,255,255,1) 0%,rgba(255,255,255,.85) 40%,rgba(255,255,255,0) 72%);
+  background:radial-gradient(circle,#fff 0%,#fff 42%,rgba(255,255,255,.62) 60%,rgba(255,255,255,0) 100%);
+  box-shadow:0 0 7px rgba(255,255,255,.55);
   will-change:transform,opacity}
 .reason-particle{position:absolute;left:0;top:0;border-radius:99px;background:#fff;
   box-shadow:0 0 8px #fff, 0 0 18px rgba(255,255,255,.85), 0 0 30px var(--pg,rgba(168,85,247,.55));
@@ -6558,17 +6559,17 @@ function reasonStars(){
   for (var i=0;i<11;i++){
     var s = document.createElement('span');
     s.className = 'reason-star';
-    var sz = 2 + Math.random() * 3;
+    var sz = 3 + Math.random() * 3;
     s.style.width = sz.toFixed(1) + 'px';
     s.style.height = sz.toFixed(1) + 'px';
     var x = 20 + Math.random() * (w - 46);
-    var y = h / 2 + (Math.random() * 16 - 8);
-    s.style.transform = 'translate3d(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px,0)';
+    var y = h / 2 + (Math.random() * 14 - 7);
+    s.style.transform = 'translate3d(' + (x - sz/2).toFixed(1) + 'px,' + (y - sz/2).toFixed(1) + 'px,0)';
     s.style.opacity = '.35';
     box.appendChild(s);
     // 透明度的呼吸 + 左右缓慢漂移，两段动画都只碰 opacity / transform
     var a = s.animate([
-      { opacity: .18 }, { opacity: .9 }, { opacity: .28 }
+      { opacity: .3 }, { opacity: .95 }, { opacity: .42 }
     ], { duration: 1800 + Math.random() * 2200, delay: Math.random() * 1600, iterations: Infinity, easing: 'ease-in-out' });
     // 行程不许把星星甩出轨道左端，按起点收着走
     var drift = Math.min(34 + Math.random() * 46, Math.max(6, x - 16));
