@@ -1064,8 +1064,8 @@ main{position:relative;z-index:1;flex:1;display:flex;min-height:0}
 .reason-ticks span:last-child{text-align:right;margin-right:-4px}
 .reason-ticks span.on{opacity:1;font-weight:600}
 /* 星星只画在彩色填充区里：用 clip-path 裁到滑块左侧，档位变化只改右侧 inset */
-.reason-stars{position:absolute;inset:0;pointer-events:none;z-index:3;
-  clip-path:inset(15px 12px 15px 12px round 13px);will-change:clip-path}
+.reason-stars{position:absolute;left:12px;right:12px;top:50%;height:26px;margin-top:-13px;
+  border-radius:13px;overflow:hidden;pointer-events:none;z-index:3}
 .reason-fx{position:absolute;inset:0;pointer-events:none;overflow:visible;z-index:5}
 .reason-star{position:absolute;left:0;top:0;border-radius:99px;pointer-events:none;
   background:radial-gradient(circle,#fff 0%,#fff 42%,rgba(255,255,255,.62) 60%,rgba(255,255,255,0) 100%);
@@ -6552,35 +6552,33 @@ function reasonStars(){
   if (!track || !box) return;
   var old = box.querySelectorAll('.reason-star');
   for (var k=0;k<old.length;k++) old[k].parentNode.removeChild(old[k]);
-  var w = track.clientWidth || 260, h = track.clientHeight || 56;
+  // 坐标全部按星星层自己的尺寸算，层就是胶囊轨道本体，星星永远在里面
+  var w = box.clientWidth || (track.clientWidth - 24) || 240, h = box.clientHeight || 26;
   var rate = reasonStarRate();
   for (var i=0;i<16;i++){
     var s = document.createElement('span');
     s.className = 'reason-star';
-    var sz = 4 + Math.random() * 4;
+    var sz = 5 + Math.random() * 4;
     s.style.width = sz.toFixed(1) + 'px';
     s.style.height = sz.toFixed(1) + 'px';
-    var x = 20 + Math.random() * (w - 46);
-    var y = h / 2 + (Math.random() * 14 - 7);
-    s.style.transform = 'translate3d(' + (x - sz/2).toFixed(1) + 'px,' + (y - sz/2).toFixed(1) + 'px,0)';
-    s.style.opacity = '.35';
+    var x = 10 + Math.random() * Math.max(6, w - 20 - sz);
+    var y = h / 2 + (Math.random() * (h - 10) - (h - 10) / 2);
+    s.style.transform = 'translate3d(' + x.toFixed(1) + 'px,' + (y - sz/2).toFixed(1) + 'px,0)';
+    s.style.opacity = '.5';
     box.appendChild(s);
-    // 透明度的呼吸 + 左右缓慢漂移，两段动画都只碰 opacity / transform
     var a = s.animate([
-      { opacity: .45 }, { opacity: 1 }, { opacity: .5 }
-    ], { duration: 1800 + Math.random() * 2200, delay: Math.random() * 1600, iterations: Infinity, easing: 'ease-in-out' });
-    // 行程不许把星星甩出轨道左端，按起点收着走
-    var drift = Math.min(34 + Math.random() * 46, Math.max(6, x - 16));
-    var dy = Math.random() * 5 - 2.5;
+      { opacity: .55 }, { opacity: 1 }, { opacity: .6 }
+    ], { duration: 1600 + Math.random() * 2000, delay: Math.random() * 1400, iterations: Infinity, easing: 'ease-in-out' });
+    var drift = Math.min(22 + Math.random() * 34, Math.max(4, x - 6));
+    var dy = Math.random() * 4 - 2;
     var ad = s.animate([
-      { transform: 'translate3d(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px,0)' },
-      { transform: 'translate3d(' + (x - drift).toFixed(1) + 'px,' + (y + dy).toFixed(1) + 'px,0)' }
+      { transform: 'translate3d(' + x.toFixed(1) + 'px,' + (y - sz/2).toFixed(1) + 'px,0)' },
+      { transform: 'translate3d(' + (x - drift).toFixed(1) + 'px,' + (y - sz/2 + dy).toFixed(1) + 'px,0)' }
     ], { duration: 4600 + Math.random() * 4200, delay: Math.random() * 2500, iterations: Infinity, direction: 'alternate', easing: 'ease-in-out' });
     ad.playbackRate = rate;
     s._tw = a; s._dr = ad;
   }
 }
-
 function reasonStarSpeed(){
   var box = $('reasonStars'); if (!box) return;
   var rate = reasonStarRate();
