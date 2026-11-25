@@ -6603,17 +6603,17 @@ function bindReason(){
   if (!btn || !pop || !track) return;
   btn.onclick = function(e){
     e.stopPropagation();
-    var open = pop.className.indexOf('on') >= 0;
-    pop.className = 'reason-pop' + (open ? '' : ' on');
+    var open = pop.classList.contains('on');
+    pop.classList.toggle('on', !open);
     btn.setAttribute('aria-expanded', open ? 'false' : 'true');
     if (!open) { layoutReason(); }
   };
   pop.onclick = function(e){ e.stopPropagation(); };
   document.addEventListener('click', function(){
-    if (pop.className.indexOf('on') >= 0) { pop.className = 'reason-pop'; btn.setAttribute('aria-expanded','false'); }
+    if (pop.classList.contains('on')) { pop.classList.remove('on'); btn.setAttribute('aria-expanded','false'); }
   });
   document.addEventListener('keydown', function(e){
-    if (e.key === 'Escape' && pop.className.indexOf('on') >= 0) { pop.className = 'reason-pop'; btn.setAttribute('aria-expanded','false'); }
+    if (e.key === 'Escape' && pop.classList.contains('on')) { pop.classList.remove('on'); btn.setAttribute('aria-expanded','false'); }
   });
 
   // 指针交互：按下即可跳档；拖动时按最近档位吸附，跨档才喷粒子
@@ -6647,7 +6647,7 @@ function bindReason(){
     if (e.key === 'ArrowLeft') { setReason(curReason - 1, true); e.preventDefault(); }
     if (e.key === 'ArrowRight') { setReason(curReason + 1, true); e.preventDefault(); }
   });
-  window.addEventListener('resize', function(){ if (pop.className.indexOf('on') >= 0) { layoutReason(); reasonStars(); } });
+  window.addEventListener('resize', function(){ if (pop.classList.contains('on')) { layoutReason(); reasonStars(); } });
   layoutReason();
   reasonStars();
 }
