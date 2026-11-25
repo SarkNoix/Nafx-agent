@@ -6483,16 +6483,19 @@ function fetchJson(url, method){
    跑任务时 CPU 一直在忙，看起来就是「卡」。
    现在分频：
      快（450ms）：只拉 state + stream，任务在跑时这两个才真的会变
-     慢（每 8 轮 ≈ 3.6s）：system / session / ask / 工具 / 文件
+     慢（每 3 轮 ≈ 2.4s 空闲 / ≈1s 忙碌）：system / session / ask / 工具 / 文件
    任务在跑时还把 renderFlow 的签名检查保住，只有内容真变了才重组 DOM。 */
 var tickN = 0;
 
 function tick(){
   tickN++;
-  // 每 8 轮做一次慢活；任务在跑时加一档：每 3 轮（约 1 秒）也拉一次 session ——
-  // 模型的 say / note 要等 session.jsonl 落盘才能上屏，3.6 秒一次
-  // 用户会觉得「它做完了半天面板还不显示」。空闲时保持 8 轮不折腾。
-  var slow = (tickN % 8 === 1) || (window.__lastBusy && tickN % 3 === 1);
+  // 每 3 轮做一次慢活；任务在跑时再加一档（每 2 轮）也拉一次 session ——
+  // 模型的 say / note 要等 session.jsonl 落盘才能上屏，2.4 秒左右一次
+  // 用户会觉得「它做完了半天面板还不显示」。
+  // 2026-11-26：原来是每 8 轮 + 空闲 1600ms，实测算下来完整会话要 12.8 秒
+  // 才刷新一次（注释写的 3.6s 是 450ms 时代的老数字）。改成每 3 轮 + 800ms，
+  // 浏览器实测 2550ms，查询接口耗时不变，服务端压力没涨。
+  var slow = (tickN % 3 === 1) || (window.__lastBusy && tickN % 2 === 0);
 
   var jobs = [fetchJson('/api/state')];
   if (slow) {
@@ -6606,7 +6609,7 @@ function tick(){
       }
       if (pollTimer) clearTimeout(pollTimer);
       // 标签页在后台时不再轮询，回来时立刻补一次；避免后台一直发请求
-      pollTimer = document.hidden ? null : setTimeout(tick, busy ? 350 : 1600);
+      pollTimer = document.hidden ? null : setTimeout(tick, busy ? 350 : 800);
       send.disabled = false;
 
       // 这里原来有个「僵死检测」：9 秒没变化就 lastSig='' + 立即重轮询。
