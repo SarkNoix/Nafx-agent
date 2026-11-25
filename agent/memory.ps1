@@ -252,7 +252,7 @@ function Add-Lesson {
         source  = $Source
         hit     = 0
     }
-    $json = ($rec | ConvertTo-Json -Compress)
+    $json = ($rec | ConvertTo-Json -Depth 5 -Compress)
     try {
         [IO.File]::AppendAllText($path, $json + "`n", (New-Object Text.UTF8Encoding($false)))
         return $true

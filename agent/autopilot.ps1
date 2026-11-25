@@ -51,7 +51,8 @@ function Save-AutoState {
         $obj = [ordered]@{}
         foreach ($k in $Data.Keys) { $obj[$k] = $Data[$k] }
         $obj['updated'] = (Get-Date -Format 'HH:mm:ss')
-        [IO.File]::WriteAllText($AutoState, ($obj | ConvertTo-Json -Compress), (New-Object Text.UTF8Encoding($false)))
+        # -Depth 必写：默认深度 2，超过两层的值会被静默转成字符串，读回来结构就没了。
+        [IO.File]::WriteAllText($AutoState, ($obj | ConvertTo-Json -Depth 5 -Compress), (New-Object Text.UTF8Encoding($false)))
     } catch { }
 }
 

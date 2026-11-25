@@ -404,7 +404,7 @@ function StreamPiece {
     $script:StreamSeq++
     try {
         $ev = [pscustomobject]@{ seq = $script:StreamSeq; kind = $Kind; text = $Text }
-        $line = (ConvertTo-Json -InputObject $ev -Compress) + "`n"
+        $line = (ConvertTo-Json -InputObject $ev -Depth 4 -Compress) + "`n"
         $fs = [IO.File]::Open($script:StreamFile, [IO.FileMode]::Append, [IO.FileAccess]::Write, [IO.FileShare]::ReadWrite)
         try {
             $b = [Text.Encoding]::UTF8.GetBytes($line)

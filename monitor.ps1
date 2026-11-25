@@ -332,7 +332,7 @@ function Save-Queue {
             # 退回默认「标准」，用户下半句改成 MAX 也传不到 agent。
             reasoning = $(if ($it.PSObject.Properties.Name -contains 'reasoning' -and $null -ne $it.reasoning) { [int]$it.reasoning } else { 2 })
         }
-        [void]$sb.Append(($o | ConvertTo-Json -Compress))
+        [void]$sb.Append(($o | ConvertTo-Json -Depth 6 -Compress))
     }
     [void]$sb.Append(']')
     [IO.File]::WriteAllText($QueueFile, $sb.ToString(), (New-Object Text.UTF8Encoding($false)))
