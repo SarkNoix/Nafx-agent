@@ -6554,7 +6554,7 @@ function reasonStars(){
   var old = box.querySelectorAll('.reason-star');
   for (var k=0;k<old.length;k++) old[k].parentNode.removeChild(old[k]);
   var w = box.clientWidth || 240, h = box.clientHeight || 26;
-  if (w < 16) return;
+  if (w < 16) { if (!box._retry){ box._retry = true; requestAnimationFrame(function(){ box._retry = false; reasonStars(); }); } return; }
   var rate = reasonStarRate();
   for (var i=0;i<16;i++){
     var sz = 4 + Math.random() * 4;
@@ -6574,26 +6574,29 @@ function reasonStars(){
     // 不在轨道左端排队，所以密度始终是匀的
     var travel = Math.min(16 + Math.random() * 40, Math.max(6, x - 4));
     var dur = Math.max(2400, travel * 34 + 1500);
-    var delay = Math.random() * 2600;
     var drift = s.animate([
       { transform: 'translate3d(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px,0)' },
       { transform: 'translate3d(' + (x - travel).toFixed(1) + 'px,' + y.toFixed(1) + 'px,0)' }
-    ], { duration: dur, iterations: Infinity, easing: 'linear', delay: delay });
+    ], { duration: dur, iterations: Infinity, easing: 'linear' });
     var sp = rate * (0.72 + Math.random() * 0.65);
     drift.playbackRate = sp;
     var fade = s.animate([
       { opacity: 0, offset: 0 }, { opacity: 1, offset: .14 },
       { opacity: 1, offset: .66 }, { opacity: 0, offset: 1 }
-    ], { duration: dur, iterations: Infinity, easing: 'linear', delay: delay });
+    ], { duration: dur, iterations: Infinity, easing: 'linear' });
     fade.playbackRate = sp;
     // 微微的动态：呼吸亮度 + 轻微缩放
     inner.animate([
       { opacity: .55, transform: 'scale(.86)' },
       { opacity: 1, transform: 'scale(1.12)' }
-    ], { duration: 1800 + Math.random() * 1600, iterations: Infinity, direction: 'alternate', easing: 'ease-in-out', delay: Math.random() * 1200 });
+    ], { duration: 1800 + Math.random() * 1600, iterations: Infinity, direction: 'alternate', easing: 'ease-in-out' });
+    // 随机相位代替延迟：星星一出现就已经在半路上，不会先僵几秒再起步
+    var off = Math.random() * dur;
+    drift.currentTime = off; fade.currentTime = off;
     s._dr = drift; s._tw = fade; s._base = sp / rate;
   }
 }
+
 function reasonStarSpeed(){
   var box = $('reasonStars'); if (!box) return;
   var rate = reasonStarRate();
@@ -6669,7 +6672,7 @@ function bindReason(){
     var open = pop.classList.contains('on');
     pop.classList.toggle('on', !open);
     btn.setAttribute('aria-expanded', open ? 'false' : 'true');
-    if (!open) { layoutReason(); reasonStars(); } // 弹层刚显示时宽高才有真实值，这里补画一次星星
+    if (!open) { layoutReason(); requestAnimationFrame(reasonStars); } // 弹层刚显示时宽高才有真实值，这里补画一次星星
   };
   pop.onclick = function(e){ e.stopPropagation(); };
   document.addEventListener('click', function(){
