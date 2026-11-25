@@ -5158,7 +5158,7 @@ function stepHtml(s, thinkMode){
   }
   var obs = body ? ('<div class="step-obs-wrap' + (bad?' bad':'') + '">' + body + '</div>') : '';
 
-  return '<div class="step ' + (bad ? 'bad' : 'ok') + '">' + think + act + diffHtml(s) + obs + '</div>';
+  return '<div class="step ' + (bad ? 'bad' : 'ok') + '">' + act + think + diffHtml(s) + obs + '</div>';
 }
 
 function toggleThink(el){
@@ -5369,8 +5369,9 @@ function liveBox(st){
   if (!active && !fin) return '';
 
   var steps = st.steps || [], sh = '';
-  // 思考只在本轮（running）展示；跑完就不再带出来 —— 内容已经在气泡里的回答里消化掉了。
-  for (var j=0;j<steps.length;j++) sh += stepHtml(steps[j], active ? true : false);
+  // 跑着的这一轮：思考全文铺开（true）；跑完之后保留折叠版（undefined），
+  // 块还在、排版不塌，"历史里不带走"是靠 agent 落盘时剥离，不靠删界面。
+  for (var j=0;j<steps.length;j++) sh += stepHtml(steps[j], active ? true : undefined);
 
   var icon = active
     ? '<span class="spinner"></span>'
@@ -5474,9 +5475,8 @@ function updateLiveProgress(st){
   var sc = lb.querySelector('.steps');
   if (sc && sc.children.length !== steps.length){
     var h = '';
-    // 这段是「跑着的面板」增量重绘，思考必须继续摊开（true），
-    // 否则加一秒后就被换回折叠版，用户就看不到了。
-    var thinkMode = (st.status === 'running') ? true : false;
+    // 这段是「跑着的面板」增量重绘：思考继续摊开（true）；跑完退回折叠版（undefined）。
+    var thinkMode = (st.status === 'running') ? true : undefined;
     for (var j = 0; j < steps.length; j++) h += stepHtml(steps[j], thinkMode);
     sc.innerHTML = h;
   }

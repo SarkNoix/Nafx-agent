@@ -710,13 +710,11 @@ function Write-Log {
 function Write-State {
     param($St)
     try {
-        # 思考（think）只服务当前回合：一旦本轮不再是 running，落盘的 state 里
-        # 就把 think 文本清空。面板读到的终态不带思考，历史抽屉也不会再长一截。
-        if ($St -and [string]$St.status -ne 'running') {
-            foreach ($s1 in @($St.steps)) {
-                if ($s1) { $s1.think = '' }
-            }
-        }
+        # ⚠ 这里不要动 steps 里的 think。
+        # 试过在终态把 think 清成空串 —— 面板上「思考」块就剩一个空壳，
+        # 步骤卡的排版直接坏掉（标签在、内容没了），用户第一眼看到的就是残行。
+        # 思考不进上下文这件事在落盘层解决（session 的 raw 跳过 think 步、
+        # history 抽屉 think 留空），状态文件保持原样，界面才不会缺块。
         $json = $St | ConvertTo-Json -Depth 10
         # 原子写：先写临时文件再改名。
         # 直接 WriteAllText 有个坑 —— 面板正好在这时候读会读到半截 JSON，
@@ -4460,9 +4458,13 @@ try {
     $sessRaw = ''
     $sessTok = 0
     foreach ($st1 in @($state.steps)) {
-        # 思考内容不进历史：think 的原文（raw 里那一整段 content）只服务当前回合，
-        # 落盘时直接跳过，下一轮 prefill 就不会再为它花 token。
-        if ([string]$st1.tool -eq 'think') { continue }
+        # 思考内容不进历史：think 的原文（raw 里那一整段 content）只服务当前回合。
+        # 但不能整条删——步骤编号会断，落盘的记录也对不上号；
+        # 保留「第几步 / think」这个骨架，只把正文换成一句占位。
+        if ([string]$st1.tool -eq 'think') {
+            $sessRaw += ("== 第{0}步 think ==`n（思考仅服务当前回合，正文未写入历史）`n`n" -f $st1.n)
+            continue
+        }
         if ([string]$st1.raw) { $sessRaw += ("== 第{0}步 {1} ==`n{2}`n`n" -f $st1.n, $st1.tool, $st1.raw) }
         if ($st1.tok) { $sessTok += [int]$st1.tok }
     }
