@@ -1153,42 +1153,6 @@ while ($listener.IsListening) {
                     Send-Text -Response $resp -Text ('{"ok":true,"id":' + (J $item.id) + '}')
                 }
 
-
-                '/api/queue/stop' {
-                    # 停掉正在跑的任务。注意这不是「取消排队」，是真杀 worker：
-                    # 老机器上一个跑偏的任务能烧几分钟 CPU，没有停止按钮用户只能干等或关窗口。
-                    if ($method -ne 'POST') { Send-Text -Response $resp -Text '{"ok":false}' -Code 405; break }
-                    $n = 0
-                    foreach ($slot in @($Workers.Keys)) {
-                        try { $Workers[$slot].Kill() } catch { }
-                        $n++
-                    }
-                    foreach ($slot in @($Workers.Keys)) { $Workers.Remove($slot) }
-
-                    $items = Get-Queue
-                    foreach ($it in $items) {
-                        if ($it.status -eq 'running') {
-                            $it.status = 'failed'
-                            $it.doneAt = (Get-Date -Format 'MM-dd HH:mm:ss')
-                            $it.result = '已手动停止'
-                        }
-                    }
-                    Save-Queue $items
-
-                    # 各槽位 state 不能留 running，否则下一个任务会继承一个假进度
-                    for ($slot = 1; $slot -le $WorkerCount; $slot++) {
-                        $sf = Get-SlotStateFile $slot
-                        $st = Read-JsonFile $sf
-                        if ($st -and [string]$st.status -eq 'running') {
-                            $st.status = 'failed'
-                            $st.answer = '已手动停止'
-                            $st.phase = ''
-                            $st | ConvertTo-Json -Depth 8 | Set-Content $sf -Encoding UTF8
-                        }
-                    }
-                    Send-Text -Response $resp -Text ('{"ok":true,"stopped":' + $n + '}')
-                }
-
                 '/api/queue/cancel' {
                     if ($method -ne 'POST') { Send-Text -Response $resp -Text '{"ok":false}' -Code 405; break }
                     $items = Get-Queue

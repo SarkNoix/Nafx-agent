@@ -7003,7 +7003,11 @@ $('btnStop').onclick = function(){
   var b = this;
   if (!confirm('停掉正在跑的任务？已经做出的改动会保留。')) return;
   b.disabled = true;
-  fetch('/api/queue/stop', {method:'POST'})
+  // 复用已有的 /api/pause：它除了杀 worker，还会清掉 stream.jsonl（否则
+  // 冻结的半句话会让面板一直显示「模型正在输出」）、清 ask/answer，
+  // 并把 state 写成 paused + 「前面的进度都保留着」。
+  // 这里不再单开一个 /api/queue/stop —— 两条停止路径行为不一致，迟早出事。
+  fetch('/api/pause', {method:'POST'})
     .then(function(r){ return r.json(); })
     .then(function(res){
       b.disabled = false;
