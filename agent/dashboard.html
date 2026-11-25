@@ -1064,13 +1064,14 @@ main{position:relative;z-index:1;flex:1;display:flex;min-height:0}
 .reason-ticks span:last-child{text-align:right;margin-right:-4px}
 .reason-ticks span.on{opacity:1;font-weight:600}
 /* 星星只画在彩色填充区里：用 clip-path 裁到滑块左侧，档位变化只改右侧 inset */
-.reason-stars{position:absolute;left:12px;right:12px;top:50%;height:26px;margin-top:-13px;
-  border-radius:13px;overflow:hidden;pointer-events:none;z-index:3}
+.reason-stars{position:absolute;left:12px;top:50%;height:26px;margin-top:-13px;width:calc(100% - 24px);
+  border-radius:13px;overflow:hidden;pointer-events:none;z-index:3;
+  transition:width .32s cubic-bezier(.34,1.4,.64,1)}
 .reason-fx{position:absolute;inset:0;pointer-events:none;overflow:visible;z-index:5}
-.reason-star{position:absolute;left:0;top:0;border-radius:99px;pointer-events:none;
-  background:radial-gradient(circle,#fff 0%,#fff 42%,rgba(255,255,255,.62) 60%,rgba(255,255,255,0) 100%);
-  box-shadow:0 0 9px rgba(255,255,255,.75);
-  will-change:transform,opacity}
+.reason-star{position:absolute;left:0;top:0;pointer-events:none;will-change:transform,opacity}
+.reason-star>i{display:block;width:100%;height:100%;border-radius:99px;
+  background:radial-gradient(circle,#fff 0%,#fff 45%,rgba(255,255,255,.66) 62%,rgba(255,255,255,0) 100%);
+  box-shadow:0 0 9px rgba(255,255,255,.8);pointer-events:none}
 .reason-particle{position:absolute;left:0;top:0;border-radius:99px;background:#fff;
   box-shadow:0 0 8px #fff, 0 0 18px rgba(255,255,255,.85), 0 0 30px var(--pg,rgba(168,85,247,.55));
   will-change:transform,opacity;pointer-events:none}
@@ -6520,6 +6521,7 @@ function layoutReason(){
   thumb.style.setProperty('--tx', (cx - m.tw / 2).toFixed(1) + 'px');
   thumb.style.setProperty('--rc-glow', (curReason ? reasonColor(p).replace('rgb(', 'rgba(').replace(')', ',.34)') : 'rgba(139,147,165,.20)'));
   if (fill) { fill.style.transform = 'scaleX(' + p + ')'; fill.style.opacity = curReason ? '1' : '.22'; }
+  var st = $('reasonStars'); if (st) st.style.width = ((track.clientWidth - 24) * p).toFixed(1) + 'px'; // 滑块没到的部分不显示星星
   if (curReason === 0) {
     thumb.style.setProperty('--rc', '#8b93a5');
     thumb.style.setProperty('--rc2', '#6f7787');
@@ -6548,42 +6550,55 @@ function reasonStarRate(){
 }
 
 function reasonStars(){
-  var track = $('reasonTrack'), box = $('reasonStars') || $('reasonFx');
-  if (!track || !box) return;
+  var box = $('reasonStars'); if (!box) return;
   var old = box.querySelectorAll('.reason-star');
   for (var k=0;k<old.length;k++) old[k].parentNode.removeChild(old[k]);
-  // 坐标全部按星星层自己的尺寸算，层就是胶囊轨道本体，星星永远在里面
-  var w = box.clientWidth || (track.clientWidth - 24) || 240, h = box.clientHeight || 26;
+  var w = box.clientWidth || 240, h = box.clientHeight || 26;
+  if (w < 16) return;
   var rate = reasonStarRate();
   for (var i=0;i<16;i++){
+    var sz = 4 + Math.random() * 4;
     var s = document.createElement('span');
     s.className = 'reason-star';
-    var sz = 5 + Math.random() * 4;
     s.style.width = sz.toFixed(1) + 'px';
     s.style.height = sz.toFixed(1) + 'px';
-    var x = 10 + Math.random() * Math.max(6, w - 20 - sz);
-    var y = h / 2 + (Math.random() * (h - 10) - (h - 10) / 2);
-    s.style.transform = 'translate3d(' + x.toFixed(1) + 'px,' + (y - sz/2).toFixed(1) + 'px,0)';
-    s.style.opacity = '.5';
+    var inner = document.createElement('i');
+    s.appendChild(inner);
+    // 沿轨道均匀铺开，只添一点抖动，避免挤成一堆
+    var x = 6 + (i + .5) / 16 * Math.max(8, w - 12 - sz) + (Math.random() * 10 - 5);
+    x = Math.max(4, Math.min(w - sz - 4, x));
+    var y = 3 + Math.random() * Math.max(2, h - 6 - sz);
+    s.style.transform = 'translate3d(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px,0)';
     box.appendChild(s);
-    var a = s.animate([
-      { opacity: .55 }, { opacity: 1 }, { opacity: .6 }
-    ], { duration: 1600 + Math.random() * 2000, delay: Math.random() * 1400, iterations: Infinity, easing: 'ease-in-out' });
-    var drift = Math.min(22 + Math.random() * 34, Math.max(4, x - 6));
-    var dy = Math.random() * 4 - 2;
-    var ad = s.animate([
-      { transform: 'translate3d(' + x.toFixed(1) + 'px,' + (y - sz/2).toFixed(1) + 'px,0)' },
-      { transform: 'translate3d(' + (x - drift).toFixed(1) + 'px,' + (y - sz/2 + dy).toFixed(1) + 'px,0)' }
-    ], { duration: 4600 + Math.random() * 4200, delay: Math.random() * 2500, iterations: Infinity, direction: 'alternate', easing: 'ease-in-out' });
-    ad.playbackRate = rate;
-    s._tw = a; s._dr = ad;
+    // 统一右→左：每颗只在自己的小段里向左滑，滑完就淡掉，
+    // 不在轨道左端排队，所以密度始终是匀的
+    var travel = Math.min(16 + Math.random() * 40, Math.max(6, x - 4));
+    var dur = Math.max(2400, travel * 34 + 1500);
+    var delay = Math.random() * 2600;
+    var drift = s.animate([
+      { transform: 'translate3d(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px,0)' },
+      { transform: 'translate3d(' + (x - travel).toFixed(1) + 'px,' + y.toFixed(1) + 'px,0)' }
+    ], { duration: dur, iterations: Infinity, easing: 'linear', delay: delay });
+    var sp = rate * (0.72 + Math.random() * 0.65);
+    drift.playbackRate = sp;
+    var fade = s.animate([
+      { opacity: 0, offset: 0 }, { opacity: 1, offset: .14 },
+      { opacity: 1, offset: .66 }, { opacity: 0, offset: 1 }
+    ], { duration: dur, iterations: Infinity, easing: 'linear', delay: delay });
+    fade.playbackRate = sp;
+    // 微微的动态：呼吸亮度 + 轻微缩放
+    inner.animate([
+      { opacity: .55, transform: 'scale(.86)' },
+      { opacity: 1, transform: 'scale(1.12)' }
+    ], { duration: 1800 + Math.random() * 1600, iterations: Infinity, direction: 'alternate', easing: 'ease-in-out', delay: Math.random() * 1200 });
+    s._dr = drift; s._tw = fade; s._base = sp / rate;
   }
 }
 function reasonStarSpeed(){
   var box = $('reasonStars'); if (!box) return;
   var rate = reasonStarRate();
   var st = box.querySelectorAll('.reason-star');
-  for (var i=0;i<st.length;i++){ if (st[i]._dr) st[i]._dr.playbackRate = rate; }
+  for (var i=0;i<st.length;i++){ var mul = st[i]._base || 1; if (st[i]._dr) st[i]._dr.playbackRate = rate * mul; if (st[i]._tw) st[i]._tw.playbackRate = rate * mul; }
 }
 
 function reasonParticles(){
@@ -6608,26 +6623,32 @@ function reasonParticles(){
     d.style.setProperty('--pg', pg);
     var tail = 14 + Math.random() * 28;     // 拖尾长度≈快门时间内的位移
     d.style.setProperty('--tail', tail.toFixed(0) + 'px');
-    var y0 = cy + (Math.random() * 20 - 10);
-    var x0 = cx + (Math.random() * 10 - 5) - (i % 4) * 7;
+    var y0 = cy + (Math.random() * 18 - 9);
+    var x0 = cx + (Math.random() * 8 - 4) - (i % 3) * 6;
     d.style.transform = 'translate3d(' + (x0 - sz/2).toFixed(1) + 'px,' + (y0 - sz/2).toFixed(1) + 'px,0) scale(.35)';
     fx.appendChild(d);
-    // 飞行距离随档位拉长，MAX 最远，但不越过轨道左端
-    var base = [0, 62, 96, 130, 180][curReason] || 62;
-    var room = Math.max(30, cx - m.pad + 8);
-    var len = Math.min(base * (0.85 + Math.random() * 0.3), room);
-    var drift = Math.random() * 14 - 7;
-    var dur = 800 + len * 3.2 + Math.random() * 320;   // 飞得远，飘得也久一点
-    var delay = i * 52 + Math.random() * 110;   // 一颗接一颗出，摊开成流
+    // 距离随档位拉长（MAX 最远），但每颗自己带随机系数，
+    // 且淡出在 74% 处就结束 —— 不会全都撞到左端堆成一团
+    var base = [0, 70, 108, 150, 205][curReason] || 70;
+    // 每颗按「到左端剩余空间」的随机比例决定行程：越强的档位整体更远，
+    // 但一定在中途就淡干净，不会全挤到左端堆成一坨
+    var reach = Math.max(20, x0 - 6);
+    var factor = 0.16 + base / 300 * 0.46;
+    var len = reach * factor * (0.75 + Math.random() * 0.5);
+    if (len < 14) len = 14;
+    var drift = Math.random() * 18 - 9;
+    var dur = 650 + len * 2.6 + Math.random() * 280;
+    var delay = i * 46 + Math.random() * 90;
+    function k(o, scl, op){
+      return { transform: 'translate3d(' + (x0 - sz/2 - len * o).toFixed(1) + 'px,' + (y0 - sz/2 + drift * o).toFixed(1) + 'px,0) scale(' + scl + ')',
+               opacity: op, offset: o };
+    }
     var anim = d.animate([
-      { transform: 'translate3d(' + (x0 - sz/2).toFixed(1) + 'px,' + (y0 - sz/2).toFixed(1) + 'px,0) scale(.35)', opacity: 0 },
-      { transform: 'translate3d(' + (x0 - sz/2 - len * .2).toFixed(1) + 'px,' + (y0 - sz/2 + drift * .2).toFixed(1) + 'px,0) scale(1)', opacity: 1, offset: .2 },
-      { transform: 'translate3d(' + (x0 - sz/2 - len).toFixed(1) + 'px,' + (y0 - sz/2 + drift).toFixed(1) + 'px,0) scale(.2)', opacity: 0 }
-    ], { duration: dur, delay: delay, easing: 'cubic-bezier(.16,.66,.34,1)', fill: 'both' });
+      k(0, .35, 0), k(.14, 1, 1), k(.46, .98, .92), k(.74, .62, 0), k(1, .45, 0)
+    ], { duration: dur, delay: delay, easing: 'linear', fill: 'both' });
     anim.onfinish = (function(el){ return function(){ if (el.parentNode) el.parentNode.removeChild(el); }; })(d);
   }
 }
-
 function setReason(v, burst){
   v = Math.max(0, Math.min(4, v | 0));
   var prev = curReason;
@@ -6648,7 +6669,7 @@ function bindReason(){
     var open = pop.classList.contains('on');
     pop.classList.toggle('on', !open);
     btn.setAttribute('aria-expanded', open ? 'false' : 'true');
-    if (!open) { layoutReason(); }
+    if (!open) { layoutReason(); reasonStars(); } // 弹层刚显示时宽高才有真实值，这里补画一次星星
   };
   pop.onclick = function(e){ e.stopPropagation(); };
   document.addEventListener('click', function(){
