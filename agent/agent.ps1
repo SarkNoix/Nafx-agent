@@ -710,6 +710,13 @@ function Write-Log {
 function Write-State {
     param($St)
     try {
+        # 思考（think）只服务当前回合：一旦本轮不再是 running，落盘的 state 里
+        # 就把 think 文本清空。面板读到的终态不带思考，历史抽屉也不会再长一截。
+        if ($St -and [string]$St.status -ne 'running') {
+            foreach ($s1 in @($St.steps)) {
+                if ($s1) { $s1.think = '' }
+            }
+        }
         $json = $St | ConvertTo-Json -Depth 10
         # 原子写：先写临时文件再改名。
         # 直接 WriteAllText 有个坑 —— 面板正好在这时候读会读到半截 JSON，
@@ -1513,11 +1520,14 @@ function Invoke-Model {
     if (-not $ToolsJson) { $ToolsJson = $ToolsSchemaRaw }
     $choice = if ($ForceTool) { '"required"' } else { '"auto"' }
 
-    # 单步输出上限：MAX 档不掐输出（本地 llama 传 -1 = 不限，
-    # 反正真正的天花板是 6144 的上下文窗口）；接口模式仍给有限值，
-    # 多数服务端不接受 -1，传了会被判参数错误。
+    # 单步输出上限。
+    # ⚠ 实测教训：MAX 档原来传 -1（llama 不限长度），模型在第 3 步把工具调用
+    # JSON 当文本吐完之后掉进了「0123456789…」无限复读，1.8 tok/s 磨了 8 分钟不
+    # 停 —— 真正的天花板不该交给模型自觉。这里改成有限的大额度，MAX 只是
+    # 「比别的档宽松」，不是「永不收口」。
     $maxTok = if ($MaxTokens -gt 0) { $MaxTokens } else { [int]$Cfg.maxTokens }
-    if ($Reasoning -eq 4 -and -not $script:IsApiMode) { $maxTok = -1 }
+    if ($Reasoning -eq 4 -and -not $script:IsApiMode) { $maxTok = 1500 }
+    $script:Degenerate = $false
 
     $jsonBody = '{"model":' + (To-JsonStr $script:ApiModelName) + ',"messages":[' + ($msgJson -join ',') + ']' +
                 ',"temperature":' + ([string]$Cfg.temperature) +
@@ -1626,6 +1636,20 @@ function Invoke-Model {
                     Write-Host $piece -NoNewline -ForegroundColor Gray
                     $acc += $piece
                     StreamPiece -Text $piece -Kind 'text'
+
+                    # 退化复读保险：小模型在「不限长度」的宽松提示下会掉进原地循环
+                    # （实测：把工具调用 JSON 当文本吐完后开始 0123456789… 无限重复）。
+                    # 判据很简单、几乎不会误伤正文：末尾 32 字和它前 32 字完全一样，
+                    # 说明周期 ≤32 的重复已经成立，直接掐断这次生成，交给上层收尾。
+                    if ($acc.Length -ge 96) {
+                        $tail32 = $acc.Substring($acc.Length - 32)
+                        $prev32 = $acc.Substring($acc.Length - 64, 32)
+                        if ($tail32 -eq $prev32) {
+                            $script:Degenerate = $true
+                            Write-Log '  [退化] 输出开始原地重复，提前掐断这次生成'
+                            break
+                        }
+                    }
                 }
                 # 工具调用分片：按 index 累加
                 if ($d.tool_calls) {
@@ -1883,6 +1907,8 @@ function Invoke-Model {
         raw_calls = $(if ($calls.Count -gt 0) { ConvertTo-Json -InputObject @($calls) -Depth 8 -Compress } else { '' })
         tokens    = $tokEst
         seconds   = $sw.Elapsed.TotalSeconds
+        # 这次生成是否被「原地复读」保险掐断（上层据此收尾，不再打回重试）
+        degenerate = [bool]$script:Degenerate
     }
 }
 
@@ -2532,7 +2558,7 @@ switch ($Reasoning) {
     1 { $reasonBody = '弱。只抓主干：想一步「先做什么」就动手，别铺完整计划；一次能做完的事不要拆成多步。' }
     2 { $reasonBody = '标准。动手前想清楚三件事：入口是什么、输入输出各是什么、出错时怎么办。做完自检一次——结果对不对、有没有漏掉原话里的要求，有问题就修一次再收尾。' }
     3 { $reasonBody = '强。先在心里列 3–5 步计划再动手；考虑边界情况（文件不存在、命令报错、路径带空格）；每步做完看一眼返回值是否印证预期，偏了就修正再继续；收尾前对照用户原话逐项确认。' }
-    4 { $reasonBody = 'MAX。这档不限制你的输出长度，不用为了省 token 把计划压成一行；但计划必须写出来，不能只在心里过一遍：第一轮用 think 列出目标、3–6 步计划、可能失败的两处、备选做法；按计划执行，每步检查结果并更新计划；同一问题连续两次没进展就换做法；收尾前逐条核对用户原话里的每个要求，缺一项就补上。' }
+    4 { $reasonBody = 'MAX。计划要写全，不用为了省 token 把计划压成一行：第一轮用 think 列出目标、3–6 步计划、可能失败的两处、备选做法；按计划执行，每步检查结果并更新计划；同一问题连续两次没进展就换做法；收尾前逐条核对用户原话里的每个要求，缺一项就补上。注意：可以写得详细，但不许灌水、不许把同一句话或数字串反复打印——写够了就调 finish 收尾。' }
 }
 if ($reasonBody) {
     $sysFull = $sysFull + "`n`n## 推理力度：$($ReasoningNames[$Reasoning])`n`n" + $reasonBody
@@ -2842,6 +2868,9 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
         $mt0 = 64
     } else {
         $mt0 = [Math]::Max(500, [int]$Cfg.maxTokens)
+        # MAX 档给宽松但有限的一步额度，并且预算跟着它一起收 ——
+        # 不能只放大输出却按 600 算输入，否则 prompt+输出会顶穿 n_ctx。
+        if ($Reasoning -eq 4 -and -not $script:IsApiMode) { $mt0 = 1500 }
     }
 
     # 输入上限 = 真实上下文 - 这次要留的输出 - 一点余量。
@@ -3187,18 +3216,27 @@ $target = [Math]::Min($targetByBudget, [Math]::Max($targetByShare, 1400))
 
     # ---------- 没有工具调用 ----------
     if (-not $res.calls -or @($res.calls).Count -eq 0) {
-        # 4B 有时把调用写成文字：finish(answer="...")。
+        # 4B 有时把调用写成文字：finish(answer="...")，或者整段 JSON：
+        # {"name":"finish","arguments":{"answer":"..."}}。
         # 这不是"没干活"，是它把工具当成了要输出的文本。解析出来当真的收尾。
+        # ⚠ 实测踩过：MAX 档模型把 think+finish 的 JSON 当正文吐出来，只认
+        # finish(answer=…) 的旧正则匹配不到，于是被当成"空转"打回，下一轮直接
+        # 掉进 0123456789 的复读里白烧 8 分钟。两种写法都得认。
         $fakeContent = [string]$res.content
         $mFakeFinish = [regex]::Match($fakeContent, 'finish\s*\(\s*answer\s*=\s*["'']([^"'']*)["'']')
+        if (-not $mFakeFinish.Success) {
+            $mFakeFinish = [regex]::Match($fakeContent, '"name"\s*:\s*"finish"[\s\S]{0,80}?"answer"\s*:\s*"((?:[^"\\]|\\.)*)"')
+        }
         if ($mFakeFinish.Success) {
             $fakeAnswer = $mFakeFinish.Groups[1].Value.Trim()
             if ($fakeAnswer) {
+                # JSON 里的转义还原成正常文本
+                $fakeAnswer = $fakeAnswer -replace '\\n', "`n" -replace '\\"', '"' -replace '\\\\', '\'
                 $state.status = 'done'
                 $state.answer = $fakeAnswer
                 $state.elapsed = $clock.Elapsed.TotalSeconds
                 $state.summary = $fakeAnswer
-                $state.steps += @{ n = $step; think = $fakeContent; tool = 'finish'; arg = ''; ok = $true
+                $state.steps += @{ n = $step; think = ''; tool = 'finish'; arg = ''; ok = $true
                                    note = $fakeAnswer; raw = $res.raw_calls; obs = ''; sec = $res.seconds }
                 Write-State $state
                 Write-Log ("  [识别] 模型把 finish 写成了文字，已按真收尾处理：$fakeAnswer")
@@ -3206,6 +3244,24 @@ $target = [Math]::Min($targetByBudget, [Math]::Max($targetByShare, 1400))
                 $finished = $true
                 break
             }
+        }
+
+        # 被「原地复读」保险掐断、又没解析出可用的收尾：别再打回重试了，
+        # 打回只会再来一轮同样的复读。用已经拿到的内容收尾，并说清楚发生了什么。
+        if ($res.degenerate) {
+            $cleanAnswer = ($fakeContent -replace '\s+', ' ').Trim()
+            if ($cleanAnswer.Length -gt 260) { $cleanAnswer = $cleanAnswer.Substring(0, 260) + '…' }
+            $state.status = 'done'
+            $state.answer = if ($cleanAnswer) { $cleanAnswer } else { '这一步输出陷入了原地重复，已提前中止。' }
+            $state.elapsed = $clock.Elapsed.TotalSeconds
+            $state.summary = $state.answer
+            $state.steps += @{ n = $step; think = ''; tool = 'finish'; arg = ''; ok = $true
+                               note = '（输出原地重复，已中止本步）'; raw = $res.raw_calls; obs = ''; sec = $res.seconds }
+            Write-State $state
+            Write-Log '  [退化] 已中止重复输出并按现有内容收尾'
+            Write-Closing -State $state -Status 'done' -Summary $state.summary -StepCount $step
+            $finished = $true
+            break
         }
 
         $noToolCount++
@@ -4404,6 +4460,9 @@ try {
     $sessRaw = ''
     $sessTok = 0
     foreach ($st1 in @($state.steps)) {
+        # 思考内容不进历史：think 的原文（raw 里那一整段 content）只服务当前回合，
+        # 落盘时直接跳过，下一轮 prefill 就不会再为它花 token。
+        if ([string]$st1.tool -eq 'think') { continue }
         if ([string]$st1.raw) { $sessRaw += ("== 第{0}步 {1} ==`n{2}`n`n" -f $st1.n, $st1.tool, $st1.raw) }
         if ($st1.tok) { $sessTok += [int]$st1.tok }
     }
@@ -4418,7 +4477,8 @@ try {
         if ($s.tool -eq 'check') { continue }
         [pscustomobject]@{
             n = $s.n; tool = $s.tool; arg = $s.arg; ok = $s.ok
-            think = $s.think; note = $s.note
+            # think 只在当轮给用户看，历史抽屉里不留（存了也会把「历史」变长）。
+            think = ''; note = $s.note
         }
     }
     $rec = [pscustomobject]@{

@@ -3650,6 +3650,17 @@ header #btnModel,header #btnQueue,header #btnJobs,header #btnHist,header #btnSet
 }
 .msg .bubble .md-table th{background:var(--panel2);color:var(--dim);font-weight:650;white-space:nowrap}
 .msg .bubble .md-table tr:last-child td{border-bottom:0}
+
+/* 运行中的思考：不管哪个主题、步骤收得多紧，都要摊开给人看。
+   这一块只在 status=running 时由 liveBox 渲染，任务一完就不再生成。 */
+.think-block.live{display:block;margin:6px 0 4px 2px;padding:7px 11px 8px;
+  border-left:2px solid var(--accent);border-radius:0 8px 8px 0;
+  background:linear-gradient(90deg,rgba(110,168,254,.09),rgba(110,168,254,0) 78%)}
+.think-block.live .think-head{margin-bottom:3px}
+.think-block.live .think-body{white-space:pre-wrap;word-break:break-word;
+  max-height:320px;overflow:auto;font-size:12.5px;line-height:1.72;color:var(--fg);opacity:.92}
+[data-theme="su"] .step:not(.open) .think-block.live,
+[data-theme="mo"] .step:not(.open) .think-block.live{display:block}
 </style>
 </head>
 <body>
@@ -3875,7 +3886,7 @@ header #btnModel,header #btnQueue,header #btnJobs,header #btnHist,header #btnSet
               <div class="ra-row"><i class="ra-lv lv1">弱</i><span>只抓主干，一遍做完。适合简单问答、格式改写、短文案。</span></div>
               <div class="ra-row"><i class="ra-lv lv2">标准</i><span>想清楚再动手，做完自检。日常默认档，绝大多数任务够用。</span></div>
               <div class="ra-row"><i class="ra-lv lv3">强</i><span>先在 think 里列计划、逐步验证，走偏了会回头改做法。适合多步任务、改代码、排查问题。</span></div>
-              <div class="ra-row"><i class="ra-lv lv4">MAX</i><span>不限制输出长度，并且必须把计划写出来：目标、3–6 步、可能失败的两处、备选做法。适合复杂工程和长链路排查。</span></div>
+              <div class="ra-row"><i class="ra-lv lv4">MAX</i><span>计划必须写全，不必为了省 token 压成一行：目标、3–6 步、可能失败的两处、备选做法。适合复杂工程和长链路排查；但写够了就该收尾，不许原地复读。</span></div>
               <p class="ra-how">它怎么想：先在 think 里过一遍 目标 → 约束 → 步骤 → 风险；每执行一步检查结果；同一个问题连续两次没进展就换做法；收尾前逐条核对你的原话，缺哪条补哪条。</p>
             </div>
           </div>
@@ -5072,7 +5083,11 @@ function toggleDiffRow(el){
   if (caret) caret.textContent = hiding ? '▾' : '▴';
 }
 
-function stepHtml(s){
+/* thinkMode：
+     undefined → 消息里的步骤，思考折叠着留（看老记录用）
+     false     → 不显示思考（任务已结束，思考用完即弃）
+     true      → 全文展开（跑的时候要能一路看见它在想什么） */
+function stepHtml(s, thinkMode){
   var bad = (s.ok === false);
   var tool = String(s.tool || '?');
   var arg = String(s.arg || '');
@@ -5082,8 +5097,16 @@ function stepHtml(s){
   // 原来 think 挤在「做了什么」那个灰条里，和工具名、参数混成一行，
   // 又长又难看清楚。现在单独成块，有标题、有配色、长文本折叠。
   var think = '';
-  if (s.think){
+  if (s.think && thinkMode !== false){
     var th = String(s.think);
+    if (thinkMode === true){
+      // 正在跑：全文铺开，不折叠，用户能实时看到推理过程。
+      think = '<div class="think-block live">' +
+        '<div class="think-head"><span class="think-ico">◌</span>' +
+        '<span class="think-label">思考</span></div>' +
+        '<div class="think-body">' + esc(th) + '</div>' +
+        '</div>';
+    } else {
     var long = th.length > 200;
     var shown = long ? th.substring(0, 200) + '…' : th;
     think = '<div class="think-block">' +
@@ -5094,6 +5117,7 @@ function stepHtml(s){
       '<div class="think-body">' + esc(shown) + '</div>' +
       (long ? '<div class="think-full" style="display:none">' + esc(th) + '</div>' : '') +
       '</div>';
+    }
   }
 
   // ② 做了什么：显示人话短语（悬停 title 里有原始工具名），
@@ -5345,7 +5369,8 @@ function liveBox(st){
   if (!active && !fin) return '';
 
   var steps = st.steps || [], sh = '';
-  for (var j=0;j<steps.length;j++) sh += stepHtml(steps[j]);
+  // 思考只在本轮（running）展示；跑完就不再带出来 —— 内容已经在气泡里的回答里消化掉了。
+  for (var j=0;j<steps.length;j++) sh += stepHtml(steps[j], active ? true : false);
 
   var icon = active
     ? '<span class="spinner"></span>'
@@ -5449,7 +5474,10 @@ function updateLiveProgress(st){
   var sc = lb.querySelector('.steps');
   if (sc && sc.children.length !== steps.length){
     var h = '';
-    for (var j = 0; j < steps.length; j++) h += stepHtml(steps[j]);
+    // 这段是「跑着的面板」增量重绘，思考必须继续摊开（true），
+    // 否则加一秒后就被换回折叠版，用户就看不到了。
+    var thinkMode = (st.status === 'running') ? true : false;
+    for (var j = 0; j < steps.length; j++) h += stepHtml(steps[j], thinkMode);
     sc.innerHTML = h;
   }
 

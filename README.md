@@ -1,12 +1,6 @@
-# Nafx Agent
+# Nafx
 
 **一台普通电脑，一个能自己干活的 AI。**
-
-![Windows](https://img.shields.io/badge/Windows-native-0078D4?logo=windows&logoColor=white)
-![PowerShell](https://img.shields.io/badge/PowerShell-native-5391FE?logo=powershell&logoColor=white)
-![Zero dependencies](https://img.shields.io/badge/dependencies-zero-2ea44f)
-![Local LLM](https://img.shields.io/badge/LLM-local-2ea44f)
-![License](https://img.shields.io/badge/license-MIT-blue)
 
 不用显卡，不用联网，不花一分钱。四核 CPU + 8 GB 内存就能跑起来。
 
@@ -57,7 +51,8 @@ Nafx 只用 **Windows 自带的 PowerShell**——不用装 Python，不用装 N
 - **改文件会标出动了哪几行** —— 文件名后面跟绿色 `+3` / 红色 `-2`（新增/删掉几行），点一下展开就是逐行 diff：删掉的行标红、新增的行标绿，小改动默认直接展开
 - **顶栏那个 `Σ` 胶囊** —— 总用量 / 累计缓存命中 / 累计输出（接口模式显示花费），点开看累计明细
 - **顶栏最右边** —— 模型 / 队列 / 历史 / 设置 四个抽屉
-- **输入框右边有个「推理力度」按钮** —— 点开是五档滑块（关闭 / 弱 / 标准 / 强 / MAX）：蓝到紫的渐变，跨档时滑块后面往左飞一串粒子，高亮块带弹性回弹；档位存在本地、随任务下发给 agent，MAX = 不掐输出长度但必须先写计划，接口模式下 3/4 档都按 high 发 reasoning_effort
+- **输入框右边有个「推理力度」按钮** —— 点开是五档滑块（关闭 / 弱 / 标准 / 强 / MAX）：蓝到紫的渐变，跨档时滑块后面往左飞一串粒子、MAX 跨档还会扫过一阵白光；标题旁的「关于」点开是五档分别怎么想的说明。档位存在本地、随任务下发给 agent，MAX = 输出额度放宽且必须先写计划（仍有限额，防原地复读），接口模式下 3/4 档都按 high 发 reasoning_effort
+- **思考实时可见，答完即弃** —— 任务跑的时候每一步的 `think` 原文直接铺在步骤卡里（全文、不折叠）；回复一落定就从 state 里清空，也不写进 session / history（下一轮上下文不含思考 token）
 - **设置里有「上下文注入」** —— 写一段背景（项目结构、术语口径、你正在做的事），每条任务自动带进系统提示词，存完下一条任务就生效、不用重启；内容不变时提示词缓存照常命中
 - **五套主题**：浅色 / 深色 / 玻璃 / 素 / 墨，右上角一键切
 
@@ -843,7 +838,7 @@ mod/brief-mode.mod.json   极简模式：回答一句话，200 token 封顶
 **⑤ 有些工具要额外装东西。** 66 个工具里绝大多数开箱即用，但读 PDF 要 python+pypdf、
 解 `.7z/.rar` 要 7-Zip、`install` 要 winget、联网类要能上网。
 哪些能用、哪些不能用、缺了会报什么错、怎么自己验证，全在单独一份：
-**[工具与能力边界](Document/06-工具与能力边界.md)**。
+**[工具与能力边界.md](工具与能力边界.md)**。
 
 **⑥ GPU 模式要自己准备运行时。** 面板「设置 → 模型编译方式」有 CPU / GPU 两档，仓库只带 CPU 版 `llama\`。
 选 GPU 前要把 CUDA 版 llama.cpp 解压到 `llama-gpu\`（里面要有 `llama-server.exe` 和配套 dll），
