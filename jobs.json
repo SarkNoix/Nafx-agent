@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "_说明": "自动化任务。when 支持三种：daily HH:MM（每天到这个点跑一次，错过就在开机后补一次）、every Nm（每 N 分钟）、health（探针失败才跑）。health 需要 probe（disk/model/panel）、below（仅 disk，单位 GB）、failAfter（连续失败几次触发）、cooldownMin（触发后多久内不再触发）。readonly=true 会在任务前加一句只许看不许改。任务一律 mode=auto、priority=8（让手动任务先跑）。改完不用重启面板，下一轮 tick 生效。",
+  "jobs": [
+    {
+      "id": "daily-disk-report",
+      "name": "每天体检：磁盘 + 日志目录",
+      "enabled": true,
+      "when": "daily 02:40",
+      "mode": "auto",
+      "priority": 8,
+      "readonly": true,
+      "task": "看一下 C 盘和 E 盘各自还剩多少空间，以及 E:\\Nafx\\agent\\logs 目录一共占多大，说清楚哪个盘最紧张",
+      "note": "开机晚了也会补跑一次；只读，不会删任何东西"
+    },
+    {
+      "id": "disk-low",
+      "name": "空间告急时列出可清理的大文件",
+      "enabled": true,
+      "when": "health",
+      "probe": "disk",
+      "below": 3,
+      "failAfter": 2,
+      "cooldownMin": 720,
+      "mode": "auto",
+      "priority": 8,
+      "readonly": true,
+      "task": "E 盘可用空间不到 3 GB 了。列出 E:\\Nafx\\agent\\logs 里最大的 10 个文件及大小，并说明哪些可以安全清理、哪些不能动",
+      "note": "连续 2 次低于 3 GB 才触发，触发后 12 小时内不重复"
+    },
+    {
+      "id": "panel-down",
+      "name": "面板掉线时自己查原因",
+      "enabled": true,
+      "when": "health",
+      "probe": "panel",
+      "failAfter": 2,
+      "cooldownMin": 60,
+      "mode": "auto",
+      "priority": 8,
+      "readonly": true,
+      "task": "面板 8090 端口连续两次没响应。看 logs\\watchdog.log 最近 40 行和 llama-server 进程状态，说明发生了什么、现在恢复没有",
+      "note": "面板不在时走 agent.ps1 直跑；如果模型也挂了，这条会失败并记在 jobs.log"
+    },
+    {
+      "id": "night-tidy-temp",
+      "name": "（模板，默认关闭）凌晨清临时文件",
+      "enabled": false,
+      "when": "daily 03:10",
+      "mode": "auto",
+      "priority": 8,
+      "readonly": false,
+      "task": "清理一下 E:\\Nafx\\workspace\\tmp 里的临时文件，只删这个目录里的，先列清单和大小再删",
+      "note": "想自动化删文件时再打开；务必先把范围改成自己的临时目录"
+    }
+  ]
+}

@@ -30,7 +30,10 @@ param(
     [int]$MemCheckSec = 60,
     [int]$LlamaMaxMB = 5600,
     [int]$FreeMinMB = 400,
-    [int]$MemCooldownSec = 900
+    [int]$MemCooldownSec = 900,
+    # 自动化（jobs.json）：每 SchedSec 秒 tick 一次；-NoSchedule 可以只守护面板
+    [int]$SchedSec = 60,
+    [switch]$NoSchedule
 )
 
 $ErrorActionPreference = 'SilentlyContinue'
@@ -130,13 +133,36 @@ function Restart-Llama {
 
 WLog ("看门狗启动，守护端口 $Port，每 $IntervalSec 秒检查一次")
 
+# 自动化调度：不新开常驻进程，直接在守护循环里 tick。
+# 加载失败不影响面板守护（调度是加分项，不是命脉）。
+$SchedOn = $false
+if (-not $NoSchedule) {
+    $schedPath = Join-Path $Root 'scripts\scheduler.ps1'
+    if (Test-Path $schedPath) {
+        try {
+            . $schedPath
+            $SchedOn = $true
+            WLog ('自动化调度器已挂上（每 ' + $SchedSec + ' 秒 tick）')
+        } catch {
+            WLog ('调度器加载失败：' + $_.Exception.Message)
+        }
+    }
+}
+
 $failStreak = 0
 $lastMemCheck = Get-Date
 $lastMemRestart = [datetime]::MinValue
 $lastLowFreeLog = [datetime]::MinValue
+$lastSched = [datetime]::MinValue
 $memStreak = 0
 
 while ($true) {
+
+    # --- 自动化 tick：到点的 / 探针失败的 job 走面板队列或直跑 agent ---
+    if ($SchedOn -and ((Get-Date) - $lastSched).TotalSeconds -ge $SchedSec) {
+        $lastSched = Get-Date
+        try { Invoke-SchedulerTick | Out-Null } catch { WLog ('调度 tick 出错：' + $_.Exception.Message) }
+    }
 
     # --- 内存闸门：每 MemCheckSec 秒看一次，连续 2 次超阈值才动手 ---
     # 只有 llama 自己变大才重启它：重启只是把 llama 拉回 4.6-4.9 GB 的基线。

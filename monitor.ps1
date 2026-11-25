@@ -44,6 +44,10 @@ if (-not [IO.Path]::IsPathRooted($CfgPath)) { $CfgPath = Join-Path $Root $CfgPat
 $env:NAFX_CONFIG = $CfgPath
 $Cfg       = Get-Content $CfgPath -Raw -Encoding UTF8 | ConvertFrom-Json
 
+# 自动化调度器（jobs.json）：面板读列表、手动跑一条；真正的 tick 在 watchdog 里
+$schedPath = Join-Path $Root 'scripts\scheduler.ps1'
+if (Test-Path $schedPath) { . $schedPath }
+
 # 读取允许整行 # 注释的 JSON（api-key.json 顶部有填写说明）。
 # 只去掉整行注释，不会碰字符串里的 #。
 function Read-LooseJson([string]$Path) {
@@ -1445,6 +1449,51 @@ while ($listener.IsListening) {
                            ',"files":' + (ConvertTo-Json -InputObject $items.ToArray() -Depth 4 -Compress) + '}'
                     if ($out -match '"files":null') { $out = $out.Replace('"files":null', '"files":[]') }
                     Send-Text -Response $resp -Text $out
+                }
+
+                '/api/jobs' {
+                    # 自动化：GET 列表 + 最近日志；POST {action:'toggle'|'run', id}
+                    if ($method -eq 'POST') {
+                        $act = ''; $jid = ''
+                        try {
+                            $b = Read-Body $ctx.Request | ConvertFrom-Json
+                            $act = ([string]$b.action).Trim().ToLower()
+                            $jid = ([string]$b.id).Trim()
+                        } catch { }
+                        if (-not $jid) { Send-Text -Response $resp -Text '{"ok":false,"msg":"缺少 id"}' -Code 400; break }
+                        $job = Get-JobById $jid
+                        if (-not $job) { Send-Text -Response $resp -Text '{"ok":false,"msg":"没有这个任务"}' -Code 404; break }
+                        if ($act -eq 'toggle') {
+                            $nowOn = -not $job.enabled
+                            $ok = Set-JobEnabled -Id $jid -Enabled $nowOn
+                            Send-Text -Response $resp -Text ('{"ok":' + $(if ($ok) { 'true' } else { 'false' }) + ',"enabled":' + $(if ($nowOn) { 'true' } else { 'false' }) + '}')
+                            break
+                        }
+                        if ($act -eq 'run') {
+                            # 手动跑一次：无视 enabled，但仍走队列、优先级 8。
+                            # 注意：这里绝不能回调自己的 /api/run —— 面板是单线程
+                            # HttpListener，自己请求自己会把线程卡死（实测卡 10 秒超时）。
+                            # 直接调进程内的 Add-QueueItem。
+                            $finalTask = Get-JobTaskText $job
+                            $item = Add-QueueItem -TaskText $finalTask -Priority ([int]$job.priority) -Mode $job.mode
+                            $res = [pscustomobject]@{
+                                ok   = $true
+                                via  = 'panel'
+                                msg  = ('已进队列（' + $item.id + '）')
+                                task = $finalTask
+                            }
+                            Register-JobResult -Id $job.id -Result $res -Manual
+                            Write-JobLog ('面板手动跑 ' + $job.id + '：' + $res.msg)
+                            Send-Text -Response $resp -Text ('{"ok":true,"msg":' + (J $res.msg) + '}')
+                            break
+                        }
+                        Send-Text -Response $resp -Text '{"ok":false,"msg":"未知 action"}' -Code 400
+                        break
+                    }
+                    $snap = @(Get-JobsSnapshot)
+                    $logs = @(Get-JobsLogTail -N 16)
+                    $obj = [ordered]@{ ok = $true; jobs = $snap; log = $logs; at = (Get-Date -Format 'HH:mm:ss') }
+                    Send-Text -Response $resp -Text (ConvertTo-Json -InputObject $obj -Depth 6)
                 }
 
                 '/api/session' {

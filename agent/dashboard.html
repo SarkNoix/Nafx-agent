@@ -3407,15 +3407,15 @@ html[data-theme="su"] ::selection{background:rgba(63,95,223,.16);color:#1b1e23}
 .theme-switch button[data-theme-btn="su"]{--dot:#f4f6f9;border-color:#d5dae1}
 
 /* 顶栏功能键：加高、拉开内边距，但保持单行 */
-header #btnModel,header #btnQueue,header #btnHist,header #btnSettings{
+header #btnModel,header #btnQueue,header #btnJobs,header #btnHist,header #btnSettings{
   height:32px;padding:0 11px;font-size:12.5px;border-radius:9px;
   letter-spacing:.02em;
 }
 @media(min-width:1001px){
-  header #btnModel,header #btnQueue,header #btnHist,header #btnSettings{padding:0 13px}
+  header #btnModel,header #btnQueue,header #btnJobs,header #btnHist,header #btnSettings{padding:0 13px}
 }
 @media(max-width:760px){
-  header #btnModel,header #btnQueue,header #btnHist,header #btnSettings{
+  header #btnModel,header #btnQueue,header #btnJobs,header #btnHist,header #btnSettings{
     height:32px;padding:0 9px;font-size:12px;
   }
   .theme-switch{height:30px}
@@ -3533,6 +3533,7 @@ header #btnModel,header #btnQueue,header #btnHist,header #btnSettings{
   </div>
   <button id="btnModel" class="ghost">模型</button>
   <button id="btnQueue" class="ghost">队列</button>
+  <button id="btnJobs" class="ghost">自动化</button>
   <button id="btnHist" class="ghost">历史</button>
   <button id="btnSettings" class="ghost">设置</button>
 </header>
@@ -3725,6 +3726,11 @@ header #btnModel,header #btnQueue,header #btnHist,header #btnSettings{
 <div class="drawer" id="settingsDrawer">
   <div class="drawer-head"><h2>设置</h2><button class="ghost sm" onclick="closeDrawers()">关闭</button></div>
   <div class="drawer-body" id="settingsBody"></div>
+</div>
+
+<div class="drawer" id="jobsDrawer">
+  <div class="drawer-head"><h2>自动化</h2><button class="ghost sm" onclick="closeDrawers()">关闭</button></div>
+  <div class="drawer-body" id="jobsBody"></div>
 </div>
 
 <!-- ============================================================
@@ -6588,6 +6594,78 @@ $('btnHist').onclick = function(){
     }
   });
 };
+
+function jobWhenText(j){
+  var w = String(j.when || '').toLowerCase();
+  if (w.indexOf('daily') === 0) return '每天 ' + w.slice(6).trim();
+  var m = w.match(/^every\s+(\d+)\s*(m|h)$/);
+  if (m) return '每 ' + m[1] + (m[2] === 'h' ? ' 小时' : ' 分钟');
+  if (w === 'health'){
+    if (j.probe === 'disk') return '磁盘可用低于 ' + j.below + ' GB';
+    if (j.probe === 'panel') return '面板 8090 不通';
+    if (j.probe === 'model') return '模型服务不通';
+    return '健康检查';
+  }
+  return j.when || '';
+}
+
+function jobStatusText(s){
+  var map = { queued:'已排队', direct:'已直跑', done:'成功', failed:'失败', running:'跑着', lost:'中断' };
+  return map[s] || (s ? s : '还没跑过');
+}
+
+function loadJobs(body){
+  fetchJson('/api/jobs').then(function(d){
+    if (!d || !d.jobs){ body.innerHTML = '<div style="color:var(--err)">读取失败</div>'; return; }
+    var out = '<div style="font-size:11px;color:var(--faint);letter-spacing:.8px;margin:0 0 10px">触发方式：定时 / 健康检查（文件变化暂时不做，误报太多）</div>';
+    for (var i=0;i<d.jobs.length;i++){
+      var j = d.jobs[i];
+      var st = String(j.lastStatus || '');
+      var tagCls = (st === 'done') ? 'done' : ((st === 'failed' || st === 'lost') ? 'failed' : ((st === 'queued' || st === 'direct') ? 'queued' : ''));
+      out += '<div class="hitem" style="cursor:default">' +
+        '<div class="t">' + esc(j.name) + ' <span style="font-size:11px;color:' + (j.enabled ? 'var(--ok)' : 'var(--faint)') + '">' + (j.enabled ? '● 启用' : '○ 停用') + '</span></div>' +
+        '<div class="m"><span class="tag ' + tagCls + '">' + esc(jobStatusText(st)) + '</span>' +
+        '<span>' + esc(jobWhenText(j)) + '</span>' +
+        (j.readonly ? '<span>只读</span>' : '<span style="color:var(--warn)">会改文件</span>') +
+        '<span>' + (j.runs || 0) + ' 次 / 败 ' + (j.fails || 0) + '</span></div>' +
+        '<div style="font-size:12px;color:var(--dim);margin-top:6px">' + esc(j.task) + '</div>' +
+        (j.lastMsg ? '<div style="font-size:12px;color:var(--faint);margin-top:6px">上次：' + esc(j.lastMsg) + '</div>' : '') +
+        (j.note ? '<div style="font-size:11px;color:var(--faint);margin-top:4px">' + esc(j.note) + '</div>' : '') +
+        '<div style="margin-top:8px;display:flex;gap:8px">' +
+        '<button class="ghost sm" data-act="toggle" data-id="' + esc(j.id) + '">' + (j.enabled ? '停用' : '启用') + '</button>' +
+        '<button class="ghost sm" data-act="run" data-id="' + esc(j.id) + '">跑一次</button>' +
+        '</div></div>';
+    }
+    var logs = d.log || [];
+    out += '<div style="font-size:11px;color:var(--faint);letter-spacing:.8px;margin:18px 0 7px">最近调度日志</div>';
+    out += '<pre style="font-size:11px;line-height:1.65;color:var(--dim);white-space:pre-wrap;margin:0;max-height:220px;overflow:auto">' + esc(logs.join('\n') || '（还没有日志）') + '</pre>';
+    out += '<div style="margin-top:12px;font-size:11px;color:var(--faint)">改 jobs.json 后下一轮生效；手动跑也遵守「有任务在跑就先排队」</div>';
+    body.innerHTML = out;
+    var btns = body.querySelectorAll('button[data-act]');
+    for (var k=0;k<btns.length;k++){
+      btns[k].onclick = function(){
+        var act = this.getAttribute('data-act'), id = this.getAttribute('data-id');
+        var self = this; self.disabled = true;
+        fetch('/api/jobs', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({action:act, id:id}) })
+          .then(function(r){ return r.json(); })
+          .then(function(res){
+            toast(res && res.ok ? (act === 'run' ? '已交给队列' : '已切换') : ((res && res.msg) || '失败'));
+            loadJobs(body);
+          })
+          .catch(function(){ self.disabled = false; toast('请求失败'); });
+      };
+    }
+  });
+}
+
+function openJobs(){
+  openDrawer('jobsDrawer');
+  var body = $('jobsBody');
+  body.innerHTML = '<div class="set-loading"><span class="spinner"></span><span>读取自动化…</span></div>';
+  loadJobs(body);
+}
+
+$('btnJobs').onclick = openJobs;
 
 function histDetail(h){
   var out = '';
