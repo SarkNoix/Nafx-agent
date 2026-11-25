@@ -1067,7 +1067,7 @@ main{position:relative;z-index:1;flex:1;display:flex;min-height:0}
 .reason-star{position:absolute;left:0;top:0;border-radius:99px;background:#fff;pointer-events:none;
   box-shadow:0 0 8px rgba(255,255,255,.75);will-change:opacity}
 .reason-particle{position:absolute;left:0;top:0;border-radius:99px;background:#fff;
-  box-shadow:0 0 12px rgba(255,255,255,1), 0 0 26px rgba(255,255,255,.5);
+  box-shadow:0 0 8px #fff, 0 0 18px rgba(255,255,255,.85), 0 0 34px var(--pg,rgba(168,85,247,.55));
   will-change:transform,opacity;pointer-events:none}
 textarea{flex:1;resize:none;min-height:46px;max-height:170px;background:var(--panel2);
   border:1px solid var(--line);border-radius:var(--radius-lg);color:var(--fg);
@@ -6532,14 +6532,18 @@ function layoutReason(){
   if (btn) btn.title = '推理力度：' + REASON_NAMES[curReason] + (curReason ? '（' + REASON_DESC[curReason] + '）' : '');
 }
 
+function reasonStarRate(){
+  // 星星漂移速度跟着推理档位走：越强越快
+  return [0.55, 0.8, 1, 1.45, 2][curReason] || 1;
+}
+
 function reasonStars(){
   var fx = $('reasonFx'), track = $('reasonTrack');
   if (!fx || !track) return;
-  // 轨道里那些慢慢闪的小白点：只动 opacity，位置用 transform 一次定死，
-  // 不参与布局，也不会在拖动时重排。
   var old = fx.querySelectorAll('.reason-star');
   for (var k=0;k<old.length;k++) old[k].parentNode.removeChild(old[k]);
   var w = track.clientWidth || 260, h = track.clientHeight || 56;
+  var rate = reasonStarRate();
   for (var i=0;i<11;i++){
     var s = document.createElement('span');
     s.className = 'reason-star';
@@ -6551,7 +6555,7 @@ function reasonStars(){
     s.style.transform = 'translate3d(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px,0)';
     s.style.opacity = '.35';
     fx.appendChild(s);
-    // 两段动画：透明度的呼吸 + 极慢的左右漂移（只动 transform / opacity）
+    // 透明度的呼吸 + 左右缓慢漂移，两段动画都只碰 opacity / transform
     var a = s.animate([
       { opacity: .18 }, { opacity: .9 }, { opacity: .28 }
     ], { duration: 1800 + Math.random() * 2200, delay: Math.random() * 1600, iterations: Infinity, easing: 'ease-in-out' });
@@ -6561,8 +6565,16 @@ function reasonStars(){
       { transform: 'translate3d(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px,0)' },
       { transform: 'translate3d(' + (x - drift).toFixed(1) + 'px,' + (y + dy).toFixed(1) + 'px,0)' }
     ], { duration: 6000 + Math.random() * 7000, delay: Math.random() * 3000, iterations: Infinity, direction: 'alternate', easing: 'ease-in-out' });
+    ad.playbackRate = rate;
     s._tw = a; s._dr = ad;
   }
+}
+
+function reasonStarSpeed(){
+  var fx = $('reasonFx'); if (!fx) return;
+  var rate = reasonStarRate();
+  var st = fx.querySelectorAll('.reason-star');
+  for (var i=0;i<st.length;i++){ if (st[i]._dr) st[i]._dr.playbackRate = rate; }
 }
 
 function reasonParticles(){
@@ -6572,26 +6584,32 @@ function reasonParticles(){
   var p = curReason / 4;
   var cx = m.pad + m.span * p;
   var cy = track.clientHeight / 2;
-  for (var i=0;i<14;i++){
+  // 档位越高，喷得越多；关闭档不喷
+  var count = [0, 7, 10, 13, 17][curReason];
+  if (!count) return;
+  var c = curReason ? reasonColor(p) : '#8b93a5';
+  var pg = c.replace('rgb(', 'rgba(').replace(')', ',.55)');
+  for (var i=0;i<count;i++){
     var d = document.createElement('span');
     d.className = 'reason-particle';
-    var sz = 5 + Math.random() * 4;             // 3–7px，前后大小不一，看着有纵深
+    var sz = 4 + Math.random() * 4;
     d.style.width = sz.toFixed(1) + 'px';
     d.style.height = sz.toFixed(1) + 'px';
     d.style.opacity = '0';
-    var y0 = cy + (Math.random() * 18 - 9);
+    d.style.setProperty('--pg', pg);
+    var y0 = cy + (Math.random() * 16 - 8);
     var x0 = cx + (Math.random() * 6 - 3);
-    d.style.transform = 'translate3d(' + (x0 - sz/2).toFixed(1) + 'px,' + (y0 - sz/2).toFixed(1) + 'px,0) scale(.4)';
+    d.style.transform = 'translate3d(' + (x0 - sz/2).toFixed(1) + 'px,' + (y0 - sz/2).toFixed(1) + 'px,0) scale(.35)';
     fx.appendChild(d);
-    var len = 60 + Math.random() * 130;          // 往左飞 44–140px
-    var drift = Math.random() * 16 - 8;
-    var dur = 520 + Math.random() * 430;
-    var delay = Math.random() * 90;
+    var len = 70 + Math.random() * 120;
+    var drift = Math.random() * 14 - 7;
+    var dur = 900 + Math.random() * 800;        // 慢：0.9–1.7 秒才飘完
+    var delay = Math.random() * 260;
     var anim = d.animate([
-      { transform: 'translate3d(' + (x0 - sz/2).toFixed(1) + 'px,' + (y0 - sz/2).toFixed(1) + 'px,0) scale(.4)', opacity: 0 },
-      { transform: 'translate3d(' + (x0 - sz/2 - len * .18).toFixed(1) + 'px,' + (y0 - sz/2 + drift * .18).toFixed(1) + 'px,0) scale(1)', opacity: .95, offset: .18 },
+      { transform: 'translate3d(' + (x0 - sz/2).toFixed(1) + 'px,' + (y0 - sz/2).toFixed(1) + 'px,0) scale(.35)', opacity: 0 },
+      { transform: 'translate3d(' + (x0 - sz/2 - len * .2).toFixed(1) + 'px,' + (y0 - sz/2 + drift * .2).toFixed(1) + 'px,0) scale(1)', opacity: 1, offset: .2 },
       { transform: 'translate3d(' + (x0 - sz/2 - len).toFixed(1) + 'px,' + (y0 - sz/2 + drift).toFixed(1) + 'px,0) scale(.2)', opacity: 0 }
-    ], { duration: dur, delay: delay, easing: 'cubic-bezier(.18,.62,.36,1)', fill: 'both' });
+    ], { duration: dur, delay: delay, easing: 'cubic-bezier(.16,.66,.34,1)', fill: 'both' });
     anim.onfinish = (function(el){ return function(){ if (el.parentNode) el.parentNode.removeChild(el); }; })(d);
   }
 }
@@ -6602,6 +6620,7 @@ function setReason(v, burst){
   curReason = v;
   try { localStorage.setItem('nafx-reason', String(v)); } catch(_){}
   layoutReason();
+  if (changed) reasonStarSpeed();
   if (burst && changed) reasonParticles();
 }
 
