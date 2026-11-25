@@ -26,9 +26,8 @@
         "查一下安全",
         "安全状况"
       ],
-      "goal": "给出这台电脑的真实安全状态：防火墙开没开、有没有可疑自启、账号有没有异常。用现成技能查，别自己拼命令。",
+      "goal": "给出这台电脑的真实安全状态：防火墙开没开、有没有可疑自启、账号有没有异常。优先用现成技能（skill health_check）查询；技能不可用时改用只读命令自查，别乱改系统。",
       "tools": [
-        "skill",
         "think",
         "read_file",
         "write_file",
@@ -70,9 +69,7 @@
         "write_file",
         "append_file",
         "list_dir",
-        "skill",
         "pdf_read",
-        "notify",
         "note",
         "finish"
       ],
@@ -156,16 +153,12 @@
         "grep_file",
         "list_dir",
         "web_search",
-        "web_fetch",
         "syshelp",
         "help",
         "http_request",
         "pdf_read",
-        "notify",
-        "skill",
         "note",
-        "finish",
-        "file_editor"
+        "finish"
       ],
       "name": "查东西 / 找某个值",
       "match": [
@@ -247,11 +240,9 @@
         "read_file",
         "delete_path",
         "list_dir",
-        "notify",
-        "skill",
         "note",
         "finish",
-        "file_editor"
+        "append_file"
       ],
       "name": "创建文件 / 写内容",
       "match": [
@@ -314,12 +305,9 @@
         "set_line",
         "diff_files",
         "write_file",
-        "notify",
-        "skill",
         "note",
         "finish",
-        "file_editor",
-        "git"
+        "multi_edit"
       ],
       "name": "改内容 / 替换",
       "match": [
@@ -393,11 +381,8 @@
         "make_dir",
         "http_request",
         "pdf_read",
-        "notify",
-        "skill",
         "note",
-        "finish",
-        "file_editor"
+        "finish"
       ],
       "name": "格式转换",
       "match": [
@@ -455,15 +440,12 @@
         "plan",
         "think",
         "web_search",
-        "web_fetch",
         "download_file",
         "write_file",
         "read_file",
         "make_dir",
         "http_request",
         "pdf_read",
-        "notify",
-        "skill",
         "note",
         "finish"
       ],
@@ -540,14 +522,10 @@
         "replace_in_file",
         "run_ps1",
         "make_dir",
-        "notify",
-        "skill",
         "note",
         "finish",
-        "file_editor",
-        "git",
         "web_search",
-        "web_fetch"
+        "multi_edit"
       ],
       "name": "写脚本 / 做工具",
       "match": [
@@ -617,8 +595,6 @@
         "write_file",
         "zip_list",
         "unzip",
-        "skill",
-        "notify",
         "note",
         "finish"
       ],
@@ -774,8 +750,6 @@
         "syshelp",
         "help",
         "win_doc",
-        "notify",
-        "skill",
         "note",
         "finish"
       ],
@@ -797,8 +771,6 @@
         "append_file",
         "write_file",
         "make_dir",
-        "notify",
-        "skill",
         "note",
         "finish"
       ],
@@ -871,8 +843,6 @@
         "make_dir",
         "move_path",
         "find_files",
-        "file_editor",
-        "skill",
         "note",
         "finish"
       ],
@@ -941,7 +911,6 @@
         "make_dir",
         "move_path",
         "find_files",
-        "skill",
         "note",
         "finish"
       ],
@@ -1006,7 +975,6 @@
         "find_files",
         "file_info",
         "delete_path",
-        "skill",
         "note",
         "finish"
       ],
