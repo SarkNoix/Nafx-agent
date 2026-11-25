@@ -1072,13 +1072,16 @@ main{position:relative;z-index:1;flex:1;display:flex;min-height:0}
 .reason-star>i{display:block;width:100%;height:100%;border-radius:99px;
   background:radial-gradient(circle,#fff 0%,#fff 45%,rgba(255,255,255,.66) 62%,rgba(255,255,255,0) 100%);
   box-shadow:0 0 9px rgba(255,255,255,.8);pointer-events:none}
-.reason-particle{position:absolute;left:0;top:0;border-radius:99px;background:#fff;
-  box-shadow:0 0 8px #fff, 0 0 18px rgba(255,255,255,.85), 0 0 30px var(--pg,rgba(168,85,247,.55));
+.reason-particle{position:absolute;left:0;top:0;border-radius:99px;
+  background:radial-gradient(circle at 38% 38%,#fff 0%,#fff 44%,rgba(255,255,255,.80) 62%,rgba(255,255,255,.26) 82%,rgba(255,255,255,0) 100%);
+  box-shadow:0 0 6px rgba(255,255,255,.95), 0 0 16px rgba(255,255,255,.5), 0 0 26px var(--pg,rgba(168,85,247,.4));
   will-change:transform,opacity;pointer-events:none}
-/* 拖尾：粒子往左飞，尾巴朝右渐隐，等于低成本的动态模糊 */
-.reason-particle::after{content:'';position:absolute;left:100%;top:50%;width:var(--tail,22px);height:3px;
-  margin-top:-1.5px;border-radius:99px;pointer-events:none;
-  background:linear-gradient(90deg,rgba(255,255,255,.9) 0%,rgba(255,255,255,.45) 45%,rgba(255,255,255,0) 100%)}
+/* 拖尾：水滴形（头圆尾尖），朝右渐隐；越快越长越细 */
+.reason-particle::after{content:'';position:absolute;left:70%;top:50%;width:var(--tail,26px);height:var(--tailH,4.6px);
+  margin-top:calc(var(--tailH,4px) / -2);pointer-events:none;
+  background:linear-gradient(90deg,rgba(255,255,255,.95) 0%,rgba(255,255,255,.6) 34%,rgba(255,255,255,.18) 72%,rgba(255,255,255,0) 100%);
+  clip-path:polygon(0% 50%,12% 10%,38% 2%,68% 20%,100% 50%,68% 80%,38% 98%,12% 90%);
+  filter:blur(.5px)}
 textarea{flex:1;resize:none;min-height:46px;max-height:170px;background:var(--panel2);
   border:1px solid var(--line);border-radius:var(--radius-lg);color:var(--fg);
   font-family:inherit;font-size:14px;padding:13px 14px;line-height:1.5;outline:none;transition:.15s}
@@ -6615,33 +6618,39 @@ function reasonParticles(){
   var count = [0, 7, 10, 13, 17][curReason];
   if (!count) return;
   var c = curReason ? reasonColor(p) : '#8b93a5';
-  var pg = c.replace('rgb(', 'rgba(').replace(')', ',.55)');
+  var pg = c.replace('rgb(', 'rgba(').replace(')', ',.42)');
+  // 飞行速度按档位走（px/s）：MAX 最快，弱最慢
+  var spd = [0, 70, 106, 150, 205][curReason] || 70;
   for (var i=0;i<count;i++){
     var d = document.createElement('span');
     d.className = 'reason-particle';
-    var sz = 4 + Math.random() * 4;
+    var sz = 3.6 + Math.random() * 3.2;
     d.style.width = sz.toFixed(1) + 'px';
     d.style.height = sz.toFixed(1) + 'px';
     d.style.opacity = '0';
     d.style.setProperty('--pg', pg);
-    var tail = 14 + Math.random() * 28;     // 拖尾长度≈快门时间内的位移
-    d.style.setProperty('--tail', tail.toFixed(0) + 'px');
-    var y0 = cy + (Math.random() * 20 - 10);
-    var x0 = cx + (Math.random() * 10 - 5) - (i % 4) * 7;
-    d.style.transform = 'translate3d(' + (x0 - sz/2).toFixed(1) + 'px,' + (y0 - sz/2).toFixed(1) + 'px,0) scale(.35)';
+    // 水滴尾跟着速度拉长、变细，慢的时候是短圆头
+    var tail = (13 + spd * 0.22) * (0.85 + Math.random() * 0.4);
+    var tailH = 5.6 - spd / 205 * 1.0;
+    d.style.setProperty('--tail', tail.toFixed(1) + 'px');
+    d.style.setProperty('--tailH', tailH.toFixed(1) + 'px');
+    var y0 = cy + (Math.random() * 26 - 13);               // 纵向散开
+    var x0 = cx + (Math.random() * 12 - 6) - (i % 4) * 8; // 起点错开成几股
+    d.style.transform = 'translate3d(' + (x0 - sz/2).toFixed(1) + 'px,' + (y0 - sz/2).toFixed(1) + 'px,0) scale(.3)';
     fx.appendChild(d);
     // 飞行距离随档位拉长，MAX 最远，但不越过轨道左端
     var base = [0, 62, 96, 130, 180][curReason] || 62;
     var room = Math.max(30, cx - m.pad + 8);
-    var len = Math.min(base * (0.85 + Math.random() * 0.3), room);
-    var drift = Math.random() * 14 - 7;
-    var dur = 800 + len * 3.2 + Math.random() * 320;   // 飞得远，飘得也久一点
-    var delay = i * 52 + Math.random() * 110;   // 一颗接一颗出，摊开成流
+    var len = Math.min(base * (0.75 + Math.random() * 0.55), room);
+    var drift = Math.random() * 18 - 9;
+    var dur = Math.round(len / spd * 1000) + 280 + Math.random() * 160;
+    var delay = i * 64 + Math.random() * 170;   // 渐进式：一颗接一颗，摊开成流
     var anim = d.animate([
-      { transform: 'translate3d(' + (x0 - sz/2).toFixed(1) + 'px,' + (y0 - sz/2).toFixed(1) + 'px,0) scale(.35)', opacity: 0 },
-      { transform: 'translate3d(' + (x0 - sz/2 - len * .2).toFixed(1) + 'px,' + (y0 - sz/2 + drift * .2).toFixed(1) + 'px,0) scale(1)', opacity: 1, offset: .2 },
-      { transform: 'translate3d(' + (x0 - sz/2 - len).toFixed(1) + 'px,' + (y0 - sz/2 + drift).toFixed(1) + 'px,0) scale(.2)', opacity: 0 }
-    ], { duration: dur, delay: delay, easing: 'cubic-bezier(.16,.66,.34,1)', fill: 'both' });
+      { transform: 'translate3d(' + (x0 - sz/2).toFixed(1) + 'px,' + (y0 - sz/2).toFixed(1) + 'px,0) scale(.3)', opacity: 0 },
+      { transform: 'translate3d(' + (x0 - sz/2 - len * .18).toFixed(1) + 'px,' + (y0 - sz/2 + drift * .18).toFixed(1) + 'px,0) scale(1)', opacity: 1, offset: .18 },
+      { transform: 'translate3d(' + (x0 - sz/2 - len * .62).toFixed(1) + 'px,' + (y0 - sz/2 + drift * .62).toFixed(1) + 'px,0) scale(.9)', opacity: .85, offset: .62 },
+      { transform: 'translate3d(' + (x0 - sz/2 - len).toFixed(1) + 'px,' + (y0 - sz/2 + drift).toFixed(1) + 'px,0) scale(.24)', opacity: 0 }
+    ], { duration: dur, delay: delay, easing: 'cubic-bezier(.2,.68,.32,1)', fill: 'both' });
     anim.onfinish = (function(el){ return function(){ if (el.parentNode) el.parentNode.removeChild(el); }; })(d);
   }
 }
