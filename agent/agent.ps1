@@ -2761,6 +2761,10 @@ $script:AskedQuestions = @()
 # 工作模式下「必须先 plan」的打回次数。同样限 2 次。
 $script:planNudge = 0
 $script:thinkNudge = 0
+# 连续 think 计数：连续第 3 步还只在想、不动手，就在 tool 结果末尾下硬约束。
+$script:ThinkStreak = 0
+$script:ThinkStreakTold = $false
+$script:ThinkHint = ''
 # 自愈：同一步骤重复时先要求换方法，只给一次机会（见「同一目标重复」那段）
 $script:HealedOnce = $false
 # finish 时「任务要文件但一个都没写」的打回次数。同样限 2 次。
@@ -3504,6 +3508,12 @@ Add-SessionNote -Text $bcSay -Kind 'say'
     if ($toolName -eq 'think') {
         $think = [string]$act.content
         if (-not $think.Trim()) { $think = [string]$act.command }
+    } elseif ($think -match '<tool_call>|\{"name"|"arguments"') {
+        # 非 think 工具的 act.think 常常是「这一步的原始响应」——
+        # finish/plan 这类步里就是整段工具调用 JSON。原样当「想法」上屏，
+        # 卡片里会糊一段 {"name":"finish","arguments":…}，用户完全看不懂。
+        # 不是纯文字的想法就别显示。
+        $think = ''
     }
 
     # ---- think 的内容自动播报给用户 ----
@@ -3525,6 +3535,27 @@ Add-SessionNote -Text $bcSay -Kind 'say'
         # 原来所有 think 都塞进同一条消息，连成一片，看不出哪句是第几步想的。
         Add-SessionNote -Text ("第" + $step + "步 · " + $bc) -Kind 'think'
         Write-Log ("  [播报] " + $bc)
+    }
+
+    # ---- 连续 think 防护 ----
+    # 小模型会「只想不做」：连续好几步都调 think 重新推一遍同样的计划，
+    # 一步实际动作都没有，CPU 上就是几十秒白跑。
+    # 连续第 3 次时给一句硬约束（只给一次，避免把上下文刷爆）。
+    if ($toolName -eq 'think') {
+        $script:ThinkStreak = [int]$script:ThinkStreak + 1
+        if ($script:ThinkStreak -ge 3 -and -not $script:ThinkStreakTold) {
+            $script:ThinkStreakTold = $true
+            # 不能直接往 $history 里插 user 消息：此刻 assistant(tool_calls)
+            # 和 tool 结果还没成对落进去，插一条 user 会把回合结构打断（llama 会 400）。
+            # 改成本步的 tool 结果末尾追加一句硬约束（在下面统一拼进去）。
+            $script:ThinkHint = ("你已经连续 $($script:ThinkStreak) 步只在 think，一步实际动作都没做。" +
+                                 "现在不要再多想：直接调用能干活的工具（读/写/跑/查），或者已经能回答就调 finish。")
+            Write-Log ("  [只想不做] 连续 $($script:ThinkStreak) 步 think，已下硬约束")
+        }
+    } else {
+        $script:ThinkStreak = 0
+        $script:ThinkStreakTold = $false
+        $script:ThinkHint = ''
     }
     $path  = [string]$act.path
 
@@ -4328,6 +4359,7 @@ Add-SessionNote -Text $bcSay -Kind 'say'
         $hint = "`n`n（这一步已经做完。如果上面的结果已经能回答任务，现在就调 finish；" +
                 "不要再调 $toolName 或别的工具去确认一遍。）"
     }
+    if ($script:ThinkHint) { $hint += "`n`n（" + $script:ThinkHint + '）'; $script:ThinkHint = '' }
     # 项目验收已经满足时，明确告诉它“别再改了”。
     # 实测：脚本、README、数据、带参数运行都齐了，模型还会反复重写同一个脚本，
     # 把已经能用的版本越改越差。验收器只答一次，之后直接收尾。

@@ -3659,6 +3659,7 @@ header #btnModel,header #btnQueue,header #btnJobs,header #btnHist,header #btnSet
 .think-block.live .think-head{margin-bottom:3px}
 .think-block.live .think-body{white-space:pre-wrap;word-break:break-word;
   max-height:320px;overflow:auto;font-size:12.5px;line-height:1.72;color:var(--fg);opacity:.92}
+.think-meta{margin-left:6px;font-size:10.5px;color:var(--faint);font-weight:400}
 [data-theme="su"] .step:not(.open) .think-block.live,
 [data-theme="mo"] .step:not(.open) .think-block.live{display:block}
 </style>
@@ -5103,7 +5104,8 @@ function stepHtml(s, thinkMode){
       // 正在跑：全文铺开，不折叠，用户能实时看到推理过程。
       think = '<div class="think-block live">' +
         '<div class="think-head"><span class="think-ico">◌</span>' +
-        '<span class="think-label">思考</span></div>' +
+        '<span class="think-label">思考</span>' +
+        '<span class="think-meta">' + th.length + ' 字' + (s.sec ? ' · ' + fmtTime(s.sec) : '') + '</span></div>' +
         '<div class="think-body">' + esc(th) + '</div>' +
         '</div>';
     } else {
@@ -5112,6 +5114,7 @@ function stepHtml(s, thinkMode){
     think = '<div class="think-block">' +
       '<div class="think-head"><span class="think-ico">◌</span>' +
       '<span class="think-label">想法</span>' +
+      '<span class="think-meta">' + th.length + ' 字</span>' +
       (long ? '<span class="think-more" onclick="toggleThink(this)">展开</span>' : '') +
       '</div>' +
       '<div class="think-body">' + esc(shown) + '</div>' +
@@ -5161,8 +5164,17 @@ function stepHtml(s, thinkMode){
   return '<div class="step ' + (bad ? 'bad' : 'ok') + '">' + act + think + diffHtml(s) + obs + '</div>';
 }
 
-function toggleThink(el){
-  var blk = el.closest('.think-block');
+/* 跑着的思考块可能比可视区高：每次重绘后把滚动条压到底，
+   不然新写的推理落在可视区外面，用户以为它没在想了。 */
+function scrollThink(){
+  var bs = document.querySelectorAll('.think-block.live .think-body');
+  for (var i=0;i<bs.length;i++){
+    var el = bs[i];
+    if (el.scrollHeight > el.clientHeight + 4) el.scrollTop = el.scrollHeight;
+  }
+}
+
+function toggleThink(el){  var blk = el.closest('.think-block');
   if (!blk) return;
   var full = blk.querySelector('.think-full');
   var body = blk.querySelector('.think-body');
@@ -5479,6 +5491,7 @@ function updateLiveProgress(st){
     var thinkMode = (st.status === 'running') ? true : undefined;
     for (var j = 0; j < steps.length; j++) h += stepHtml(steps[j], thinkMode);
     sc.innerHTML = h;
+    scrollThink();
   }
 
   // ③ 进行中的虚拟行：每轮只改 textContent，不重建（重建会让 spinner 重启动画）
@@ -6123,8 +6136,9 @@ function renderFlow(sess, st){
   html += askBubble();
   html += liveBox(st);
   thread.innerHTML = html;
-  // streamOut 现在挂在 body 上，不会跟着 thread.innerHTML 被冲掉，
-  // 所以这里不需要重新挂载。挂回 #thread 的那些逻辑正是浮窗一直闪的原因。
+  scrollThink();
+  // streamOut 挂在 body 上，不会跟着 thread.innerHTML 被冲掉，所以这里不用重挂；
+  // 挂回 #thread 的那些逻辑正是浮窗一直闪的原因。
   bindMsgOps();
   if (wasAtBottom) thread.scrollTop = thread.scrollHeight;
 }

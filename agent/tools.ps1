@@ -353,7 +353,16 @@ function Trim-AiText {
     param([string]$Text)
     if ([string]::IsNullOrEmpty($Text)) { return '' }
     if ($Text.Length -le $script:MaxOutput) { return $Text }
-    return $Text.Substring(0, $script:MaxOutput) + "`n...[已截断，共 $($Text.Length) 字符]"
+    # 头尾都留：工具输出常常「开头是标题、结尾是报错/统计」，只留开头会把
+    # 最关键的失败原因砍掉（实测跑脚本失败时，模型看到的是前 2000 字正常输出，
+    # 看不到最后的 Exception，于是以为成功了，接着往下做）。
+    # 头部 70% + 尾部 30%，中间给一句省略说明。
+    $headLen = [int]($script:MaxOutput * 0.7)
+    $tailLen = $script:MaxOutput - $headLen
+    $omitted = $Text.Length - $headLen - $tailLen
+    return $Text.Substring(0, $headLen) +
+           "`n...[中间省略 $omitted 字符，共 $($Text.Length) 字符；末尾保留]...`n" +
+           $Text.Substring($Text.Length - $tailLen)
 }
 
 # 统一决定写文件用什么编码，所有写操作都必须走这里：
@@ -2542,17 +2551,16 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                     return '（你没写想法。把「要做什么、先做哪步、怎么判断做对了」写进 content）'
                 }
 
-                # 把想法原样回显，而不是只说「记下了」。
+                # 回显计划，但压缩成「摘要」。
                 #
-                # 原来这里返回的是「（想法已记下。现在开始动手，别再重复这段推理。）」——
-                # 结果模型的计划根本没留在上下文里。实测「把文件按类型归类」：
-                # 第 1 步 think 明明写了「归类后要 move_path」，
-                # 后面却只调了 make_dir 和 find_files（同一个 find_files 连调 3 次），
-                # 一次 move_path 都没有 —— 它把自己的计划忘了。
-                #
-                # 回显的作用等于给自己留一张待办条：每轮都能看到「当初说要干什么」。
-                return ('（想法已记下。你的计划是：' + $wTrim + "`n" +
-                        '现在照着这个计划往下做，别再写一遍同样的推理。）')
+                # 原来是把整段想法原样回显（实测一段 300+ 字）—— 这确实帮模型
+                # 记住自己的计划（不回显时它会把计划忘掉），但每一轮都把同一段
+                # 再算一遍 prefill，CPU 上等于白烧几秒。
+                # 现在只留前 140 字的要点 + 一句约束：计划还在，token 少一半以上。
+                $wEcho = $wTrim
+                if ($wEcho.Length -gt 140) { $wEcho = $wEcho.Substring(0, 140).TrimEnd() + '…（后略）' }
+                return ('（想法已记下。要点：' + $wEcho + "`n" +
+                        '按这个要点往下做，别再写一遍同样的推理。）')
             }
 
             'rethink' {
