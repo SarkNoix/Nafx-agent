@@ -5706,6 +5706,14 @@ if (now - lastPull < 150) return;
   fetchJson('/api/stream?since=' + streamSeq)
     .then(function(j){
       if (!j) return;
+      // 流被重写过（新一轮任务把 stream.jsonl 清空、seq 从 1 重新开始），
+      // 后端会带 reset:true。这时候必须把本地的 seq 和已显示的文字一起清掉，
+      // 否则新内容 seq 都小于本地 record，全被去重丢掉 ——
+      // 界面上「正在回答」会一直挂着上一轮的字，只能刷新页面才恢复。
+      // 本地也兜一层：返回的最大 seq 比手里的小，同样按重写处理。
+      if (j.reset || (typeof j.seq === 'number' && j.seq > 0 && j.seq < streamSeq)) {
+        resetStream();
+      }
       if (j.items && j.items.length){
         for (var i=0;i<j.items.length;i++){
           var it = j.items[i];
@@ -6399,6 +6407,19 @@ function tick(){
       var busy = (st && st.status === 'running');
       var wasBusy = !!window.__lastBusy;
       window.__lastBusy = busy;
+      // 新一轮刚开始（idle → running）：立刻把上一轮的流文字清掉并马上拉一次增量。
+      // 原来要等到下面「任务名变了」才 reset —— 连着跑同一个任务名时判断不出来，
+      // 上一轮的「正在回答」就串到这一轮，看起来像卡住了。
+      if (busy && !wasBusy) {
+        resetStream();
+        streamSeq = 0;
+        window.__lastTask = true;
+        window.__lastTaskText = String(st.task || '');
+        pullStream();
+        fetchJson('/api/session').then(function(s0){
+          if (s0) { window.__lastSess = s0; renderFlow(s0, st); }
+        }).catch(function(){});
+      }
       // 任务刚结束：立即补一次 session，别等慢通道的 8 轮（空闲时约 12 秒）——
       // 用户看到的「做完了半天不显示最后一条回答」就是这一步等出来的。
       if (wasBusy && !busy) {

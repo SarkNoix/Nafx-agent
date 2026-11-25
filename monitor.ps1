@@ -632,6 +632,48 @@ function Build-MergedState {
             }
         } catch { }
 
+        # 心跳冻结检测（自愈）。
+        #
+        # 现象：任务早跑完了，面板底下还挂着「正在想 / running」，非得手动刷新才变。
+        # 原因不是前端轮询坏了，而是 state.json 里 status 停在 running：
+        # agent 被 kill、写终态时正好撞上文件锁、或者进程崩在收尾那一步。
+        #
+        # agent 的心跳（.hb.json）每秒写一次 elapsed，进程没了 elapsed 就冻结在同一值。
+        # 判据：① elapsed 连续 12 秒不动；② state/心跳文件也 12 秒没更新。
+        # 命中就把终态写回文件：有答案 → done，没答案 → interrupted。
+        # 只在「文件已经冷了」时才动手，正常跑着（心跳在跳）永远不会误伤。
+        $nowEl = 0.0
+        try { $nowEl = [double]$main.elapsed } catch { }
+        $slotKey = 0
+        try { $slotKey = [int]$main.slot } catch { }
+        if (-not $script:ElWatch) { $script:ElWatch = @{} }
+        $w = $script:ElWatch[$slotKey]
+        if ($w -and ([Math]::Abs($nowEl - [double]$w.v) -lt 0.5)) {
+            $frozenSec = ((Get-Date) - [datetime]$w.at).TotalSeconds
+            # 只对「进程确实不在了」的槽位自愈。
+            # 进程还活着的场景（比如 run_cmd 跑一个 30 秒的命令，这期间既不写 state
+            # 也没有心跳）elapsed 也会短暂冻结 —— 那种情况绝不能改状态，
+            # 否则会把正在跑的任务提前标成 done。
+            $alive = $false
+            try {
+                $wp = $Workers[$slotKey]
+                if ($wp -and -not $wp.HasExited) { $alive = $true }
+            } catch { }
+            if (-not $alive -and $frozenSec -ge 12 -and $staleSec -gt 12) {
+                $hasAns = ([string]$main.answer).Trim().Length -gt 0
+                $main.status = if ($hasAns) { 'done' } else { 'interrupted' }
+                $main.phase = if ($hasAns) { '完成' } else { '运行已停止（心跳中断）' }
+                try {
+                    $healFile = Get-SlotStateFile $slotKey
+                    $main | ConvertTo-Json -Depth 10 | Set-Content $healFile -Encoding UTF8
+                } catch { }
+                $script:ElWatch[$slotKey] = @{ v = 0.0; at = (Get-Date) }
+                try { Write-PanelLog ('state 心跳冻结 ' + $frozenSec + 's，已自愈为 ' + $main.status) 'WARN' } catch { }
+            }
+        } else {
+            $script:ElWatch[$slotKey] = @{ v = $nowEl; at = (Get-Date) }
+        }
+
         # 25 秒这个阈值不能太死。
         # 调度器是「先把 state 写成 running，再 Start-Process」，中间有几秒空窗；
         # 面板正好在那几秒里轮询，就会看到 running 但找不到进程 ——
@@ -1186,8 +1228,8 @@ while ($listener.IsListening) {
                     if ($mSince.Success) { $since = [int]$mSince.Groups[1].Value }
 
                     $sf = Join-Path $Root 'agent\stream.jsonl'
-                    $items = @()
-                    $maxSeq = $since
+                    $all = @()
+                    $fileMax = 0
                     if (Test-Path $sf) {
                         try {
                             # agent 正在写的时候也能读，所以要 FileShare.ReadWrite
@@ -1202,15 +1244,23 @@ while ($listener.IsListening) {
                                 try {
                                     $o = $ln | ConvertFrom-Json
                                     $sq = [int]$o.seq
-                                    if ($sq -gt $maxSeq) { $maxSeq = $sq }
-                                    if ($sq -gt $since) {
-                                        $items += [pscustomobject]@{ seq = $sq; kind = [string]$o.kind; text = [string]$o.text }
-                                    }
+                                    if ($sq -gt $fileMax) { $fileMax = $sq }
+                                    $all += [pscustomobject]@{ seq = $sq; kind = [string]$o.kind; text = [string]$o.text }
                                 } catch { }
                             }
                         } catch { }
                     }
-                    $payload = [pscustomobject]@{ seq = $maxSeq; items = @($items) } |
+
+                    # 新一轮任务开始时 agent 会清空 stream.jsonl，seq 从 1 重新开始。
+                    # 面板还记着上一轮的 max seq（比如 300），于是它只请求 since=300，
+                    # 而新文件最大才 50 —— 结果什么增量都收不到，界面上「正在回答」
+                    # 一直挂着上一轮的字，必须刷新页面（seq 归零）才恢复。
+                    # 这里显式告诉客户端「流已经重来过了」，让它把手里的 seq/文本清掉。
+                    $rewound = ($since -gt 0 -and $since -gt $fileMax)
+                    if ($rewound) { $since = 0 }
+
+                    $items = @($all | Where-Object { $_.seq -gt $since })
+                    $payload = [pscustomobject]@{ seq = $fileMax; items = $items; reset = $rewound } |
                                ConvertTo-Json -Depth 5 -Compress
                     Send-Text -Response $resp -Text $payload
                 }
