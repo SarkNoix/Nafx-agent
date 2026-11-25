@@ -1678,4 +1678,23 @@
       }
     }
   }
-]
+,
+  {
+    "type": "function",
+    "function": {
+      "name": "split_task",
+      "description": "把一条复杂长任务拆成 2~4 片，交给面板按顺序一片片跑（每片是一次独立运行，上下文干净、能各自跑很久）。简单任务不要用这个，直接做完。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tasks": {
+            "type": "string",
+            "description": "每行一片，一共 2~4 行。每片写一句能独立执行的任务：做什么、产出什么、做完怎么算对。按先后顺序写。"
+          }
+        },
+        "required": [
+          "tasks"
+        ]
+      }
+    }
+  }]

@@ -2611,6 +2611,31 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                 return ($msg + "`n（已告诉用户。继续说下一步，别停在这儿。）")
             }
 
+            'split_task' {
+                # 只有 MAX 档能拿到这个工具：把一条复杂任务拆成 2~4 片，交给面板排队。
+                # 这里只负责把片写进一个文件，真正入队由 monitor 在本次收工后做 ——
+                # agent 进程自己去改 queue.json 会和面板的写入打架。
+                $raw = [string]$Action.tasks
+                $lines = @($raw -split "`r?`n" | ForEach-Object {
+                    $t = $_.Trim()
+                    $t = $t -replace '^\d+[\.\)、]\s*', '' -replace '^[-*·]\s*', ''
+                    $t
+                } | Where-Object { $_ })
+                if ($lines.Count -lt 2) {
+                    return ('只拆出 ' + @($lines.Count) + ' 片。简单任务别拆，直接做完更省时间；' +
+                            '真要拆就把 tasks 写成 2~4 行，每行一句能独立执行的任务。')
+                }
+                if ($lines.Count -gt 5) { $lines = @($lines | Select-Object -First 5) }
+                $path = [string]$env:NAFX_SPLIT
+                if (-not $path) { $path = Join-Path $PSScriptRoot 'logs\split-manual.json' }
+                $arr = @($lines | ForEach-Object { [pscustomobject]@{ task = $_ } })
+                $json = ConvertTo-Json -InputObject $arr -Depth 3 -Compress
+                [IO.File]::WriteAllText($path, $json, (New-Object Text.UTF8Encoding($false)))
+                return ('已拆成 ' + $lines.Count + ' 片，会按顺序排在当前任务之后跑：' + "`n" +
+                        (($lines | ForEach-Object { '  · ' + $_ }) -join "`n") +
+                        "`n现在用 say 说一句「任务较大，已拆成 N 片依次执行」，然后调 finish 结束这一片（拆解）。")
+            }
+
             default {
                 throw "未知工具：$tool"
             }

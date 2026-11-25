@@ -45,6 +45,20 @@ $Reasoning = [Math]::Max(0, [Math]::Min(4, [int]$Reasoning))
 $script:ReasoningLevel = $Reasoning
 $ReasoningNames = @('关闭', '弱', '标准', '强', 'MAX')
 
+# 这次跑的是「分片」（面板把 MAX 拆出来的子任务排进队列，一片一片跑）。
+# 分片里不许再拆 —— 不然一片套一片永远拆不完。
+# 由面板通过环境变量传进来；手跑 agent 时自然为 $false。
+$script:NoSplit = ($env:NAFX_NOSPLIT -eq '1')
+# 分片/续跑时读的是同一条任务的计划与进度文件（见下面「计划落盘」）。
+$script:PlanFile = Join-Path $AgentDir 'logs\plan.md'
+$script:ProgressFile = Join-Path $AgentDir 'logs\progress.md'
+# 新任务开跑先把上一轮的这两个文件清掉；分片自己跑时保留 ——
+# 那正是同一条任务的接力棒，清掉就等于让后一片从零开始。
+if (-not $script:NoSplit) {
+    try { if (Test-Path $script:PlanFile) { Remove-Item -LiteralPath $script:PlanFile -Force } } catch { }
+    try { if (Test-Path $script:ProgressFile) { Remove-Item -LiteralPath $script:ProgressFile -Force } } catch { }
+}
+
 # api-key.json 顶部带 # 填写说明，直接 ConvertFrom-Json 会失败。
 # 这里只剥整行注释，正文仍是严格 JSON。
 function Read-JsonFile([string]$Path) {
@@ -975,7 +989,7 @@ function Trim-ToolsToBudget {
     param([string[]]$Names, [int]$Budget)
 
     # 无论如何都要留的：没它们干不成活
-    $mustKeep = @('think', 'note', 'finish', 'say', 'rethink', 'plan', 'skill',
+    $mustKeep = @('think', 'note', 'finish', 'say', 'rethink', 'plan', 'skill', 'split_task',
                   'file_editor', 'git', 'web_search', 'web_fetch',
                   'read_file', 'write_file', 'append_file', 'list_dir')
 
@@ -1525,6 +1539,16 @@ function Invoke-Model {
     # 「比别的档宽松」，不是「永不收口」。
     $maxTok = if ($MaxTokens -gt 0) { $MaxTokens } else { [int]$Cfg.maxTokens }
     if ($Reasoning -eq 4 -and -not $script:IsApiMode) { $maxTok = 1500 }
+    # 请求超时跟着输出额度走。
+    # 本地 3~3.5 tok/s：600 token ≈ 180 秒（240 够），1500 token ≈ 450 秒（240 不够）。
+    # 原来一刀切 stepTimeoutSeconds，MAX 等于「必被掐」—— 被掐后框架还重试一次，
+    # 又白烧一遍 240 秒，看起来就是原地打转。
+    $script:StepTimeoutSec = [int]$Cfg.stepTimeoutSeconds
+    if (-not $script:IsApiMode) {
+        $needSec = [int]([Math]::Ceiling($maxTok * 0.33)) + 30
+        if ($needSec -gt $script:StepTimeoutSec) { $script:StepTimeoutSec = $needSec }
+    }
+    $timeoutSec = $script:StepTimeoutSec
     $script:Degenerate = $false
 
     $jsonBody = '{"model":' + (To-JsonStr $script:ApiModelName) + ',"messages":[' + ($msgJson -join ',') + ']' +
@@ -1584,8 +1608,11 @@ function Invoke-Model {
             $req.ContentType = 'application/json; charset=utf-8'
             # 接口模式要带 Bearer 令牌；本地 llama 不需要（留空就是不加）。
             if ($script:ApiKey) { $req.Headers.Add('Authorization', 'Bearer ' + $script:ApiKey) }
-            $req.Timeout = [int]$Cfg.stepTimeoutSeconds * 1000
-            $req.ReadWriteTimeout = [int]$Cfg.stepTimeoutSeconds * 1000
+            # 超时按「这次要吐多少字」算，别再一刀切 stepTimeoutSeconds。
+            # MAX 一步 1500 token，本地实测 3~3.5 tok/s ≈ 450 秒；按 240 秒算，
+            # 它根本吐不完就被掐断，表现就是「写到一半停了 / 从头复读」。
+            $req.Timeout = [int]$timeoutSec * 1000
+            $req.ReadWriteTimeout = [int]$timeoutSec * 1000
             $req.ContentLength = $bytes.Length
             $reqStream = $req.GetRequestStream()
             $reqStream.Write($bytes, 0, $bytes.Length)
@@ -2520,6 +2547,17 @@ try {
 } catch { }
 }
 
+# MAX 档额外给一条「拆片」的路：复杂长任务先拆成 2~4 片，交给面板排队一片一片跑。
+# 别的档不给 —— 短任务拆片只是多绕一圈。分片自己跑的时候（$script:NoSplit）也不给，
+# 不然一片套一片，永远拆不完。
+if ($Reasoning -eq 4 -and -not $script:NoSplit -and
+    $script:ToolSchemaMap.ContainsKey('split_task') -and
+    (@($script:ActiveFlowTools) -notcontains 'split_task')) {
+    $script:ActiveFlowTools = @($script:ActiveFlowTools) + @('split_task')
+    $toolsJson = Get-ToolsJsonWithFinish -Names @($script:ActiveFlowTools)
+    Write-Log '  MAX 档补上 split_task（复杂任务可拆片）'
+}
+
 # 把以前踩过的坑带上（这是"从失败里学"的地方）
 #
 # 注意：不再拼进 system。经验是按任务挑的，每条任务可能不同；
@@ -2556,11 +2594,45 @@ switch ($Reasoning) {
     1 { $reasonBody = '弱。只抓主干：想一步「先做什么」就动手，别铺完整计划；一次能做完的事不要拆成多步。' }
     2 { $reasonBody = '标准。动手前想清楚三件事：入口是什么、输入输出各是什么、出错时怎么办。做完自检一次——结果对不对、有没有漏掉原话里的要求，有问题就修一次再收尾。' }
     3 { $reasonBody = '强。先在心里列 3–5 步计划再动手；考虑边界情况（文件不存在、命令报错、路径带空格）；每步做完看一眼返回值是否印证预期，偏了就修正再继续；收尾前对照用户原话逐项确认。' }
-    4 { $reasonBody = 'MAX。计划要写全，不用为了省 token 把计划压成一行：第一轮用 think 列出目标、3–6 步计划、可能失败的两处、备选做法；按计划执行，每步检查结果并更新计划；同一问题连续两次没进展就换做法；收尾前逐条核对用户原话里的每个要求，缺一项就补上。注意：可以写得详细，但不许灌水、不许把同一句话或数字串反复打印——写够了就调 finish 收尾。' }
+    4 { $reasonBody = @'
+MAX。想法要写在文件里，不要全堆在回复里 —— 这台机器上下文只有六千，一步写满下一步就没得用了：
+1) 第一轮先调 plan 把计划列全（目标、3~6 步、可能失败的两处、备选做法）；列完后按它走，不重复列。
+2) 大段内容一律落到文件：先 write_file 建文件，再用 append_file 一块一块加，每块 300~400 字。
+   聊天里只说「写好了 xxx / 改好了 xxx」，不要把文件内容在回复里复述一遍。
+   单步输出上限 1500 token，够写 4~5 块；写完就调 finish 或继续下一步，别硬撑到被截断。
+3) 每步做完先看返回值，再和计划对一下；同一问题连续两次没进展就换做法，别原样重试。
+4) 判断这活超过 6 步、或者要同时动好几个文件时，不要硬扛：用 split_task 拆成 2~4 片
+   （每片一句能独立执行的任务，按先后顺序），面板会一片接一片跑，计划和进度文件会传下去。
+   简单任务（一句话能做完）不要拆，直接做完更省时间。
+5) 收尾前逐条核对用户原话里的每个要求，缺一项就补上。
+不许灌水、不许把同一句话或数字串反复打印 —— 写够了就调 finish 收尾。
+'@ }
 }
 if ($reasonBody) {
     $sysFull = $sysFull + "`n`n## 推理力度：$($ReasoningNames[$Reasoning])`n`n" + $reasonBody
     Write-Log ("  推理力度：" + $ReasoningNames[$Reasoning])
+}
+
+# 分片 / 续跑：把上一位留下的计划和进度带进来。
+# 只读文件、不走模型，几十 token 的事；比把上一步原文搬进对话便宜两个数量级。
+if ($script:NoSplit) {
+    try {
+        if (Test-Path $script:PlanFile) {
+            $planMd = ([IO.File]::ReadAllText($script:PlanFile, [Text.Encoding]::UTF8)).Trim()
+            if ($planMd.Length -gt 800) { $planMd = $planMd.Substring(0, 800) + "`n…（后面截断了，需要时用 read_file 看 agent\logs\plan.md）" }
+            $sysFull = $sysFull + "`n`n## 这条任务的计划（你正在执行其中一片，照它接着做）`n`n" + $planMd
+        }
+        if (Test-Path $script:ProgressFile) {
+            $pl = @(Get-Content -LiteralPath $script:ProgressFile -Encoding UTF8 -ErrorAction SilentlyContinue |
+                    Where-Object { $_.Trim() })
+            if ($pl.Count -gt 0) {
+                $pl = @($pl | Select-Object -Last 8)
+                $sysFull = $sysFull + "`n`n## 前面已经做完的（别重做，只补还没做的）`n`n" + ($pl -join "`n")
+            }
+        }
+    } catch { }
+    $sysFull = $sysFull + "`n`n## 这一片怎么跑`n`n" +
+        "这是同一条任务里的一片，不要再用 split_task 拆了。做完这一片就 finish，说清这一片做成了什么、还剩什么没做。"
 }
 
 # 用户从面板「上下文注入」里写的背景（config.self.json 的 contextInject）。
@@ -3884,6 +3956,13 @@ Add-SessionNote -Text $bcSay -Kind 'say'
         $state.plan = $rawPlan
         $planText = Format-PlanList -Steps $planList
 
+        # 计划落盘。分片跑的时候，下一片只能靠这个文件知道「整条任务要做什么」——
+        # 让模型在对话里复述计划，几十上百 token 就得一直占着上下文。
+        try {
+            $md = "# 任务：$TaskText`n`n" + (($planList | ForEach-Object { '- [ ] ' + [string]$_.text }) -join "`n")
+            [IO.File]::WriteAllText($script:PlanFile, $md, (New-Object Text.UTF8Encoding($false)))
+        } catch { }
+
         # ---- 量化检查：步骤是不是太空泛 ----
         # 太空泛的步骤等于没计划（"统计文件数量" 这种，做完也不知道算不算完）。
         # 判断标准：有没有说用什么工具/方法，或者说清产出什么。
@@ -4081,6 +4160,18 @@ Add-SessionNote -Text $bcSay -Kind 'say'
                        fp2 = [string]$act.command; diff = $stepDiff }
 
     if ($ok -and $planList.Count -gt 0) { $planList = Set-PlanStepDone -Plan $planList }
+
+    # 进度落盘：做成一步就追加一行。
+    # 下一片 / 断点续跑时只带最近几行，就知道前面做到哪儿了 ——
+    # 比让模型自己回忆「我上一步干了什么」可靠得多。
+    if ($ok -and $script:ReasoningLevel -ge 3) {
+        try {
+            $one = ((([string]$obs -split "`n")[0]) -replace '\s+', ' ').Trim()
+            if ($one.Length -gt 110) { $one = $one.Substring(0, 110) + '…' }
+            $line = '- 第' + $step + '步 ' + $toolName + '：' + $one
+            Add-Content -LiteralPath $script:ProgressFile -Value $line -Encoding UTF8
+        } catch { }
+    }
 
     $state.elapsed = $clock.Elapsed.TotalSeconds
     Write-State $state

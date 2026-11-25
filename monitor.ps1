@@ -331,6 +331,11 @@ function Save-Queue {
             # 同理：reasoning 也得落盘。漏了它，排在前面的任务重启面板后就
             # 退回默认「标准」，用户下半句改成 MAX 也传不到 agent。
             reasoning = $(if ($it.PSObject.Properties.Name -contains 'reasoning' -and $null -ne $it.reasoning) { [int]$it.reasoning } else { 2 })
+            # 拆片/续跑标记同样必须落盘：
+            #   nosplit  这一片不许再拆（agent 侧会带上上一片的计划和进度接着做）
+            #   cont     已经自动续跑过几次，防止一条废任务无限续下去
+            nosplit = [bool]($it.PSObject.Properties.Name -contains 'nosplit' -and $it.nosplit)
+            cont    = $(if ($it.PSObject.Properties.Name -contains 'cont' -and $null -ne $it.cont) { [int]$it.cont } else { 0 })
         }
         [void]$sb.Append(($o | ConvertTo-Json -Depth 6 -Compress))
     }
@@ -339,7 +344,8 @@ function Save-Queue {
 }
 
 function Add-QueueItem {
-    param([string]$TaskText, [int]$Priority = 5, [string]$Mode = 'normal', [int]$Reasoning = 2)
+    param([string]$TaskText, [int]$Priority = 5, [string]$Mode = 'normal', [int]$Reasoning = 2,
+          [switch]$NoSplit, [int]$Cont = 0)
     # 模式随任务入队，调度时再传给 agent。
     #   normal 常规 / work 工作（步数多、先列计划）/ auto 自主（禁止提问）
     # 写错了一律当 normal，别因为一个参数拼错任务就跑不起来。
@@ -360,6 +366,9 @@ function Add-QueueItem {
         doneAt    = ''
         result    = ''
         slot      = ''
+        # 拆片 / 续跑标记，调度时传给 agent（见 Dispatch 里的 NAFX_NOSPLIT）
+        nosplit   = [bool]$NoSplit
+        cont      = [int]$Cont
     }
     [void]$items.Add($item)
     Save-Queue $items
@@ -379,6 +388,65 @@ function Set-QueueStatus {
         }
     }
     Save-Queue $items
+}
+
+# 一条任务收工后的「接力」：拆片 / 续跑。
+#
+# 为什么要在这儿做：
+#   ① 分片：MAX 档的模型可以把复杂任务拆成几片（调 split_task），但 agent 进程自己
+#      改 queue.json 会和面板的写入打架，所以它只往 logs\split-<id>.json 写清单，
+#      由这里读出来排进队列。每片是一次独立运行 —— 上下文干净，能各自跑满步数。
+#   ② 续跑：步数用尽 / 超时 / 出错时，不直接把任务判死，而是带着
+#      logs\plan.md + logs\progress.md 再排一次，最多续 2 次。
+#      长任务在 8 核 CPU、3 tok/s 的机器上必然要跨好几次运行，这是唯一可行的形态。
+function Continue-QueueItem {
+    param($Item, $St)
+
+    if (-not $Item) { return }
+    $mode = 'normal'
+    if ($Item.PSObject.Properties.Name -contains 'mode' -and $Item.mode) { $mode = [string]$Item.mode }
+    if ($mode -notin @('normal', 'work', 'auto')) { $mode = 'normal' }
+    $reason = 3
+    if ($Item.PSObject.Properties.Name -contains 'reasoning' -and $null -ne $Item.reasoning) { $reason = [int]$Item.reasoning }
+    # 分片一律按「强」跑：MAX 的 1500 token 额度是给「一次想清楚全局」的，
+    # 片是边界明确的小活，用强更省时间。
+    if ($reason -gt 3) { $reason = 3 }
+    $prio = 5
+    if ($Item.PSObject.Properties.Name -contains 'priority' -and $null -ne $Item.priority) { $prio = [int]$Item.priority }
+
+    # ---- ① 模型自己拆的片 ----
+    $splitFile = Join-Path $Root ('agent\logs\split-' + [string]$Item.id + '.json')
+    if (Test-Path $splitFile) {
+        $parts = $null
+        try { $parts = @(Get-Content -LiteralPath $splitFile -Raw -Encoding UTF8 | ConvertFrom-Json) } catch { }
+        try { Remove-Item -LiteralPath $splitFile -Force -ErrorAction SilentlyContinue } catch { }
+        if ($parts -and @($parts).Count -ge 1) {
+            $n = @($parts).Count
+            $k = 0
+            foreach ($p in $parts) {
+                $k++
+                $t = ([string]$p.task).Trim()
+                if (-not $t) { continue }
+                [void](Add-QueueItem -TaskText ('【第 ' + $k + '/' + $n + ' 片】' + $t) `
+                        -Priority $prio -Mode $mode -Reasoning $reason -NoSplit)
+            }
+            Write-PanelLog ('任务 ' + [string]$Item.id + ' 拆成 ' + $n + ' 片，已按顺序排队')
+            return
+        }
+    }
+
+    # ---- ② 没跑完就续跑 ----
+    if ($St -and [string]$St.status -in @('maxsteps', 'timeout', 'error', 'failed')) {
+        $cont = 0
+        if ($Item.PSObject.Properties.Name -contains 'cont' -and $null -ne $Item.cont) { $cont = [int]$Item.cont }
+        if ($cont -lt 2) {
+            $task = '继续上一条没做完的任务：' + [string]$Item.task + "`n" +
+                    '（先 read_file 看 agent\logs\plan.md 和 agent\logs\progress.md，' +
+                    '从还没做的那步接着做；已经做完的不要重做。）'
+            [void](Add-QueueItem -TaskText $task -Priority $prio -Mode $mode -Reasoning $reason -NoSplit -Cont ($cont + 1))
+            Write-PanelLog ('任务 ' + [string]$Item.id + ' 没跑完（' + [string]$St.status + '），已自动续跑第 ' + ($cont + 1) + ' 次')
+        }
+    }
 }
 
 function Get-SlotStateFile([int]$slot) {
@@ -403,6 +471,7 @@ function Invoke-Dispatch {
             if ($st) { $ans = [string]$st.answer }
 
             $items = Get-Queue
+            $doneItem = $null
             foreach ($it in $items) {
                 if ($it.status -eq 'running' -and [string]$it.slot -eq [string]$slot) {
                     $finalStatus = 'done'
@@ -410,9 +479,14 @@ function Invoke-Dispatch {
                     $it.status = $finalStatus
                     $it.doneAt = (Get-Date -Format 'MM-dd HH:mm:ss')
                     $it.result = $ans
+                    $doneItem = $it
                 }
             }
             Save-Queue $items
+            # 收工之后才谈接力：拆片排队 / 没跑完的续跑
+            try { Continue-QueueItem -Item $doneItem -St $st } catch {
+                Write-PanelLog ('接力失败：' + $_.Exception.Message) 'WARN'
+            }
             $Workers.Remove($slot)
 
             # 这个槽位收工，顺手把它的 state 标成结束，别让面板一直显示 running
@@ -449,6 +523,17 @@ function Invoke-Dispatch {
         $nextReason = 2
         if ($next.PSObject.Properties.Name -contains 'reasoning' -and $null -ne $next.reasoning) { $nextReason = [int]$next.reasoning }
         $nextReason = [Math]::Max(0, [Math]::Min(4, $nextReason))
+
+        # 拆片文件 & 分片标记，用环境变量交给 agent：
+        #   NAFX_SPLIT    agent 调 split_task 时把片清单写到这里（按任务 id 一份）
+        #   NAFX_NOSPLIT  这条是「一片」，不许再拆；agent 会带上 plan.md / progress.md 接着做
+        # 每次跑之前清掉旧清单，免得把上一条任务的片当成本条的。
+        $splitPath = Join-Path $Root ('agent\logs\split-' + [string]$next.id + '.json')
+        try { if (Test-Path $splitPath) { Remove-Item -LiteralPath $splitPath -Force } } catch { }
+        $env:NAFX_SPLIT = $splitPath
+        $isSlice = $false
+        if ($next.PSObject.Properties.Name -contains 'nosplit' -and $next.nosplit) { $isSlice = $true }
+        $env:NAFX_NOSPLIT = $(if ($isSlice) { '1' } else { '' })
 
         # 各模式的步数上限要和 agent.ps1 里的判断一致，
         # 不然面板显示的 maxSteps 和实际跑的不一样。
