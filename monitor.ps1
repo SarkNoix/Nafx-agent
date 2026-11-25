@@ -1718,6 +1718,24 @@ while ($listener.IsListening) {
                 }
 
 
+                # 模型服务状态：给面板轮询用。
+                # 面板不能直接打 8080（跨域、超时不可控），而且「加载中」和「没起来」
+                # 在 503 和连不上之间是两种完全不同的意思 —— 只看 503 会误报成挂了。
+                '/api/llama' {
+                    $lp = 8080
+                    try { if ($Cfg.port) { $lp = [int]$Cfg.port } } catch { }
+                    $up = $false; $loading = $false
+                    try {
+                        $null = Invoke-WebRequest ("http://127.0.0.1:$lp/health") -UseBasicParsing -TimeoutSec 3
+                        $up = $true
+                    } catch {
+                        $code = 0
+                        try { $code = [int]$_.Exception.Response.StatusCode } catch { $code = 0 }
+                        if ($code -eq 503) { $loading = $true; $up = $true }
+                    }
+                    Send-Text -Response $resp -Text ('{"up":' + $(if($up){'true'}else{'false'}) + ',"loading":' + $(if($loading){'true'}else{'false'}) + '}')
+                }
+
                 '/api/restart' {
                     if ($method -ne 'POST') { Send-Text -Response $resp -Text '{"ok":false}' -Code 405; break }
                     Send-Text -Response $resp -Text '{"ok":true,"msg":"正在重启模型服务"}'

@@ -1098,6 +1098,17 @@ main{position:relative;z-index:1;flex:1;display:flex;min-height:0}
   border-color:rgba(184,116,0,.35);background:rgba(255,180,60,.18);color:#8a5200;
 }
 .fa-note{font-size:10.5px;color:var(--faint)}
+.fa-svc{margin-top:9px;font-size:10.5px;color:var(--faint);display:flex;align-items:center;gap:5px}
+.fa-svc i{width:5px;height:5px;border-radius:99px;background:var(--faint);flex-shrink:0}
+.fa-svc.ok{color:#63c98a}
+.fa-svc.ok i{background:#63c98a;box-shadow:0 0 5px rgba(99,201,138,.55)}
+.fa-svc.load{color:#e0b25c}
+.fa-svc.load i{background:#e0b25c}
+.fa-svc.bad{color:#e27474}
+.fa-svc.bad i{background:#e27474}
+[data-theme="light"] .fa-svc.ok,[data-theme="dsh"] .fa-svc.ok,[data-theme="su"] .fa-svc.ok{color:#2a8a55}
+[data-theme="light"] .fa-svc.load,[data-theme="dsh"] .fa-svc.load,[data-theme="su"] .fa-svc.load{color:#9a6a10}
+[data-theme="light"] .fa-svc.bad,[data-theme="dsh"] .fa-svc.bad,[data-theme="su"] .fa-svc.bad{color:#b04040}
 .reason-about p{margin:0 0 8px}
 .ra-lead{color:#b6becb}
 .ra-row{display:flex;gap:7px;align-items:flex-start;margin:0 0 7px}
@@ -3940,6 +3951,7 @@ header #btnModel,header #btnQueue,header #btnJobs,header #btnHist,header #btnSet
               <li><b>配 KV 量化才最划算</b>：KV 还是 f16 时收益有限；KV 量化成 q8_0 / q4_0 时则必须开，否则 llama 拒绝启动。</li>
               <li><b>个别情况会起不来</b>：模型或后端不支持时服务会启动失败，那就关掉再重启一次。</li>
             </ul>
+            <div class="fa-svc" id="faSvc">模型服务：检查中…</div>
             <div class="fa-actions">
               <button class="fa-apply" id="faApply">开启</button>
               <span class="fa-note">改完自动重启模型</span>
@@ -6972,6 +6984,32 @@ function faClose(){
   if (btn) btn.setAttribute('aria-expanded','false');
 }
 
+// 模型服务状态：面板不直连 8080，统一走 monitor 的 /api/llama，
+// 这样「加载中」和「没起来」能分开显示，不会把 503 误报成挂了。
+function faSvcPaint(state, text){
+  var el = $('faSvc');
+  if (!el) return;
+  el.className = 'fa-svc' + (state ? ' ' + state : '');
+  var i;
+  for (i = el.childNodes.length - 1; i >= 0; i--){
+    if (el.childNodes[i].nodeType === 3) el.removeChild(el.childNodes[i]);
+  }
+  var dot = el.querySelector('i');
+  if (!dot) { dot = document.createElement('i'); el.appendChild(dot); }
+  el.appendChild(document.createTextNode(text));
+}
+
+function faHealth(cb){
+  fetch('/api/llama?t=' + Date.now()).then(function(r){ return r.json(); }).then(function(h){
+    faSvcPaint(h && h.up ? (h.loading ? 'load' : 'ok') : 'bad',
+      h && h.up ? (h.loading ? '模型服务：加载中…' : '模型服务：就绪') : '模型服务：没起来');
+    if (cb) cb(h);
+  }).catch(function(){
+    faSvcPaint('bad', '模型服务：状态未知');
+    if (cb) cb(null);
+  });
+}
+
 function bindFa(){
   var btn = $('faBtn'), pop = $('faPop'), ap = $('faApply');
   if (!btn || !pop) return;
@@ -6981,7 +7019,7 @@ function bindFa(){
     pop.classList.toggle('on', !open);
     btn.setAttribute('aria-expanded', open ? 'false' : 'true');
     // 每次打开都重读一次：设置页或别的窗口可能改过 flashAttn，别显示旧值
-    if (!open) faRead();
+    if (!open) { faRead(); faHealth(); }
   };
   pop.onclick = function(e){ e.stopPropagation(); };
   document.addEventListener('click', function(){ if (pop.classList.contains('on')) faClose(); });
@@ -6998,17 +7036,31 @@ function bindFa(){
         faOn = want; faPaint();
         toast(want ? '已开启，正在重启模型（约 30 秒）' : '已关闭，正在重启模型（约 30 秒）');
         fetch('/api/restart', {method:'POST'}).catch(function(){});
-        // 重启期间保持脉冲；35 秒后解锁并重读配置，确认值没被服务端改回去
-        clearTimeout(faTimer);
-        faTimer = setTimeout(function(){
-          faBusy = false; faPaint(); faClose();
-          faRead(function(){
-            toast(faOn === want
-              ? '模型已重启，Flash Attention = ' + (faOn ? '开' : '关')
-              : '配置被改回去了，现在实际是「' + (faOn ? '开' : '关') + '」', faOn !== want);
-            lastSig = ''; setTimeout(tick, 600);
+        // 不再死等固定 35 秒：轮询真实服务状态。
+        // 前 5 秒先避开「旧进程还没被杀掉」的窗口期，否则第一眼就看到 up，会误判成功。
+        var t0 = Date.now();
+        function poll(){
+          faHealth(function(h){
+            var waited = Date.now() - t0;
+            if (h && h.up && !h.loading && waited > 6000) {
+              faBusy = false; faPaint();
+              faRead(function(){
+                toast(faOn === want
+                  ? '模型已就绪，Flash Attention = ' + (faOn ? '开' : '关')
+                  : '配置被改回去了，现在实际是「' + (faOn ? '开' : '关') + '」', faOn !== want);
+                lastSig = ''; setTimeout(tick, 600);
+              });
+              return;
+            }
+            if (waited > 70000) {
+              faBusy = false; faPaint();
+              toast('模型 70 秒还没起来：去看 logs\\server.err.log，多半是 -fa 这个参数没被支持', true);
+              return;
+            }
+            setTimeout(poll, 2000);
           });
-        }, 35000);
+        }
+        setTimeout(poll, 5000);
       })
       .catch(function(e){
         faBusy = false; faPaint();
@@ -7016,6 +7068,7 @@ function bindFa(){
       });
   };
   faRead();
+  faHealth();
 }
 
 function submit(){
