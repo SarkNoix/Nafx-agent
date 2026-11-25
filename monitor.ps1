@@ -418,7 +418,14 @@ function Continue-QueueItem {
     $splitFile = Join-Path $Root ('agent\logs\split-' + [string]$Item.id + '.json')
     if (Test-Path $splitFile) {
         $parts = $null
-        try { $parts = @(Get-Content -LiteralPath $splitFile -Raw -Encoding UTF8 | ConvertFrom-Json) } catch { }
+        # 注意：PowerShell 5.1 里 `@(字符串 | ConvertFrom-Json)` 遇到顶层 JSON 数组
+        # 会把整个数组当成「一个元素」（Count=1），三片会被压成一片、任务文本还粘在一起。
+        # 所以先落到变量，再 @($parsed)：$parsed 是 Object[] 时这样才真的按元素展开。
+        try {
+            $splitRaw = Get-Content -LiteralPath $splitFile -Raw -Encoding UTF8
+            $parsed = ConvertFrom-Json -InputObject $splitRaw
+            $parts = @($parsed)
+        } catch { }
         try { Remove-Item -LiteralPath $splitFile -Force -ErrorAction SilentlyContinue } catch { }
         if ($parts -and @($parts).Count -ge 1) {
             $n = @($parts).Count
