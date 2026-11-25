@@ -6616,9 +6616,12 @@ function reasonParticles(){
     var x0 = cx + (Math.random() * 6 - 3);
     d.style.transform = 'translate3d(' + (x0 - sz/2).toFixed(1) + 'px,' + (y0 - sz/2).toFixed(1) + 'px,0) scale(.35)';
     fx.appendChild(d);
-    var len = 70 + Math.random() * 120;
+    // 飞行距离随档位拉长，MAX 最远，但不越过轨道左端
+    var base = [0, 62, 96, 130, 180][curReason] || 62;
+    var room = Math.max(30, cx - m.pad + 8);
+    var len = Math.min(base * (0.85 + Math.random() * 0.3), room);
     var drift = Math.random() * 14 - 7;
-    var dur = 900 + Math.random() * 800;        // 慢：0.9–1.7 秒才飘完
+    var dur = 800 + len * 3.2 + Math.random() * 320;   // 飞得远，飘得也久一点
     var delay = Math.random() * 260;
     var anim = d.animate([
       { transform: 'translate3d(' + (x0 - sz/2).toFixed(1) + 'px,' + (y0 - sz/2).toFixed(1) + 'px,0) scale(.35)', opacity: 0 },
@@ -6631,12 +6634,14 @@ function reasonParticles(){
 
 function setReason(v, burst){
   v = Math.max(0, Math.min(4, v | 0));
-  var changed = (v !== curReason);
+  var prev = curReason;
+  var changed = (v !== prev);
   curReason = v;
   try { localStorage.setItem('nafx-reason', String(v)); } catch(_){}
   layoutReason();
   if (changed) reasonStarSpeed();
-  if (burst && changed) reasonParticles();
+  // 只有往右加力才喷粒子；反向拖回来（降档）不触发
+  if (burst && changed && v > prev) reasonParticles();
 }
 
 function bindReason(){
