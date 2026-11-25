@@ -2619,6 +2619,9 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                 $lines = @($raw -split "`r?`n" | ForEach-Object {
                     $t = $_.Trim()
                     $t = $t -replace '^\d+[\.\)、]\s*', '' -replace '^[-*·]\s*', ''
+                    # 模型常自己写「第 1 片：」「第2片、」这种序号，入队时外层还会再加【第 k/N 片】，
+                    # 不剥掉就变成「【第 1/2 片】第 1 片：……」，读起来重复。
+                    $t = $t -replace '^第\s*[0-9０-９一二三四五六七八九十]+\s*[片步]\s*[：:、.。]?\s*', ''
                     $t
                 } | Where-Object { $_ })
                 if ($lines.Count -lt 2) {
