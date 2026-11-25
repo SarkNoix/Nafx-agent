@@ -2554,6 +2554,8 @@ $script:AskedQuestions = @()
 # 工作模式下「必须先 plan」的打回次数。同样限 2 次。
 $script:planNudge = 0
 $script:thinkNudge = 0
+# 自愈：同一步骤重复时先要求换方法，只给一次机会（见「同一目标重复」那段）
+$script:HealedOnce = $false
 # finish 时「任务要文件但一个都没写」的打回次数。同样限 2 次。
 $script:fileNudge = 0
 # finish 时「任务是归类/整理但一个文件都没挪」的打回次数。同样限 2 次。
@@ -3939,18 +3941,32 @@ Add-SessionNote -Text $bcSay -Kind 'say'
         $history += @{ role = 'user'; content = "你刚才已经对 $stepArg 用过 $toolName 了，结果就在上面的观察里。**别对同一个目标重复操作**——要改方式就换工具（比如覆盖了想追加，用 append_file），否则直接 finish。" }
         Write-Log ("  [绕圈] " + $toolName + " 对同一个目标第 " + ($sameToolCount + 1) + " 次")
     }
-    # 对同一个目标重复 3 次，用已有结果收尾，别再烧步数
+    # 对同一个目标重复 3 次：先要求换方法（自愈），换完还不行才收尾。
+    # 直接拿半截观察结果收尾是原来最差的一步 —— 4B 的典型死法是
+    # 「同一个 write_file 写三遍还是错」，换一条路（run_cmd 一条命令 / 先读再改）
+    # 才有救，硬收尾只会把错答案交出去。
     if ($sameToolCount -ge 2) {
-        $finalObs = ($obs -split "`n" | Where-Object { $_.Trim() } | Select-Object -First 8) -join '；'
-        $state.status = 'done'
-        $state.answer = if ($finalObs) { $finalObs } else { '没能完成这个任务' }
-        $state.elapsed = $clock.Elapsed.TotalSeconds
-        $state.summary = $state.answer
-        Write-State $state
-        Write-Log ("  " + $toolName + " 对同一个目标做了 " + ($sameToolCount + 1) + " 次，强制收尾")
-        Write-Closing -State $state -Status 'done' -Summary $state.summary -StepCount $step
-        $finished = $true
-        break
+        if (-not $script:HealedOnce) {
+            $script:HealedOnce = $true
+            $tried = (@($state.steps | Select-Object -Last 4 | ForEach-Object { [string]$_.tool + '(' + [string]$_.arg + ')' }) -join ' → ')
+            $history += @{ role = 'user'; content = "你已经在用 $toolName 对同一个目标试了第三次（$tried）。**别再重复同一条路**：换成另一种做法（比如改用 run_cmd 一条命令直接拿结果，或者 read_file 看清楚内容再改），做完直接 finish 给结果；实在做不了就 finish 说明卡在哪一步、为什么做不到。" }
+            try {
+                Add-Lesson -Task '通用' -Mistake ('对同一目标重复 ' + $toolName + ' ' + $stepArg) `
+                    -Fix '换工具或换成一条命令做完，不要重复同一调用；做不了就直接说明卡点' -Source 'self-heal' | Out-Null
+            } catch { }
+            Write-Log '  [自愈] 同一动作第 3 次，先要求换方法，不直接收尾'
+        } else {
+            $finalObs = ($obs -split "`n" | Where-Object { $_.Trim() } | Select-Object -First 8) -join '；'
+            $state.status = 'done'
+            $state.answer = if ($finalObs) { $finalObs } else { '没能完成这个任务' }
+            $state.elapsed = $clock.Elapsed.TotalSeconds
+            $state.summary = $state.answer
+            Write-State $state
+            Write-Log ("  " + $toolName + " 对同一个目标做了 " + ($sameToolCount + 1) + " 次，换方法也没成，收尾")
+            Write-Closing -State $state -Status 'done' -Summary $state.summary -StepCount $step
+            $finished = $true
+            break
+        }
     }
 
     # ---- list_dir 之后别挨个 read_file：只写在 prompt.md，不在这里硬拦 ----

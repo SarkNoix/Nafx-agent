@@ -45,6 +45,18 @@ function Say {
     if (-not $Quiet) { Write-Output $Text }
 }
 
+# 预热状态：面板要能看见「还在预热、大概还要多久」。
+# 没有这个文件的时候，面板只能看到一个几分钟不动的界面，第一次用的人会以为挂了。
+$warmStatePath = Join-Path $NafxRoot 'logs\warmup-state.json'
+function Write-WarmState($Obj) {
+    try {
+        $o = [ordered]@{}
+        foreach ($k in $Obj.Keys) { $o[$k] = $Obj[$k] }
+        $o['at'] = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+        [IO.File]::WriteAllText($warmStatePath, ($o | ConvertTo-Json -Compress), (New-Object Text.UTF8Encoding($false)))
+    } catch { }
+}
+
 $promptPath = Join-Path $NafxRoot 'agent\prompt.md'
 if (-not (Test-Path $promptPath)) { Say '找不到 agent\prompt.md，跳过预热'; exit 0 }
 $system = [IO.File]::ReadAllText($promptPath, [Text.Encoding]::UTF8)
@@ -133,15 +145,43 @@ try {
 # 明确按 UTF-8 发字节，交给 5.1 自己按 charset 编码容易出岔子
 $bytes = [Text.Encoding]::UTF8.GetBytes($body)
 
+# 粗估：中文约 3.3 字符 / token，CPU 实测 26–33 tok/s，再留 4 秒收尾。
+$estTokens = [Math]::Round($body.Length / 3.3)
+$estSeconds = [Math]::Round($estTokens / 26 + 4)
+$warmStartIso = (Get-Date).ToString('o')
+Write-WarmState @{
+    status = 'running'
+    mode = $(if ($replay) { 'replay' } else { 'synthetic' })
+    started = (Get-Date).ToString('HH:mm:ss')
+    startAt = $warmStartIso
+    estTokens = [int]$estTokens
+    estSeconds = [int]$estSeconds
+}
+
 $t0 = Get-Date
 try {
     $r = Invoke-RestMethod "http://127.0.0.1:$port/v1/chat/completions" -Method Post `
         -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec 600
 } catch {
+    Write-WarmState @{ status = 'failed'; mode = $(if ($replay) { 'replay' } else { 'synthetic' })
+        startAt = $warmStartIso; estSeconds = [int]$estSeconds; error = $_.Exception.Message }
     Say ('预热失败：' + $_.Exception.Message)
     exit 0
 }
 $sec = ((Get-Date) - $t0).TotalSeconds
+
+$warmPrompt = 0; $warmCache = 0
+try { if ($r.timings.prompt_n) { $warmPrompt = [int]$r.timings.prompt_n } } catch { }
+try { if ($r.timings.cache_n) { $warmCache = [int]$r.timings.cache_n } } catch { }
+Write-WarmState @{
+    status = 'done'
+    mode = $(if ($replay) { 'replay' } else { 'synthetic' })
+    startAt = $warmStartIso
+    estSeconds = [int]$estSeconds
+    elapsed = [Math]::Round($sec, 1)
+    promptN = $warmPrompt
+    cacheN = $warmCache
+}
 
 $logDir = Join-Path $NafxRoot 'logs'
 if (Test-Path $logDir) {

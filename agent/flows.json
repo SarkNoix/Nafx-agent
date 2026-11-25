@@ -859,6 +859,207 @@
         "追加完不验证"
       ],
       "example": "任务：往 log.txt 末尾追加一行：任务完成\n→ read_file(log.txt)\n→ append_file(log.txt, \"任务完成\")\n→ read_file 确认\n→ finish"
+    },
+    {
+      "id": "tidy_desktop",
+      "name": "整理桌面 / 按类型归档",
+      "tools": [
+        "plan",
+        "think",
+        "list_dir",
+        "file_info",
+        "make_dir",
+        "move_path",
+        "find_files",
+        "file_editor",
+        "skill",
+        "note",
+        "finish"
+      ],
+      "match": [
+        "整理一下桌面",
+        "整理桌面",
+        "收拾桌面",
+        "桌面太乱",
+        "桌面一堆",
+        "清理桌面"
+      ],
+      "goal": "桌面上该归类的文件都挪进分类目录，用户能从结果里看出挪了什么",
+      "suggest_tools": [
+        "list_dir",
+        "move_path",
+        "make_dir"
+      ],
+      "reject_tools": [
+        "write_file",
+        "replace_in_file",
+        "zip_dir",
+        "delete_path"
+      ],
+      "steps": [
+        {
+          "need": "拿到文件清单",
+          "do": "list_dir 看桌面有什么（路径用任务给的，没给就用 桌面 的绝对路径）",
+          "n": 1
+        },
+        {
+          "need": "目录建出来了",
+          "do": "按类型分类：图片/文档/安装包/压缩包/其他，用 make_dir 建好分类目录",
+          "n": 2
+        },
+        {
+          "need": "挪完后目录里能看到文件",
+          "do": "move_path 逐个挪；同名冲突就加后缀，别覆盖",
+          "n": 3
+        },
+        {
+          "need": "答案里有目录名和数量",
+          "do": "finish 列出「分类目录 ← 挪了几个文件」，别只报数量",
+          "n": 4
+        }
+      ],
+      "cheatsheet": [
+        "看桌面：list_dir(path=\"C:\\Users\\Administrator\\Desktop\")",
+        "建目录：make_dir(path=\"...\\Desktop\\图片\")",
+        "挪文件：move_path(src=\"...\\Desktop\\a.jpg\", dst=\"...\\Desktop\\图片\\a.jpg\")"
+      ],
+      "forbid": [
+        "直接删文件（整理是挪，不是删）",
+        "覆盖同名文件",
+        "把整个桌面挪进一个目录"
+      ],
+      "example": "任务：帮我整理桌面\\n→ list_dir(Desktop)\\n→ make_dir(Desktop\\图片 / 文档 / 安装包)\\n→ move_path 逐个挪\\n→ finish 报「图片 12 个、文档 5 个…」"
+    },
+    {
+      "id": "tidy_downloads",
+      "name": "归档下载 / 按日期分类",
+      "tools": [
+        "plan",
+        "think",
+        "list_dir",
+        "file_info",
+        "make_dir",
+        "move_path",
+        "find_files",
+        "skill",
+        "note",
+        "finish"
+      ],
+      "match": [
+        "归档下载",
+        "下载目录归档",
+        "下载太乱",
+        "把下载目录"
+      ],
+      "goal": "下载目录里的文件按日期或类型进了子目录，能找到",
+      "suggest_tools": [
+        "list_dir",
+        "move_path",
+        "make_dir"
+      ],
+      "reject_tools": [
+        "delete_path",
+        "write_file",
+        "replace_in_file"
+      ],
+      "steps": [
+        {
+          "need": "拿到清单和时间",
+          "do": "list_dir 看下载目录，记下文件修改时间",
+          "n": 1
+        },
+        {
+          "need": "目录存在",
+          "do": "按年月建目录（如 2026-11），make_dir",
+          "n": 2
+        },
+        {
+          "need": "文件已在新目录",
+          "do": "move_path 按修改时间挪进去",
+          "n": 3
+        },
+        {
+          "need": "有目录名 + 数量",
+          "do": "finish 报每个目录挪了几个",
+          "n": 4
+        }
+      ],
+      "cheatsheet": [
+        "看目录带时间：list_dir(path=\"C:\\Users\\Administrator\\Downloads\")",
+        "建目录：make_dir(path=\"...\\Downloads\\2026-11\")",
+        "挪：move_path(src=..., dst=...)"
+      ],
+      "forbid": [
+        "删文件",
+        "覆盖同名",
+        "把目录里所有东西都挪走（安装包/进行中的下载可以留下）"
+      ],
+      "example": "任务：把下载目录按月份归档\\n→ list_dir(Downloads)\\n→ make_dir(Downloads\\2026-11)\\n→ move_path\\n→ finish"
+    },
+    {
+      "id": "clean_temp",
+      "name": "清理临时文件 / 先列后删",
+      "tools": [
+        "plan",
+        "think",
+        "list_dir",
+        "find_files",
+        "file_info",
+        "delete_path",
+        "skill",
+        "note",
+        "finish"
+      ],
+      "match": [
+        "清理临时",
+        "清理一下临时文件",
+        "垃圾文件",
+        "清一下缓存"
+      ],
+      "goal": "先列出将被删的文件和总大小，确认后才删；不碰系统目录",
+      "suggest_tools": [
+        "find_files",
+        "delete_path",
+        "file_info"
+      ],
+      "reject_tools": [
+        "move_path",
+        "write_file",
+        "replace_in_file"
+      ],
+      "steps": [
+        {
+          "need": "清单拿到",
+          "do": "find_files 找 *.tmp / *.log 之类，先只列清单和大小",
+          "n": 1
+        },
+        {
+          "need": "有数量有大小",
+          "do": "汇报「共 N 个、M MB，删不删」；任务明确说删才删",
+          "n": 2
+        },
+        {
+          "need": "删除结果",
+          "do": "明确要删才 delete_path；只删清单里的，不扩范围",
+          "n": 3
+        },
+        {
+          "need": "数字对得上",
+          "do": "finish 报删了多少、剩多少",
+          "n": 4
+        }
+      ],
+      "cheatsheet": [
+        "找临时文件：find_files(pattern=\"*.tmp\")",
+        "看大小：file_info(path=...)",
+        "删：delete_path(path=...)"
+      ],
+      "forbid": [
+        "删 Windows / Program Files / 用户文档目录",
+        "任务没说删就自己删",
+        "删完不给清单"
+      ],
+      "example": "任务：清理一下临时文件\\n→ find_files(*.tmp)\\n→ 报「12 个，共 340 MB，要删吗」\\n→（明确要删）delete_path\\n→ finish"
     }
   ]
 }

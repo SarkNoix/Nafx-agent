@@ -482,6 +482,33 @@ function Get-UsageTotals {
     return [pscustomobject]$u
 }
 
+function Get-WarmupState {
+    $d = [ordered]@{
+        status = 'idle'; mode = ''; elapsed = 0; estSeconds = 0; remaining = 0
+        promptN = 0; cacheN = 0; started = ''
+    }
+    try {
+        $p = Join-Path $Root 'logs\warmup-state.json'
+        if (Test-Path $p) {
+            $o = [IO.File]::ReadAllText($p, [Text.Encoding]::UTF8) | ConvertFrom-Json
+            foreach ($k in @($d.Keys)) { if ($null -ne $o.$k) { $d[$k] = $o.$k } }
+            # 只在「刚启动的那几分钟」认这个 running：进程被杀掉时文件会停在 running，
+            # 不设上限的话面板会一直显示「预热中」，比不显示更误导。
+            if ($d['status'] -eq 'running') {
+                $startAt = $null
+                try { $startAt = [datetime]::Parse([string]$o.startAt, [Globalization.CultureInfo]::InvariantCulture) } catch { }
+                if ($startAt) {
+                    $el = ((Get-Date) - $startAt).TotalSeconds
+                    $d['elapsed'] = [Math]::Round($el, 0)
+                    $d['remaining'] = [Math]::Max(0, [Math]::Round([double]$d['estSeconds'] - $el, 0))
+                    if ($el -gt 300) { $d['status'] = 'stale' }
+                }
+            }
+        }
+    } catch { }
+    return [pscustomobject]$d
+}
+
 function Get-MergedState {
     $list = @()
     for ($slot = 1; $slot -le $WorkerCount; $slot++) {
@@ -519,7 +546,7 @@ function Get-MergedState {
             maxSteps = [int]$Cfg.maxSteps; elapsed = 0; model = [string]$Cfg.modelLabel
             workspace = [string]$Cfg.workspace; answer = ''; plan = ''; summary = ''
             logFile = ''; workers = @()
-            usage = (Get-UsageTotals)
+            usage = (Get-UsageTotals); warmup = (Get-WarmupState)
         }
     }
 
@@ -656,6 +683,8 @@ if ($script:agentMissStreak -ge 2 -and -not $hasAgent -and -not $hasResult -and 
         workers   = $summary
         # 累计用量（跨任务、跨重启），面板顶栏「总用量」就是它
         usage     = (Get-UsageTotals)
+        # 预热进度（启动后后台预热 prompt 前缀时给个「还剩约 N 秒」）
+        warmup    = (Get-WarmupState)
     }
 }
 
