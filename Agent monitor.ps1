@@ -73,6 +73,9 @@ $script:PanelStart = ''
 $script:TaskStartedAt = [datetime]::MinValue
 $script:LastHistory = ''
 $script:LastLlamaLine = ''
+$script:PanelFail = 0
+$script:PanelDown = $false
+$script:PanelStartAt = [datetime]::MinValue
 
 # 当前任务
 $script:CurrentTask = ''          # 面板发来、尚未结束的任务文本
@@ -127,6 +130,49 @@ function Cut([string]$Text, [int]$Max) {
     return $s
 }
 
+# 窗口里长句自动折行：续行缩进到信息列，不再贴着左边乱窜
+function Write-WrappedConsole([string]$Prefix, [string]$Text, [string]$Color) {
+    $width = 118
+    try { $w = [Console]::WindowWidth; if ($w -ge 40) { $width = $w - 1 } } catch { }
+    $pad = Get-DisplayWidth $Prefix
+    $avail = $width - $pad
+    if ($avail -lt 24) { $avail = 24 }
+    $rest = $Text
+    $first = $true
+    while ($rest.Length -gt 0) {
+        $take = 0
+        $sum = 0
+        while ($take -lt $rest.Length) {
+            $cw = if ([int]$rest[$take] -ge 0x2E80) { 2 } else { 1 }
+            if ($sum + $cw -gt $avail) { break }
+            $sum += $cw
+            $take++
+        }
+        if ($take -le 0) { $take = 1 }
+        if ($take -lt $rest.Length) {
+            # 回退到最近的空格或标点，别把词切成两半
+            $min = [Math]::Max(4, [int]($take * 0.6))
+            for ($i = $take - 1; $i -ge $min; $i--) {
+                if ("$($rest[$i])" -eq ' ' -or "$($rest[$i])" -eq '，' -or "$($rest[$i])" -eq '、' -or
+                    "$($rest[$i])" -eq '。' -or "$($rest[$i])" -eq '：' -or "$($rest[$i])" -eq '；' -or
+                    "$($rest[$i])" -eq '）' -or "$($rest[$i])" -eq '·' -or "$($rest[$i])" -eq '|') {
+                    $take = $i + 1
+                    break
+                }
+            }
+        }
+        $chunk = $rest.Substring(0, $take).TrimEnd()
+        $rest = $rest.Substring($take).TrimStart()
+        if ($chunk.Length -eq 0) { continue }
+        if ($first) {
+            Write-Host ($Prefix + $chunk) -ForegroundColor $Color
+            $first = $false
+        } else {
+            Write-Host ((' ' * $pad) + $chunk) -ForegroundColor $Color
+        }
+    }
+}
+
 function Add-Record {
     param(
         [datetime]$Time,
@@ -139,6 +185,7 @@ function Add-Record {
     if ([string]::IsNullOrWhiteSpace($Type)) { $Type = '信息' }
     if ([string]::IsNullOrWhiteSpace($Source)) { $Source = '-' }
     $msg = Flatten $Message
+    if ($Type -eq '警告' -and $msg.Length -gt 320) { $msg = $msg.Substring(0, 319) + '…' }
     if ($msg.Length -gt 2000) { $msg = $msg.Substring(0, 1999) + '…' }
     $stamp = $Time.ToString('yyyy-MM-dd HH:mm:ss')
     $line = '[' + $stamp + '][' + $Type + '][' + $Source + ']' + $msg
@@ -174,8 +221,7 @@ function Add-Record {
     if ($pad -eq 2) { $showType = $Type + [string][char]0x3000 }
     $showType = Pad-Display $showType 6
     $showSrc = Pad-Display $Source 14
-    $show = '[' + $stamp + '][' + $showType + '][' + $showSrc + ']' + $msg
-    Write-Host $show -ForegroundColor $color
+    Write-WrappedConsole ('[' + $stamp + '][' + $showType + '][' + $showSrc + ']') $msg $color
 }
 
 function Get-FileLength([string]$Path) {
@@ -330,6 +376,7 @@ function Handle-PanelLine([string]$Line) {
         if ($msg -match '^进程 PID\s+(\d+)') {
             $detail = $script:PanelStart
             $script:PanelStart = ''
+            $script:PanelStartAt = $t
             Add-Record $t '生命周期' '面板' ('面板启动：' + $detail + '，PID ' + $matches[1])
             return
         }
@@ -413,7 +460,12 @@ function Handle-WarmupLine([string]$Line) {
 # ---------- llama ----------
 function Get-ReqLabel {
     if ($script:CurrentTask) { return '第 ' + $script:ReqSeq + ' 次请求' }
-    return '预热/面板外的请求'
+    # llama 刚起来时的请求基本就是预热
+    try {
+        $p = @(Get-Process -Name 'llama-server' -ErrorAction SilentlyContinue | Select-Object -First 1)
+        if ($p.Count -gt 0 -and ((Get-Date) - $p[0].StartTime).TotalMinutes -lt 10) { return '预热请求' }
+    } catch { }
+    return '面板外的请求'
 }
 
 function Handle-LlamaLine([string]$Line) {
@@ -430,6 +482,9 @@ function Handle-LlamaLine([string]$Line) {
         $rel = $matches[1]; $lvl = $matches[2]; $body = $matches[3]
     }
     $t = if ($rel) { Convert-LlamaTime $rel } else { Get-Date }
+
+    # 去掉 llama 的模块前缀：srv server_setup: / load: 这类对读日志没意义
+    $body = $body -replace '^(\S+\s+)?[a-z_0-9]{2,}:\s+', ''
 
     # 启动噪声：系统信息、模型加载细节
     if ($body -match 'get_availabl|selected slot|n_past was set|need to evaluate at least|graph reallocs|graphs reused|total time|n_ctx_slot|print_info|llama_model_loader|load_tensors|common_init|srv init|sampler|system_info|main: |warming up|HTTP server is listening|server is listening|slot init: |slot new|launch_slot_: id -1|get_available_slot') {
@@ -454,7 +509,10 @@ function Handle-LlamaLine([string]$Line) {
         return
     }
     if ($body -match 'listening on|server is listening|HTTP server listening') {
-        Add-Record $t '生命周期' 'llama' ('llama 开始监听：' + $body)
+        $url = $body
+        $m2 = [regex]::Match($body, 'https?://\S+')
+        if ($m2.Success) { $url = $m2.Value }
+        Add-Record $t '生命周期' 'llama' ('llama 开始监听 ' + $url)
         return
     }
 
@@ -497,11 +555,11 @@ function Handle-LlamaLine([string]$Line) {
             if ($hit -lt 0) { $hit = 0 }
             $parts = @('输入 ' + $n + ' tok，缓存命中 ' + $hit + '，重算 ' + $r.PromptTok,
                        '等首字 ' + ([Math]::Round($r.PromptMs / 1000, 1)) + ' 秒')
-            if ($r.GenTok -gt 0) {
+            if ($r.GenTok -gt 1) {
                 $tps = if ($r.GenMs -gt 0) { [Math]::Round($r.GenTok * 1000 / $r.GenMs, 1) } else { 0 }
                 $parts += '生成 ' + $r.GenTok + ' tok / ' + ([Math]::Round($r.GenMs / 1000, 1)) + ' 秒（' + $tps + ' tok/s）'
             } else {
-                $parts += '没有生成'
+                $parts += '只算输入、不生成（预热）'
             }
             Add-Record $t '模型' 'llama' ((Get-ReqLabel) + '结束：' + ($parts -join '，'))
         } else {
@@ -690,17 +748,24 @@ function Get-PanelPid {
 
 function Test-Url([string]$Url) {
     try {
-        $r = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 2
+        $r = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 3
         return ($r.StatusCode -eq 200)
     } catch { return $false }
 }
 
+# 探活失败再补一次，模型满载 CPU 时第一次超时不代表真挂了
+function Test-UrlSoft([string]$Url) {
+    if (Test-Url $Url) { return $true }
+    Start-Sleep -Milliseconds 400
+    return (Test-Url $Url)
+}
+
 function Get-Snapshot {
-    $panel = Test-Url ($script:PanelUrl + '/')
+    $panel = Test-UrlSoft ($script:PanelUrl + '/')
     $model = 'down'
     if ($script:ModelMode -eq 'api') {
         $model = 'api'
-    } elseif (Test-Url ($script:ModelUrl + '/health')) {
+    } elseif (Test-UrlSoft ($script:ModelUrl + '/health')) {
         $model = 'ok'
     }
     $llama = @(Get-Process -Name 'llama-server' -ErrorAction SilentlyContinue)
@@ -718,19 +783,28 @@ function Update-Status {
     $new = Get-Snapshot
     if ($null -eq $script:Snapshot) { $script:Snapshot = $new; return }
     $old = $script:Snapshot
-    if ($new.Panel -ne $old.Panel) {
-        if ($new.Panel) { Add-Record (Get-Date) '生命周期' '面板' '面板恢复响应' }
-        else { Add-Record (Get-Date) '故障' '面板' '面板没有响应（健康检查失败）' }
+
+    # 面板连续两次探活失败才算挂起，避免模型满载时误报；恢复只报一次
+    if ($new.Panel) { $script:PanelFail = 0 } else { $script:PanelFail = [int]$script:PanelFail + 1 }
+    if (-not $old.Panel -and $new.Panel) {
+        if ($script:PanelDown) { Add-Record (Get-Date) '生命周期' '面板' '面板恢复响应'; $script:PanelDown = $false }
+    } elseif ($old.Panel -and -not $new.Panel) {
+        if ($script:PanelFail -ge 2 -and -not $script:PanelDown) {
+            Add-Record (Get-Date) '故障' '面板' '面板没有响应（连续两次探活失败）'
+            $script:PanelDown = $true
+        }
     }
-    if ($new.Model -ne $old.Model) {
+    if ($new.Model -ne $old.Model -and $new.Model -ne 'api' -and $old.Model -ne 'api') {
         if ($new.Model -eq 'ok') { Add-Record (Get-Date) '生命周期' '模型' '模型服务恢复' }
-        elseif ($new.Model -eq 'down') { Add-Record (Get-Date) '故障' '模型' '模型服务没有响应' }
+        elseif ($new.Model -eq 'down' -and $old.Model -eq 'ok') { Add-Record (Get-Date) '故障' '模型' '模型服务没有响应' }
     }
     if ($new.LlamaCount -ne $old.LlamaCount -or $new.LlamaPids -ne $old.LlamaPids) {
         if ($new.LlamaCount -gt 0) { Add-Record (Get-Date) '生命周期' 'llama' ('llama 进程启动，PID ' + $new.LlamaPids) }
         elseif ($old.LlamaCount -gt 0) { Add-Record (Get-Date) '故障' 'llama' ('llama 进程停止，原 PID ' + $old.LlamaPids) }
     }
-    if ($new.PanelPid -ne $old.PanelPid) {
+    # 面板自己在日志里报了启动（PID 行）时，这里不再重复报一次“面板重启”
+    $pidChangeFresh = ((Get-Date) - $script:PanelStartAt).TotalSeconds -lt 15
+    if ($new.PanelPid -ne $old.PanelPid -and -not $pidChangeFresh) {
         if ($new.PanelPid -gt 0 -and $old.PanelPid -gt 0) {
             Add-Record (Get-Date) '生命周期' '面板' ('面板重启，PID ' + $old.PanelPid + ' → ' + $new.PanelPid)
         } elseif ($new.PanelPid -gt 0) {
@@ -755,6 +829,7 @@ function Scan-Logs {
     foreach ($line in $r.Lines) { Handle-PanelLine $line }
     if ($script:PanelStart) {
         Add-Record (Get-Date) '生命周期' '面板' ('面板启动：' + $script:PanelStart)
+        $script:PanelStartAt = Get-Date
         $script:PanelStart = ''
     }
 
