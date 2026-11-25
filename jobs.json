@@ -5,7 +5,7 @@
     {
       "id": "daily-disk-report",
       "name": "每天体检：磁盘 + 日志目录",
-      "enabled": true,
+      "enabled": false,
       "when": "daily 02:40",
       "mode": "auto",
       "priority": 8,
