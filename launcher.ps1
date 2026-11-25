@@ -131,6 +131,10 @@ if (-not (Test-AiUp)) {
         # 相邻的 KV 块，少做一次整段 prefill。
         '--cache-prompt',
         '--cache-reuse', '256',
+        # KV 缓存落盘目录。预热脚本跑完会把 slot 存到这里，下次启动先 restore，
+        # 把「重启后等 90~110 秒重新 prefill」变成「几秒读盘」。
+        # 不传这个参数时 /slots?action=save 默认是 disabled，直接报错。
+        '--slot-save-path', (Join-Path $Root 'cache\slots'),
         '--load-mode', $loadMode,
         '--prio', $prio,
         '--timeout', '600'
@@ -210,6 +214,9 @@ if (-not (Test-AiUp)) {
     # 之前用 Start-Process 直接起，脚本进程一退出，服务会被一起带走
     # （表现为：刚启动时 health 正常，几秒后进程消失、端口连不上）。
     # /b 表示不开新窗口，重定向在 cmd 层做，保证日志照常写入。
+    # llama 不会自己建 slot 目录，路径不存在时启动会失败
+    try { New-Item -ItemType Directory -Force -Path (Join-Path $Root 'cache\slots') | Out-Null } catch { }
+
     $argLine = ($argList | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }) -join ' '
     $outLog = Join-Path $LogDir 'server.out.log'
     $errLog = Join-Path $LogDir 'server.err.log'

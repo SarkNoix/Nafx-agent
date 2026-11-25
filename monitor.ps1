@@ -512,7 +512,7 @@ function Get-UsageTotals {
 function Get-WarmupState {
     $d = [ordered]@{
         status = 'idle'; mode = ''; elapsed = 0; estSeconds = 0; remaining = 0
-        promptN = 0; cacheN = 0; started = ''
+        promptN = 0; cacheN = 0; started = ''; restored = $false
     }
     try {
         $p = Join-Path $Root 'logs\warmup-state.json'

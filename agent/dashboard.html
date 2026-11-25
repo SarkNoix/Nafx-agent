@@ -5317,17 +5317,27 @@ function renderLiveMeter(st){
   live.classList.toggle('fresh', running);
 
   /* 预热进度。启动后 launcher 会在后台重放上一次请求，把提示词前缀算进 KV 缓存；
-     这段时间面板不该是一片死寂 —— 显示「预热中 · 还剩约 N 秒」。 */
+     有磁盘缓存时只有一两秒（restored），没有时才是真跑 90 秒以上。
+     坑：remaining 归零后不能再用 || 回退到 estSeconds —— 那会让倒计时跳回原估计值，
+     看着就像「一直卡在还剩 86 秒」。 */
   var wr = (st && st.warmup) || null;
   var warmEl = $('hWarm');
   if (warmEl) {
     if (wr && wr.status === 'running') {
-      var left = Number(wr.remaining) || Number(wr.estSeconds) || 0;
+      var est = Number(wr.estSeconds); if (!isFinite(est) || est < 0) { est = 0; }
+      var rem = Number(wr.remaining); if (!isFinite(rem)) { rem = est; }
+      var went = Math.round(Number(wr.elapsed) || 0);
+      var label;
+      if (wr.restored) { label = '预热中 · 读缓存'; }
+      else if (rem > 0) { label = '预热中 · 还剩约 ' + Math.ceil(rem) + ' 秒'; }
+      else { label = (went >= est + 8) ? '预热中 · 比预计慢一些' : '预热中 · 快好了'; }
       warmEl.hidden = false;
       warmEl.className = 'h-warm on';
-      warmEl.textContent = '预热中 · 还剩约 ' + (left > 0 ? Math.ceil(left) : '?') + ' 秒';
-      warmEl.title = '启动后先把提示词和工具前缀算进缓存，预热完第一个任务会快很多。'
-        + (wr.elapsed ? '（已经跑了 ' + Math.round(Number(wr.elapsed) || 0) + ' 秒）' : '');
+      warmEl.textContent = label;
+      warmEl.title = (wr.restored
+          ? '从磁盘读回上次存下的 KV 缓存，通常一两秒就好。'
+          : '启动后先把提示词和工具前缀算进缓存，预热完第一个任务会快很多。')
+        + (went ? '（已经跑了 ' + went + ' 秒）' : '');
     } else {
       warmEl.hidden = true;
       warmEl.className = 'h-warm';

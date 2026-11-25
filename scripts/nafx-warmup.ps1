@@ -97,9 +97,30 @@ try {
     if ($cfg.port) { $port = [int]$cfg.port }
 } catch { }
 
-# 服务没起来就别硬等，静默退出 —— 这是给 launcher 兜底用的
-try { $h = Invoke-RestMethod "http://127.0.0.1:$port/health" -TimeoutSec 3 } catch { Say '模型服务没起来，跳过预热'; exit 0 }
-if ($h.status -ne 'ok') { Say '模型服务没就绪，跳过预热'; exit 0 }
+# launcher 拉完进程就立刻起这个脚本，这时模型往往还在加载（health 返 503）。
+# 以前是「不是 ok 就退出」，于是一部分重启干脆没预热，面板上看着像「这轮没跑」。
+# 现在最多等 120 秒，等到就绪再动手；真等不到才放弃。
+$ready = $false
+for ($wi = 0; $wi -lt 40; $wi++) {
+    try {
+        $h = Invoke-RestMethod "http://127.0.0.1:$port/health" -TimeoutSec 3
+        if ($h.status -eq 'ok') { $ready = $true; break }
+    } catch { }
+    Start-Sleep -Seconds 3
+}
+if (-not $ready) { Say '模型服务 120 秒内没就绪，跳过预热'; exit 0 }
+
+# ---- 先试磁盘缓存：上次预热把 slot 存到了 cache\slots\warmup.bin ----
+# KV 缓存只活在进程里，重启就清空；重启后从盘里读回来，
+# 下面那份重放请求就会直接命中，不再花 90~110 秒重算前缀。
+# 读失败（文件不存在 / 参数变了 / 没开 --slot-save-path）就静默走正常预热。
+$slotName = 'warmup.bin'
+$restored = $false
+try {
+    $rb = [Text.Encoding]::UTF8.GetBytes('{"filename":"' + $slotName + '"}'); $null = Invoke-RestMethod ("http://127.0.0.1:$port/slots/0?action=restore") -Method Post -ContentType 'application/json; charset=utf-8' -Body $rb -TimeoutSec 90
+    $restored = $true
+    Say '已从磁盘恢复上次的 KV 缓存'
+} catch { $restored = $false }
 
 # 手工拼 JSON：tools 段必须和 agent 发的压缩 schema 逐字一致，
 # 用 hashtable + ConvertTo-Json 重新序列化会改字段顺序，缓存就白做了。
@@ -148,14 +169,17 @@ $bytes = [Text.Encoding]::UTF8.GetBytes($body)
 # 粗估：中文约 3.3 字符 / token，CPU 实测 26–33 tok/s，再留 4 秒收尾。
 $estTokens = [Math]::Round($body.Length / 3.3)
 $estSeconds = [Math]::Round($estTokens / 26 + 4)
+# 命中磁盘缓存时这一步只有零点几秒，估计值就别再写 100 秒了
+$estOut = $(if ($restored) { 5 } else { [int]$estSeconds })
 $warmStartIso = (Get-Date).ToString('o')
 Write-WarmState @{
     status = 'running'
     mode = $(if ($replay) { 'replay' } else { 'synthetic' })
     started = (Get-Date).ToString('HH:mm:ss')
     startAt = $warmStartIso
+    restored = $restored
     estTokens = [int]$estTokens
-    estSeconds = [int]$estSeconds
+    estSeconds = $estOut
 }
 
 $t0 = Get-Date
@@ -164,7 +188,7 @@ try {
         -ContentType 'application/json; charset=utf-8' -Body $bytes -TimeoutSec 600
 } catch {
     Write-WarmState @{ status = 'failed'; mode = $(if ($replay) { 'replay' } else { 'synthetic' })
-        startAt = $warmStartIso; estSeconds = [int]$estSeconds; error = $_.Exception.Message }
+        startAt = $warmStartIso; estSeconds = $estOut; error = $_.Exception.Message }
     Say ('预热失败：' + $_.Exception.Message)
     exit 0
 }
@@ -177,7 +201,8 @@ Write-WarmState @{
     status = 'done'
     mode = $(if ($replay) { 'replay' } else { 'synthetic' })
     startAt = $warmStartIso
-    estSeconds = [int]$estSeconds
+    restored = $restored
+    estSeconds = $estOut
     elapsed = [Math]::Round($sec, 1)
     promptN = $warmPrompt
     cacheN = $warmCache
@@ -185,9 +210,20 @@ Write-WarmState @{
 
 $logDir = Join-Path $NafxRoot 'logs'
 if (Test-Path $logDir) {
-    $line = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss') + '  预热' + $(if ($replay) { '（重放上次真实请求）' } else { '（prompt.md 拼装）' }) +
+    $line = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss') + '  预热' + $(if ($replay) { '（重放上次真实请求）' } else { '（prompt.md 拼装）' }) + (' restore=' + $(if ($restored) { 'yes' } else { 'no' })) +
             ' prompt_n=' + $r.timings.prompt_n + ' cache_n=' + $r.timings.cache_n + '  用时 ' + [math]::Round($sec, 1) + ' 秒'
     [IO.File]::AppendAllText((Join-Path $logDir 'warmup.log'), $line + "`r`n", (New-Object Text.UTF8Encoding($false)))
 }
 
+# ---- 把这次的 KV 落盘，供下次启动直接 restore ----
+# 只在这轮「真的重算了」的时候存：命中缓存说明磁盘上那份就是对的，
+# 再写一遍 620MB 纯属白耗盘。prompt.md / 工具定义改过时 restore 会失败，
+# 那就会走真正的 prefill，然后在这里重新存一份新的。
+if (-not $restored) {
+    try {
+        $sb = [Text.Encoding]::UTF8.GetBytes('{"filename":"' + $slotName + '"}'); $null = Invoke-RestMethod ("http://127.0.0.1:$port/slots/0?action=save") -Method Post -ContentType 'application/json; charset=utf-8' -Body $sb -TimeoutSec 180
+        $sf = Join-Path (Join-Path $NafxRoot 'cache\slots') $slotName
+        if (Test-Path $sf) { Say ('KV 缓存已落盘：' + [math]::Round((Get-Item $sf).Length / 1MB, 1) + ' MB') }
+    } catch { Say 'KV 缓存未能落盘（服务可能没带 --slot-save-path）' }
+}
 Say ('预热完成：已写入 ' + $r.timings.prompt_n + ' token，' + [math]::Round($sec, 1) + ' 秒')
