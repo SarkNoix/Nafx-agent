@@ -1042,6 +1042,62 @@ main{position:relative;z-index:1;flex:1;display:flex;min-height:0}
   max-height:236px;overflow:auto;font-size:11.5px;line-height:1.7;color:#9aa3b2}
 .reason-pop.about .reason-about{display:block}
 .reason-pop.about .reason-track,.reason-pop.about .reason-ticks{display:none}
+
+/* ---------- 闪电按钮：Flash Attention 快捷开关（代价写在弹层里，不藏着） ---------- */
+.fa-wrap{position:relative;flex-shrink:0;align-self:flex-end}
+.fa-btn{
+  width:38px;height:38px;padding:0;border-radius:11px;display:flex;align-items:center;justify-content:center;
+  background:var(--panel2);border:1px solid var(--line);color:var(--dim);cursor:pointer;position:relative;
+  transition:transform .18s cubic-bezier(.34,1.4,.64,1), background .18s, border-color .18s, color .18s;
+  will-change:transform;
+}
+.fa-btn:hover{color:var(--fg);border-color:var(--line2);transform:translateZ(0) scale(1.04)}
+.fa-btn:active{transform:translateZ(0) scale(.92)}
+.fa-btn svg{width:17px;height:17px}
+.fa-btn.on{color:#ffb43c;border-color:rgba(255,180,60,.45);background:rgba(255,180,60,.13)}
+.fa-btn.on svg{filter:drop-shadow(0 0 6px rgba(255,180,60,.5))}
+.fa-btn.busy{animation:faPulse 1.05s ease-in-out infinite}
+@keyframes faPulse{0%,100%{opacity:.5}50%{opacity:1}}
+.fa-pop{
+  position:absolute;right:0;left:auto;bottom:calc(100% + 14px);width:322px;max-width:calc(100vw - 24px);
+  max-height:66vh;overflow:auto;padding:14px 16px 13px;
+  border-radius:14px;border:1px solid rgba(255,255,255,.09);
+  background:rgba(26,28,34,.92);backdrop-filter:blur(18px) saturate(1.2);-webkit-backdrop-filter:blur(18px) saturate(1.2);
+  box-shadow:0 18px 44px rgba(0,0,0,.42), 0 2px 6px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.07);
+  transform-origin:bottom right;transform:translate3d(0,6px,0) scale(.86);opacity:0;pointer-events:none;
+  transition:transform .26s cubic-bezier(.34,1.5,.64,1), opacity .18s ease;z-index:40;color:#e8eaf0;
+}
+[data-theme="light"] .fa-pop,[data-theme="dsh"] .fa-pop,[data-theme="su"] .fa-pop{
+  background:rgba(255,255,255,.97);border-color:rgba(0,0,0,.08);
+  box-shadow:0 16px 40px rgba(37,41,58,.16), 0 1px 3px rgba(37,41,58,.10);
+  color:#22252c;
+}
+.fa-pop.on{transform:translate3d(0,0,0) scale(1);opacity:1;pointer-events:auto}
+.fa-head{display:flex;align-items:baseline;gap:8px;margin-bottom:8px;font-size:12px;opacity:.75}
+.fa-head b{margin-left:auto;font-size:11.5px;font-weight:600;color:#ffb43c;opacity:1}
+[data-theme="light"] .fa-head b,[data-theme="dsh"] .fa-head b,[data-theme="su"] .fa-head b{color:#b87400}
+.fa-lead{margin:0 0 2px;font-size:11.5px;line-height:1.65;color:#9aa3b2}
+[data-theme="light"] .fa-lead,[data-theme="dsh"] .fa-lead,[data-theme="su"] .fa-lead{color:#5a6472}
+.fa-cost{margin:8px 0 0;padding:0;list-style:none;font-size:11.5px;line-height:1.62;color:#9aa3b2}
+[data-theme="light"] .fa-cost,[data-theme="dsh"] .fa-cost,[data-theme="su"] .fa-cost{color:#4e5765}
+.fa-cost li{margin:5px 0;padding-left:12px;position:relative}
+.fa-cost li:before{content:'';position:absolute;left:2px;top:7px;width:4px;height:4px;border-radius:99px;background:rgba(255,180,60,.85)}
+.fa-cost b{font-weight:600;color:#ffce7a}
+[data-theme="light"] .fa-cost b,[data-theme="dsh"] .fa-cost b,[data-theme="su"] .fa-cost b{color:#a86400}
+.fa-cost em{font-style:normal;color:#8b93a5}
+.fa-actions{display:flex;align-items:center;gap:10px;margin-top:11px;padding-top:10px;border-top:1px solid rgba(255,255,255,.08)}
+[data-theme="light"] .fa-actions,[data-theme="dsh"] .fa-actions,[data-theme="su"] .fa-actions{border-top-color:rgba(0,0,0,.07)}
+.fa-apply{
+  padding:7px 14px;border-radius:9px;font-size:12px;cursor:pointer;
+  border:1px solid rgba(255,180,60,.5);background:rgba(255,180,60,.16);color:#ffce7a;
+  transition:background .16s, transform .16s, opacity .16s;
+}
+.fa-apply:hover{background:rgba(255,180,60,.26);transform:translateY(-1px)}
+.fa-apply:disabled{opacity:.5;cursor:default;transform:none}
+[data-theme="light"] .fa-apply,[data-theme="dsh"] .fa-apply,[data-theme="su"] .fa-apply{
+  border-color:rgba(184,116,0,.35);background:rgba(255,180,60,.18);color:#8a5200;
+}
+.fa-note{font-size:10.5px;color:var(--faint)}
 .reason-about p{margin:0 0 8px}
 .ra-lead{color:#b6becb}
 .ra-row{display:flex;gap:7px;align-items:flex-start;margin:0 0 7px}
@@ -3868,6 +3924,28 @@ header #btnModel,header #btnQueue,header #btnJobs,header #btnHist,header #btnSet
       </div>
       <div class="composer-inner">
         <textarea id="input" rows="1" placeholder="说点什么，让它去做…"></textarea>
+        <div class="fa-wrap">
+          <button class="fa-btn" id="faBtn" aria-haspopup="true" aria-expanded="false" title="Flash Attention：读取中">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M13.4 2.2 5.2 13.4h5.3L9.6 21.8l8.6-11.9h-5.5z" fill="currentColor" opacity=".92"/>
+            </svg>
+          </button>
+          <div class="fa-pop" id="faPop">
+            <div class="fa-head"><span>Flash Attention</span><b id="faState">读取中</b></div>
+            <p class="fa-lead">把注意力计算改成分块做：同样的上下文内存少占一点，注意力那部分的读写也少一遍。它不是“加速键”，是“省内存的算法换法”。</p>
+            <ul class="fa-cost">
+              <li><b>要重启模型</b>：约 20–30 秒，这期间提问会排队或者直接失败。</li>
+              <li><b>CPU 上不一定更快</b>：短上下文（几百 token）可能持平甚至略慢；几千 token 的长上下文才看得出收益。</li>
+              <li><b>数值有细微差别</b>：分块累加和整块算不完全等价，多数时候无感，但长上下文下的用词、顺序可能和上次不完全一样。</li>
+              <li><b>配 KV 量化才最划算</b>：KV 还是 f16 时收益有限；KV 量化成 q8_0 / q4_0 时则必须开，否则 llama 拒绝启动。</li>
+              <li><b>个别情况会起不来</b>：模型或后端不支持时服务会启动失败，那就关掉再重启一次。</li>
+            </ul>
+            <div class="fa-actions">
+              <button class="fa-apply" id="faApply">开启</button>
+              <span class="fa-note">改完自动重启模型</span>
+            </div>
+          </div>
+        </div>
         <div class="reason-wrap">
           <button class="reason-btn" id="reasonBtn" aria-haspopup="true" aria-expanded="false" title="推理力度：标准">
             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -6861,6 +6939,85 @@ function bindReason(){
   reasonStars();
 }
 
+/* ---------- 闪电：Flash Attention 快捷开关 ----------
+   为什么放在推理力度旁边：这两个都是「决定模型怎么算」的旋钮，放一起用户才想得到。
+   代价不藏：点开弹层第一眼就是重启耗时、CPU 上可能不更快、数值有细微差别这几条。 */
+var faOn = false, faBusy = false, faTimer = null;
+
+function faPaint(){
+  var btn = $('faBtn'), st = $('faState'), ap = $('faApply');
+  if (!btn) return;
+  btn.classList.toggle('on', faOn && !faBusy);
+  btn.classList.toggle('busy', faBusy);
+  var label = faBusy ? '重启中…' : (faOn ? '开' : '关');
+  btn.title = 'Flash Attention：' + label;
+  if (st) st.textContent = label;
+  if (ap) {
+    ap.textContent = faBusy ? '正在重启…' : (faOn ? '关闭并重启' : '开启并重启');
+    ap.disabled = faBusy;
+  }
+}
+
+function faRead(cb){
+  fetch('/api/config?t=' + Date.now()).then(function(r){ return r.json(); }).then(function(c){
+    faOn = (String((c && c.flashAttn) || 'off').toLowerCase() === 'on');
+    faPaint();
+    if (cb) cb();
+  }).catch(function(){ faPaint(); if (cb) cb(); });
+}
+
+function faClose(){
+  var pop = $('faPop'), btn = $('faBtn');
+  if (pop) pop.classList.remove('on');
+  if (btn) btn.setAttribute('aria-expanded','false');
+}
+
+function bindFa(){
+  var btn = $('faBtn'), pop = $('faPop'), ap = $('faApply');
+  if (!btn || !pop) return;
+  btn.onclick = function(e){
+    e.stopPropagation();
+    var open = pop.classList.contains('on');
+    pop.classList.toggle('on', !open);
+    btn.setAttribute('aria-expanded', open ? 'false' : 'true');
+    // 每次打开都重读一次：设置页或别的窗口可能改过 flashAttn，别显示旧值
+    if (!open) faRead();
+  };
+  pop.onclick = function(e){ e.stopPropagation(); };
+  document.addEventListener('click', function(){ if (pop.classList.contains('on')) faClose(); });
+  document.addEventListener('keydown', function(e){ if (e.key === 'Escape') faClose(); });
+  if (!ap) return;
+  ap.onclick = function(){
+    if (faBusy) return;
+    var want = !faOn;
+    faBusy = true; faPaint();
+    fetch('/api/config', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({flashAttn: want ? 'on' : 'off'})})
+      .then(function(r){ return r.json(); })
+      .then(function(j){
+        if (!j || !j.ok) throw new Error((j && j.msg) || '写入配置失败');
+        faOn = want; faPaint();
+        toast(want ? '已开启，正在重启模型（约 30 秒）' : '已关闭，正在重启模型（约 30 秒）');
+        fetch('/api/restart', {method:'POST'}).catch(function(){});
+        // 重启期间保持脉冲；35 秒后解锁并重读配置，确认值没被服务端改回去
+        clearTimeout(faTimer);
+        faTimer = setTimeout(function(){
+          faBusy = false; faPaint(); faClose();
+          faRead(function(){
+            toast(faOn === want
+              ? '模型已重启，Flash Attention = ' + (faOn ? '开' : '关')
+              : '配置被改回去了，现在实际是「' + (faOn ? '开' : '关') + '」', faOn !== want);
+            lastSig = ''; setTimeout(tick, 600);
+          });
+        }, 35000);
+      })
+      .catch(function(e){
+        faBusy = false; faPaint();
+        toast('切换失败：' + e.message, true);
+      });
+  };
+  faRead();
+}
+
 function submit(){
   var t = input.value.trim();
   if (!t) return;
@@ -8210,6 +8367,7 @@ bindAnswer();
 bindAutopilot();
 bindMode();
 bindReason();
+bindFa();
 bindModelWarn();
 bindLiveMeter();
 loadFiles();

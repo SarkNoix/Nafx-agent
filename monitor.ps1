@@ -1721,6 +1721,29 @@ while ($listener.IsListening) {
                 '/api/restart' {
                     if ($method -ne 'POST') { Send-Text -Response $resp -Text '{"ok":false}' -Code 405; break }
                     Send-Text -Response $resp -Text '{"ok":true,"msg":"正在重启模型服务"}'
+                    # 必须先把旧进程杀掉。
+                    # launcher.ps1 开头是 if (-not (Test-AiUp)) —— 端口还活着就直接
+                    # 「服务已在运行」退出。结果 -fa / -ctk 这类只在启动时读的参数
+                    # 改了等于没改，界面上开关拨了、配置也写进去了，进程还是老参数。
+                    try {
+                        Get-CimInstance Win32_Process -Filter "Name='llama-server.exe'" |
+                            ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+                    } catch { }
+                    # 等端口真的放掉，再交棒给启动器；不然新进程会撞上还在监听的旧 socket
+                    for ($wi = 0; $wi -lt 20; $wi++) {
+                        $up = $false
+                        $mp = 8080
+                        try { if ($Cfg.port) { $mp = [int]$Cfg.port } } catch { }
+                        try {
+                            $tc = New-Object Net.Sockets.TcpClient
+                            $tc.Connect('127.0.0.1', $mp)
+                            $up = $true
+                            $tc.Close()
+                        } catch { $up = $false }
+                        if (-not $up) { break }
+                        Start-Sleep -Milliseconds 400
+                    }
+                    Start-Sleep -Milliseconds 300
                     Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-File',(Join-Path $Root 'launcher.ps1'),'-NoBrowser') -WindowStyle Hidden
                 }
 
