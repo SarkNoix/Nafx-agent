@@ -1035,6 +1035,24 @@ main{position:relative;z-index:1;flex:1;display:flex;min-height:0}
 }
 .reason-pop.on{transform:translate3d(0,0,0) scale(1);opacity:1;pointer-events:auto}
 .reason-head{display:flex;align-items:baseline;gap:8px;margin-bottom:12px;font-size:12px;opacity:.7}
+.reason-about-btn{margin-left:7px;font-size:11px;font-style:normal;color:#4f8df7;cursor:pointer;
+  letter-spacing:.3px;opacity:.95;padding:1px 3px;border-radius:5px;transition:background .15s,color .15s}
+.reason-about-btn:hover{background:rgba(79,141,247,.14);color:#6ea4ff}
+.reason-about{display:none;margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.08);
+  max-height:236px;overflow:auto;font-size:11.5px;line-height:1.7;color:#9aa3b2}
+.reason-pop.about .reason-about{display:block}
+.reason-pop.about .reason-track,.reason-pop.about .reason-ticks{display:none}
+.reason-about p{margin:0 0 8px}
+.ra-lead{color:#b6becb}
+.ra-row{display:flex;gap:7px;align-items:flex-start;margin:0 0 7px}
+.ra-lv{flex:none;width:34px;text-align:center;border-radius:6px;padding:1px 0;font-style:normal;
+  font-size:10.5px;color:#fff;opacity:.92}
+.ra-lv.lv0{background:rgba(139,147,165,.35)}
+.ra-lv.lv1{background:rgba(59,130,246,.45)}
+.ra-lv.lv2{background:rgba(99,102,241,.45)}
+.ra-lv.lv3{background:rgba(139,92,246,.45)}
+.ra-lv.lv4{background:rgba(168,85,247,.5);box-shadow:0 0 8px rgba(168,85,247,.45)}
+.ra-how{color:#8f97a6;border-left:2px solid rgba(79,141,247,.5);padding-left:8px;margin-top:10px}
 .reason-head b{margin-left:auto;font-size:13.5px;font-weight:600;opacity:.95;letter-spacing:.2px}
 .reason-track{position:relative;height:56px;touch-action:none;cursor:pointer;outline:none}
 .reason-rail{position:absolute;left:12px;right:12px;top:50%;height:26px;margin-top:-13px;border-radius:99px;
@@ -1082,6 +1100,11 @@ main{position:relative;z-index:1;flex:1;display:flex;min-height:0}
   background:linear-gradient(90deg,rgba(255,255,255,.95) 0%,rgba(255,255,255,.6) 34%,rgba(255,255,255,.18) 72%,rgba(255,255,255,0) 100%);
   clip-path:polygon(0% 50%,12% 10%,38% 2%,68% 20%,100% 50%,68% 80%,38% 98%,12% 90%);
   filter:blur(.5px)}
+/* 风：一道细长的半透明白气流，两端渐隐，扫过轨道 */
+.reason-wind{position:absolute;left:0;top:0;border-radius:99px;pointer-events:none;
+  background:linear-gradient(90deg,rgba(255,255,255,0) 0%,rgba(255,255,255,.34) 18%,rgba(255,255,255,.95) 50%,rgba(255,255,255,.38) 82%,rgba(255,255,255,0) 100%);
+  box-shadow:0 0 8px rgba(255,255,255,.55), 0 0 16px rgba(255,255,255,.2);
+  filter:blur(.6px);will-change:transform,opacity}
 textarea{flex:1;resize:none;min-height:46px;max-height:170px;background:var(--panel2);
   border:1px solid var(--line);border-radius:var(--radius-lg);color:var(--fg);
   font-family:inherit;font-size:14px;padding:13px 14px;line-height:1.5;outline:none;transition:.15s}
@@ -3836,7 +3859,7 @@ header #btnModel,header #btnQueue,header #btnJobs,header #btnHist,header #btnSet
             <span class="r-dot" id="reasonDot"></span>
           </button>
           <div class="reason-pop" id="reasonPop">
-            <div class="reason-head"><span>推理力度</span><b id="reasonName">标准</b></div>
+            <div class="reason-head"><span>推理力度<i class="reason-about-btn" id="reasonAboutBtn" title="各档位分别怎么想">关于</i></span><b id="reasonName">标准</b></div>
             <div class="reason-track" id="reasonTrack" tabindex="0" role="slider"
                  aria-valuemin="0" aria-valuemax="4" aria-valuenow="2" aria-label="推理力度">
               <i class="reason-rail"></i>
@@ -3846,6 +3869,15 @@ header #btnModel,header #btnQueue,header #btnJobs,header #btnHist,header #btnSet
               <div class="reason-thumb" id="reasonThumb"></div>
             </div>
             <div class="reason-ticks" id="reasonTicks"><span>关闭</span><span>弱</span><span>标准</span><span>强</span><span>MAX</span></div>
+            <div class="reason-about" id="reasonAbout">
+              <p class="ra-lead">这不是让模型“更用力”，而是决定它动手前愿意花多少内心草稿。档位越高，越会先排查、列计划、事后自检；代价是更慢，也更费 token。</p>
+              <div class="ra-row"><i class="ra-lv lv0">关闭</i><span>不额外思考，直接给结果。适合一两个字、纯执行类指令。</span></div>
+              <div class="ra-row"><i class="ra-lv lv1">弱</i><span>只抓主干，一遍做完。适合简单问答、格式改写、短文案。</span></div>
+              <div class="ra-row"><i class="ra-lv lv2">标准</i><span>想清楚再动手，做完自检。日常默认档，绝大多数任务够用。</span></div>
+              <div class="ra-row"><i class="ra-lv lv3">强</i><span>先在 think 里列计划、逐步验证，走偏了会回头改做法。适合多步任务、改代码、排查问题。</span></div>
+              <div class="ra-row"><i class="ra-lv lv4">MAX</i><span>不限制输出长度，并且必须把计划写出来：目标、3–6 步、可能失败的两处、备选做法。适合复杂工程和长链路排查。</span></div>
+              <p class="ra-how">它怎么想：先在 think 里过一遍 目标 → 约束 → 步骤 → 风险；每执行一步检查结果；同一个问题连续两次没进展就换做法；收尾前逐条核对你的原话，缺哪条补哪条。</p>
+            </div>
           </div>
         </div>
         <button class="primary" id="send" title="发送（Enter）">
@@ -6665,6 +6697,39 @@ function setReason(v, burst){
   if (changed) reasonStarSpeed();
   // 只有往右加力才喷粒子；反向拖回来（降档）不触发
   if (burst && changed && v > prev) reasonParticles();
+  // 冲到 MAX：刮一阵风
+  if (burst && changed && v > prev && v === 4) reasonWind();
+}
+
+/* 风：从拇指一侧向左刮出的一束细长气流 */
+function reasonWind(){
+  var fx = $('reasonFx'), track = $('reasonTrack');
+  if (!fx || !track) return;
+  var m = reasonMetrics(); if (!m) return;
+  var cx = m.pad + m.span;           // MAX 档拇指中心
+  var cy = track.clientHeight / 2;
+  for (var i=0;i<10;i++){
+    var w = document.createElement('span');
+    w.className = 'reason-wind';
+    var len = 76 + Math.random() * 130;
+    var th = 1.7 + Math.random() * 1.7;
+    w.style.width = len.toFixed(0) + 'px';
+    w.style.height = th.toFixed(1) + 'px';
+    var y = cy + (Math.random() * 30 - 15);
+    var x0 = cx + Math.random() * 18 - 4 - len;
+    w.style.transform = 'translate3d(' + x0.toFixed(1) + 'px,' + (y - th/2).toFixed(1) + 'px,0)';
+    fx.appendChild(w);
+    var dist = x0 + len + 26;        // 够冲到轨道左端外
+    var dur = 380 + Math.random() * 240;
+    var delay = i * 18 + Math.random() * 70;
+    var anim = w.animate([
+      { transform: 'translate3d(' + x0.toFixed(1) + 'px,' + (y - th/2).toFixed(1) + 'px,0) scaleX(.55)', opacity: 0 },
+      { opacity: .95, offset: .22 },
+      { transform: 'translate3d(' + (x0 - dist * .55).toFixed(1) + 'px,' + (y - th/2).toFixed(1) + 'px,0) scaleX(1.1)', opacity: .7, offset: .62 },
+      { transform: 'translate3d(' + (x0 - dist).toFixed(1) + 'px,' + (y - th/2).toFixed(1) + 'px,0) scaleX(1.25)', opacity: 0 }
+    ], { duration: dur, delay: delay, easing: 'cubic-bezier(.18,.62,.28,1)', fill: 'both' });
+    anim.onfinish = (function(el){ return function(){ if (el.parentNode) el.parentNode.removeChild(el); }; })(w);
+  }
 }
 
 function bindReason(){
@@ -6678,11 +6743,16 @@ function bindReason(){
     if (!open) { layoutReason(); requestAnimationFrame(reasonStars); } // 弹层刚显示时宽高才有真实值，这里补画一次星星
   };
   pop.onclick = function(e){ e.stopPropagation(); };
+  var aboutBtn = $('reasonAboutBtn');
+  if (aboutBtn) aboutBtn.onclick = function(e){
+    e.stopPropagation();
+    pop.classList.toggle('about');   // 「关于」展开各档说明，再点收起
+  };
   document.addEventListener('click', function(){
-    if (pop.classList.contains('on')) { pop.classList.remove('on'); btn.setAttribute('aria-expanded','false'); }
+    if (pop.classList.contains('on')) { pop.classList.remove('on'); pop.classList.remove('about'); btn.setAttribute('aria-expanded','false'); }
   });
   document.addEventListener('keydown', function(e){
-    if (e.key === 'Escape' && pop.classList.contains('on')) { pop.classList.remove('on'); btn.setAttribute('aria-expanded','false'); }
+    if (e.key === 'Escape' && pop.classList.contains('on')) { pop.classList.remove('on'); pop.classList.remove('about'); btn.setAttribute('aria-expanded','false'); }
   });
 
   // 指针交互：按下即可跳档；拖动时按最近档位吸附，跨档才喷粒子
