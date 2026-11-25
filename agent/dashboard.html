@@ -1392,6 +1392,16 @@ textarea::placeholder{color:var(--faint)}
 }
 .cfg-save:disabled{opacity:.5}
 .cfg-note{font-size:10.5px;color:var(--faint);margin-top:6px;line-height:1.5}
+/* 上下文注入：一个多行框 + 字数/预估 token，够用就行，别做成大编辑器 */
+.inj-text{width:100%;min-height:96px;max-height:260px;resize:vertical;box-sizing:border-box;
+  background:var(--panel2);border:1px solid var(--line);border-radius:8px;color:var(--fg);
+  font-family:var(--font-ui,inherit);font-size:12px;line-height:1.6;padding:8px 10px;outline:none}
+.inj-text:focus{border-color:var(--accent)}
+.inj-text::placeholder{color:var(--faint)}
+.inj-foot{display:flex;align-items:center;gap:8px;margin-top:6px}
+.inj-foot span{font-size:10.5px;color:var(--faint);font-family:ui-monospace,Consolas,monospace}
+.inj-foot button{margin-left:auto}
+.inj-on{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;color:var(--ok)}
 /* ============================================================
    UI 优化（追加覆盖，不改上面任何原有规则）
    ============================================================ */
@@ -6964,6 +6974,14 @@ function openSettings(){
         toggle('allowAdmin','管理员权限（高风险）','',{danger:true,help:'允许以管理员权限运行；只在必要时打开。'}) +
       '</div>');
 
+    out += group('上下文注入', '每条任务自动带上，不用重启', 
+      '<div class="set-field wide"><label>注入内容</label>' +
+      '<textarea class="inj-text" id="injText" spellcheck="false" placeholder="写在这儿的东西，每条任务都会自动带上：&#10;· 这个项目是什么、目录怎么分&#10;· 术语 / 口径：比如「整理」默认指 workspace 下的文件&#10;· 你现在正在做的事、下一步的约束"></textarea>' +
+      '<div class="inj-foot"><span id="injInfo">0 字</span>' +
+      '<span id="injState" class="inj-on" style="display:none">● 已保存</span>' +
+      '<button class="ghost sm" id="injSave">保存注入</button></div>' +
+      '<div class="set-help">存进配置的 contextInject，下一条任务就生效（这里不用重启）。内容不变时提示词缓存照常命中；写太长会挤占上下文，建议 3000 字以内。</div></div>');
+
     out += '<details class="set-adv"><summary><span>启动 / 内存 / 缓存</span><span class="set-adv-hint">重启生效</span></summary>' +
       '<div class="set-grid">' +
         toggle('warmupOnStart','启动后自动预热提示词','warmupOnStart') +
@@ -6988,6 +7006,13 @@ function openSettings(){
     '</div>';
 
     body.innerHTML = out;
+    // 注入框塞初始值并接上保存（它不属于 data-k 那套字段，单独保存）
+    var injEl = $('injText');
+    if (injEl){
+      injEl.value = cfg.contextInject || '';
+      window.__injDirty = false;
+      injInfo(); bindInj();
+    }
 
     function setSaveState(text, cls){
       var el = $('cfgSaveState');
@@ -7432,6 +7457,12 @@ function loadCfg(){
       }
       var lm = $('cfgLoadMode');
       if (lm && c.loadMode) lm.value = c.loadMode;
+      // 上下文注入：直接读 config.self.json 里的 contextInject
+      var inj = $('injText');
+      if (inj && typeof c.contextInject === 'string' && document.activeElement !== inj){
+        inj.value = c.contextInject;
+        injInfo();
+      }
       // 编译方式：配置里的 llamaMode + 初始化状态一起渲染
       fetch('/api/llama-init?t=' + Date.now())
         .then(function(r){ return r.ok ? r.json() : null; })
@@ -7558,7 +7589,50 @@ function bindCfg(){
   var btn = $('cfgSave');
   if (btn) btn.onclick = saveCfg;
   bindLm();
+  bindInj();
   loadCfg();
+}
+
+/* ---------- 上下文注入 ---------- */
+// 写在这儿的背景会进 system 提示词，每条任务自动带上。
+// 字数后面给个 token 估算：中文大约 1 字 0.6 tok，这里按 0.65 报，宁可偏高。
+function injInfo(){
+  var t = $('injText'), s = $('injInfo'), st = $('injState');
+  if (!t) return;
+  var chars = t.value.replace(/\r/g, '').length;
+  var tok = Math.round(chars * 0.65);
+  if (s) s.textContent = chars + ' 字 · 约 ' + tok + ' tok';
+  if (chars > 8000 && s) s.textContent += '（超 8000 字，保存会被拒）';
+  if (st) st.style.display = (chars && !window.__injDirty) ? '' : 'none';
+}
+function saveInjection(){
+  var t = $('injText'); if (!t) return;
+  var btn = $('injSave'); if (btn) btn.disabled = true;
+  var text = t.value;
+  fetch('/api/config', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({contextInject: text})
+  })
+    .then(function(r){ return r.json(); })
+    .then(function(j){
+      if (j && j.ok){
+        window.__injDirty = false;
+        toast(text.trim() ? '注入已保存，下一条任务生效' : '注入已清空');
+      } else {
+        toast((j && j.msg) || '保存失败', true);
+      }
+    })
+    .catch(function(e){ toast('保存失败：' + e.message, true); })
+    .then(function(){ if (btn) btn.disabled = false; injInfo(); });
+}
+function bindInj(){
+  var t = $('injText');
+  if (!t) return;
+  t.addEventListener('input', function(){ window.__injDirty = true; injInfo(); });
+  var b = $('injSave');
+  if (b) b.onclick = saveInjection;
+  injInfo();
 }
 if (document.readyState !== 'loading') bindCfg();
 else document.addEventListener('DOMContentLoaded', bindCfg);

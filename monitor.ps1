@@ -1249,6 +1249,14 @@ while ($listener.IsListening) {
                                 elseif ($p.Name -eq 'allowAnyPath' -or $p.Name -eq 'allowGui' -or $p.Name -eq 'allowAdmin') { $cur | Add-Member -NotePropertyName $p.Name -NotePropertyValue ([bool]$p.Value) -Force }
                                 else { $cur | Add-Member -NotePropertyName $p.Name -NotePropertyValue $p.Value -Force }
                             }
+                            # 注入内容长度先挡一下：本机上下文 6144 tok，写太长把工具定义挤掉
+                            if ($newCfg.PSObject.Properties.Name -contains 'contextInject') {
+                                $ci = [string]$newCfg.contextInject
+                                if ($ci.Length -gt 8000) {
+                                    Send-Text -Response $resp -Text ('{"ok":false,"msg":"注入内容太长（' + $ci.Length + ' 字符），控制在 8000 字符以内"}') -Code 400
+                                    break
+                                }
+                            }
                             # 模式值先校验再写盘 —— 写进去再报错，配置已经被改了
                             if ($newCfg.PSObject.Properties.Name -contains 'modelMode') {
                                 $mm = ([string]$newCfg.modelMode).Trim().ToLower()

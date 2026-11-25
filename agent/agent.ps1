@@ -1907,7 +1907,12 @@ function Close-AsStuck {
 # 闲聊：不调工具，纯对话
 function Invoke-ChatTask {
     param([string]$Text)
-    $sys = $SystemPrompt + "`n`n（现在是闲聊，不用调工具。像朋友那样回一两句，轻松点，别端着。）"
+    $sys = $SystemPrompt
+    # 闲聊也带上用户注入的背景：里面常有称呼、在做什么之类的信息
+    if (-not [string]::IsNullOrWhiteSpace($contextInject)) {
+        $sys = $sys + "`n`n## 用户注入的背景`n`n" + $contextInject
+    }
+    $sys = $sys + "`n`n（现在是闲聊，不用调工具。像朋友那样回一两句，轻松点，别端着。）"
     $msgs = @('{"role":"system","content":' + (To-JsonStr $sys) + '}')
     foreach ($h in (Get-SessionHistory -MaxTurns 4)) {
         $msgs += '{"role":' + (To-JsonStr $h.role) + ',"content":' + (To-JsonStr $h.content) + '}'
@@ -2497,6 +2502,23 @@ if (-not [string]::IsNullOrWhiteSpace($personalPrompt)) {
     Write-Log ("  带上个人指令（" + $personalPrompt.Length + " 字符）")
 }
 
+# 用户从面板「上下文注入」里写的背景（config.self.json 的 contextInject）。
+# 用途：把那些「每次都得交代一遍」的事——项目结构、术语、口径、当前在做什么——
+# 一次性写在这儿，之后每条任务自动带上，不用再打字。
+# 放在 system 末尾：内容和任务无关，同一份不变时 llama 的 system+tools 前缀缓存照样命中。
+# 超过 6000 字符就截断——本机上下文只有 6144 tok，塞太多等于把工具定义挤出去。
+$contextInject = [string]$Cfg.contextInject
+if (-not [string]::IsNullOrWhiteSpace($contextInject)) {
+    $contextInject = $contextInject.Trim()
+    if ($contextInject.Length -gt 6000) {
+        $contextInject = $contextInject.Substring(0, 6000) + "`n…（后面被截断了，注入内容建议控制在 6000 字符以内）"
+        Write-Log "  注入内容太长，已截到 6000 字符"
+    }
+    $sysFull = $sysFull + "`n`n## 用户注入的背景`n`n" + $contextInject +
+              "`n`n（以上是用户提前给的背景和要求。跟它冲突时，以用户这次的当前任务为准。）"
+    Write-Log ("  带上注入的上下文（" + $contextInject.Length + " 字符）")
+}
+
 
 # 任务太模糊时，硬性要求它先问一句。
 # 只靠提示词里的「信息不够就问」不管用——「帮我整理一下」这种，
@@ -2912,6 +2934,10 @@ $target = [Math]::Min($targetByBudget, [Math]::Max($targetByShare, 1400))
         # 个人指令保留（用户自己写的，砍了不合适）
         if (-not [string]::IsNullOrWhiteSpace($personalPrompt) -and $slimSys -notmatch '我的习惯') {
             $slimSys += "`n`n## 我的习惯`n`n" + $personalPrompt
+        }
+        # 注入的背景同样不能丢：context 紧张时砍掉的该是举例和小节，不是用户交待的事
+        if (-not [string]::IsNullOrWhiteSpace($contextInject) -and $slimSys -notmatch '用户注入的背景') {
+            $slimSys += "`n`n## 用户注入的背景`n`n" + $contextInject
         }
         $history[0] = @{ role = 'system'; content = $slimSys }
         # 写回之后重算 —— 上面那两段是「加回来」的，必须计入，
