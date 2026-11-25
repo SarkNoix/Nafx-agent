@@ -146,7 +146,13 @@ $script:ModelUpVal = $false
 
 function Get-AgentProcessList {
     try {
-        if (((Get-Date) - $script:ProcCacheAt).TotalSeconds -lt 3) { return ,$script:ProcCacheList }
+        # 缓存 10 秒，不是 3 秒。这个查询（Get-CimInstance Win32_Process × 2）
+        # 在模型吃满 CPU 时要 5–9 秒才回来，而 /api/state 每次轮询都会走到它 ——
+        # 缓存太短等于每隔几秒就把面板主线程钉死一次，实测 /api/state 要 9 秒，
+        # 前端看起来就是「任务在跑，界面不动」。
+        # 判「任务是否还活着」还有 state 文件时间戳（25 秒宽限）兜底，
+        # 10 秒的进程缓存不会误判。
+        if (((Get-Date) - $script:ProcCacheAt).TotalSeconds -lt 10) { return ,$script:ProcCacheList }
     } catch { }
     $list = @()
     try {
@@ -459,6 +465,11 @@ function Invoke-Dispatch {
                 -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $AgentPath, '-MaxSteps', "$modeMaxSteps", '-Mode', $nextMode `
                 -RedirectStandardOutput $uiLog -WindowStyle Hidden -PassThru
             $Workers[$slot] = $proc
+            # agent 进程也提一档优先级。
+            # 它要跟 llama-server 抢 CPU：一样是单线程，模型吃满时
+            # 它写 state.json / 心跳会被推迟，面板就出现「跑着跑着不动了」。
+            # AboveNormal 只抢回少量时间片，对生成速度基本无感。
+            try { $proc.PriorityClass = [Diagnostics.ProcessPriorityClass]::AboveNormal } catch { }
             Write-Host ("  [第{0}路] ({1}) {2}" -f $slot, $nextMode, $next.task) -ForegroundColor Green
             Write-PanelLog ("第$slot 路启动 [" + $nextMode + "] " + $next.task)
         } catch {
@@ -514,6 +525,23 @@ function Get-WarmupState {
 }
 
 function Get-MergedState {
+    # 1.2 秒内的重复调用直接复用上一次的结果。
+    # 面板自己每秒轮询一次 state，浏览器多开几个标签页时同一秒会有好几个请求，
+    # 每次都要读 state/hb/usage/warmup 四个文件再 ConvertTo-Json ——
+    # 模型把 CPU 吃满时，光这一套就能花掉几百毫秒，请求会排起队。
+    # 复用 1.2 秒对「步骤进度」这种秒级信息没有可感知的损失。
+    try {
+        if ($script:MergedCache -and ((Get-Date) - $script:MergedCacheAt).TotalSeconds -lt 1.2) {
+            return $script:MergedCache
+        }
+    } catch { }
+    $o = Build-MergedState
+    $script:MergedCache = $o
+    $script:MergedCacheAt = Get-Date
+    return $o
+}
+
+function Build-MergedState {
     $list = @()
     for ($slot = 1; $slot -le $WorkerCount; $slot++) {
         $sf = Get-SlotStateFile $slot
@@ -570,27 +598,25 @@ function Get-MergedState {
     #      只要最近改过，就说明它还活着。
     # 只有「找不到进程」且「state.json 已经 25 秒没更新」才判中断。
     if ([string]$main.status -eq 'running') {
-        # 连续两轮都查不到才算「真的没了」。
-        # Get-CimInstance 在忙的时候偶尔返回不全（尤其模型吃满 CPU 时），
-        # 单次查不到就判中断，用户会看到跑得好好的任务被打上「已中断」。
-        $script:agentMissStreak = [int]$script:agentMissStreak + 1
-        $hasAgent = $false
-        try {
-            foreach ($ap in @(Get-AgentProcessList)) {
-                $acl = [string]$ap.CommandLine
-                # 宽松匹配：只要命令行里出现 agent.ps1 就算，不再依赖 -File 的写法
-                if ($acl -match 'agent\.ps1') { $hasAgent = $true; $script:agentMissStreak = 0; break }
-            }
-        } catch {
-            $hasAgent = $true   # 查询本身失败就当作在跑
-        }
-
-        # 第二重证据：state 文件最近还在被写吗
+        # 先看最便宜的信号：state 文件最近还在被写吗。
+        # agent 每步 Write-State、心跳每秒写 .hb.json，所以「文件还新鲜」
+        # 本身就是最强的「它还活着」证据 —— 这种情况根本不用去查进程。
+        # 这一步很关键：Get-CimInstance Win32_Process 在模型吃满 CPU 时要 5–9 秒，
+        # 而 /api/state 是每 1 秒被前端轮询一次的接口，每次都查等于把面板钉死。
         $staleSec = 9999
         try {
             $sf0 = Get-SlotStateFile ([int]$main.slot)
             if (Test-Path $sf0) {
                 $staleSec = ((Get-Date) - (Get-Item $sf0).LastWriteTime).TotalSeconds
+                # 心跳文件（agent 里的 Runspace 每秒写一次）比 state.json 更新得勤。
+                # 模型在想的时候可能几十秒不写 state.json，但心跳一直在动 ——
+                # 只看 state.json 会把「正在思考」误判成「进程没了」，
+                # 进而去查 CIM（几秒一次），把面板拖死。取两者较新的那个。
+                $hb0 = $sf0 -replace '\.json$', '.hb.json'
+                if (Test-Path $hb0) {
+                    $hbAge = ((Get-Date) - (Get-Item $hb0).LastWriteTime).TotalSeconds
+                    if ($hbAge -lt $staleSec) { $staleSec = $hbAge }
+                }
             }
         } catch { }
 
@@ -602,6 +628,28 @@ function Get-MergedState {
         $freshStart = $false
         try { if ([double]$main.elapsed -lt 5) { $freshStart = $true } } catch { }
         $graceSec = if ($freshStart) { 60 } else { 25 }
+
+        $hasAgent = $false
+        if ($staleSec -le $graceSec) {
+            # 文件新鲜 → 一定还在跑，跳过 CIM 查询（这是常态路径）
+            $hasAgent = $true
+            $script:agentMissStreak = 0
+        } else {
+            # 只有文件确实冷了，才值得花几秒去查进程。
+            # 连续两轮都查不到才算「真的没了」。
+            # Get-CimInstance 在忙的时候偶尔返回不全（尤其模型吃满 CPU 时），
+            # 单次查不到就判中断，用户会看到跑得好好的任务被打上「已中断」。
+            $script:agentMissStreak = [int]$script:agentMissStreak + 1
+            try {
+                foreach ($ap in @(Get-AgentProcessList)) {
+                    $acl = [string]$ap.CommandLine
+                    # 宽松匹配：只要命令行里出现 agent.ps1 就算，不再依赖 -File 的写法
+                    if ($acl -match 'agent\.ps1') { $hasAgent = $true; $script:agentMissStreak = 0; break }
+                }
+            } catch {
+                $hasAgent = $true   # 查询本身失败就当作在跑
+            }
+        }
         # 第二层保护：已经有答案了就不可能「被中断」。
         # 实测「把 hello.txt 改成改好了」跑完 finish、文件也改了，
         # 底下却挂着「上次运行被中断」—— 判定串到了上个任务身上。
@@ -777,6 +825,18 @@ catch {
 Write-Host "Nafx 面板：http://$($Cfg.host):$Port/  并行 $WorkerCount 路" -ForegroundColor Cyan
 Write-PanelLog ("面板启动 http://" + $Cfg.host + ":" + $Port + "/  并行 " + $WorkerCount + " 路")
 Write-PanelLog ("进程 PID " + $PID + "  PowerShell " + $PSVersionTable.PSVersion.ToString())
+
+# 面板自己的优先级提到 AboveNormal。
+# llama-server 会按 config.threads 吃满几乎所有核心，模型生成时面板这个
+# 单线程循环只能抢到零碎时间片 —— /api/state 这种几毫秒的活会拖成 1–2 秒，
+# 前端看起来就是「任务在跑，界面卡住不动」。
+# 提一级优先级不会明显拖慢生成（模型只是少几个时间片），但能让面板始终响应。
+# 失败了也不影响功能（非管理员下偶尔会拒绝），所以静默处理。
+try {
+    $proc = [Diagnostics.Process]::GetCurrentProcess()
+    $proc.PriorityClass = [Diagnostics.ProcessPriorityClass]::AboveNormal
+    Write-PanelLog '面板进程优先级已设为 AboveNormal'
+} catch { }
 try { [IO.File]::WriteAllText((Join-Path $Root 'agent\panel.pid'), "$PID", (New-Object Text.UTF8Encoding($false))) } catch { }
 
 # 启动时清理上次残留的 agent 进程
@@ -1093,6 +1153,41 @@ while ($listener.IsListening) {
                     Send-Text -Response $resp -Text ('{"ok":true,"id":' + (J $item.id) + '}')
                 }
 
+
+                '/api/queue/stop' {
+                    # 停掉正在跑的任务。注意这不是「取消排队」，是真杀 worker：
+                    # 老机器上一个跑偏的任务能烧几分钟 CPU，没有停止按钮用户只能干等或关窗口。
+                    if ($method -ne 'POST') { Send-Text -Response $resp -Text '{"ok":false}' -Code 405; break }
+                    $n = 0
+                    foreach ($slot in @($Workers.Keys)) {
+                        try { $Workers[$slot].Kill() } catch { }
+                        $n++
+                    }
+                    foreach ($slot in @($Workers.Keys)) { $Workers.Remove($slot) }
+
+                    $items = Get-Queue
+                    foreach ($it in $items) {
+                        if ($it.status -eq 'running') {
+                            $it.status = 'failed'
+                            $it.doneAt = (Get-Date -Format 'MM-dd HH:mm:ss')
+                            $it.result = '已手动停止'
+                        }
+                    }
+                    Save-Queue $items
+
+                    # 各槽位 state 不能留 running，否则下一个任务会继承一个假进度
+                    for ($slot = 1; $slot -le $WorkerCount; $slot++) {
+                        $sf = Get-SlotStateFile $slot
+                        $st = Read-JsonFile $sf
+                        if ($st -and [string]$st.status -eq 'running') {
+                            $st.status = 'failed'
+                            $st.answer = '已手动停止'
+                            $st.phase = ''
+                            $st | ConvertTo-Json -Depth 8 | Set-Content $sf -Encoding UTF8
+                        }
+                    }
+                    Send-Text -Response $resp -Text ('{"ok":true,"stopped":' + $n + '}')
+                }
 
                 '/api/queue/cancel' {
                     if ($method -ne 'POST') { Send-Text -Response $resp -Text '{"ok":false}' -Code 405; break }

@@ -632,6 +632,20 @@ header{position:relative;z-index:1;display:flex;align-items:center;gap:14px;padd
 .hbar{display:flex;gap:16px;color:var(--dim);font-size:12px}
 .hbar b{color:var(--fg);font-weight:500}
 
+/* 窄屏优先保按钮。1366 的老笔记本上，「模型名 + 意图 + 步骤 + 用时」
+   会把后面的 自动化 / 历史 / 设置 顶出屏幕（实测 1400 宽就只剩到「队列」）。
+   这三块都是可以点开抽屉再看的诊断信息，先让位给功能入口。 */
+@media (max-width:1560px){
+  header{gap:10px;padding:0 12px}
+  header #hModel, header #hIntent{display:none}
+  header .theme-switch button{padding:0 7px;font-size:10.5px}
+}
+@media (max-width:1280px){
+  header{height:auto;flex-wrap:wrap;padding:7px 12px;gap:8px 10px;row-gap:7px}
+  header .spacer{display:none}
+  header .theme-switch{order:9}
+}
+
 /* 顶栏实时用量：缓存命中 / 速度 / 上下文。
    点击展开详情；数据由 renderFlow → refreshGenbar 每轮 state 刷新。 */
 .hbar-live{
@@ -2161,6 +2175,11 @@ header button,.side-actions button{
   margin-left:auto;font-size:11px;color:var(--faint);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
+.stop-btn{
+  border-color:var(--err-bd);color:var(--err);background:transparent;
+  margin-left:10px;white-space:nowrap;
+}
+.stop-btn:hover{background:var(--err);color:#fff;border-color:var(--err)}
 [data-theme="glass"] .mode-btn{background:rgba(58,24,84,.34);color:rgba(255,255,255,.82);border-color:rgba(255,255,255,.26)}
 [data-theme="glass"] .mode-btn.on{background:var(--accent);color:var(--primary-fg);border-color:transparent}
 [data-theme="glass"] .mode-hint{color:rgba(255,255,255,.66)}
@@ -3683,6 +3702,7 @@ header #btnModel,header #btnQueue,header #btnJobs,header #btnHist,header #btnSet
         <button class="mode-btn on" data-mode="normal" title="日常问答和简单任务：直接给结果">常规</button>
         <button class="mode-btn" data-mode="work" title="复杂任务：步数翻倍、强制先列计划、可用技能">工作</button>
         <span class="mode-hint" id="modeHint">日常问答、简单任务</span>
+        <button class="ghost sm stop-btn" id="btnStop" style="display:none" title="把正在跑的任务停掉">停止任务</button>
       </div>
       <div class="composer-inner">
         <textarea id="input" rows="1" placeholder="说点什么，让它去做…"></textarea>
@@ -5675,6 +5695,8 @@ function renderFlow(sess, st){
   if (st){
     var status = st.status || 'idle';
     dot.className = 'dot ' + status;
+    var sb = $('btnStop');
+    if (sb){ sb.style.display = (status === 'running' || status === 'waiting') ? 'inline-flex' : 'none'; }
     $('hintStatus').textContent = (st.phase ? '· ' + st.phase : (STATUS_TEXT[status] || ''));
     var hm = $('hModel');
     hm.innerHTML = '模型 <b>' + esc(st.model||'—') + '</b>';
@@ -6976,6 +6998,20 @@ input.onkeydown = function(e){
   if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); submit(); }
 };
 send.onclick = submit;
+
+$('btnStop').onclick = function(){
+  var b = this;
+  if (!confirm('停掉正在跑的任务？已经做出的改动会保留。')) return;
+  b.disabled = true;
+  fetch('/api/queue/stop', {method:'POST'})
+    .then(function(r){ return r.json(); })
+    .then(function(res){
+      b.disabled = false;
+      toast(res && res.ok ? '已停止' : '停止失败');
+      setTimeout(function(){ tick(); }, 400);
+    })
+    .catch(function(){ b.disabled = false; toast('停止请求失败'); });
+};
 
 /* ---------- 彩蛋：点 Nafx 大字，它会说话 ---------- */
 var EGG_NORMAL = [
