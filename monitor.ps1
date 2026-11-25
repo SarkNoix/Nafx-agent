@@ -328,6 +328,9 @@ function Save-Queue {
             # 实测工作模式提交后，派发器读回来是空，一律按常规跑，
             # 面板上「常规 / 工作」两个按钮看起来完全没区别。
             mode = [string]$it.mode
+            # 同理：reasoning 也得落盘。漏了它，排在前面的任务重启面板后就
+            # 退回默认「标准」，用户下半句改成 MAX 也传不到 agent。
+            reasoning = $(if ($it.PSObject.Properties.Name -contains 'reasoning' -and $null -ne $it.reasoning) { [int]$it.reasoning } else { 2 })
         }
         [void]$sb.Append(($o | ConvertTo-Json -Compress))
     }
@@ -336,12 +339,14 @@ function Save-Queue {
 }
 
 function Add-QueueItem {
-    param([string]$TaskText, [int]$Priority = 5, [string]$Mode = 'normal')
+    param([string]$TaskText, [int]$Priority = 5, [string]$Mode = 'normal', [int]$Reasoning = 2)
     # 模式随任务入队，调度时再传给 agent。
     #   normal 常规 / work 工作（步数多、先列计划）/ auto 自主（禁止提问）
     # 写错了一律当 normal，别因为一个参数拼错任务就跑不起来。
     $Mode = ([string]$Mode).Trim().ToLower()
     if ($Mode -notin @('normal', 'work', 'auto')) { $Mode = 'normal' }
+    # 推理力度跟着任务走：用户下半句改成「关闭」时，排在前面的任务还是按原档跑
+    $Reasoning = [Math]::Max(0, [Math]::Min(4, [int]$Reasoning))
     $items = Get-Queue
     $item = [pscustomobject]@{
         id        = 'q' + (Get-Date -Format 'HHmmss') + [Guid]::NewGuid().ToString('N').Substring(0,4)
@@ -349,6 +354,7 @@ function Add-QueueItem {
         status    = 'pending'
         priority  = $Priority
         mode      = $Mode
+        reasoning = $Reasoning
         addedAt   = (Get-Date -Format 'MM-dd HH:mm:ss')
         startedAt = ''
         doneAt    = ''
@@ -439,6 +445,11 @@ function Invoke-Dispatch {
         if ($next.PSObject.Properties.Name -contains 'mode' -and $next.mode) { $nextMode = [string]$next.mode }
         if ($nextMode -notin @('normal', 'work', 'auto')) { $nextMode = 'normal' }
 
+        # 推理力度（老队列项没有 reasoning 字段，默认标准）
+        $nextReason = 2
+        if ($next.PSObject.Properties.Name -contains 'reasoning' -and $null -ne $next.reasoning) { $nextReason = [int]$next.reasoning }
+        $nextReason = [Math]::Max(0, [Math]::Min(4, $nextReason))
+
         # 各模式的步数上限要和 agent.ps1 里的判断一致，
         # 不然面板显示的 maxSteps 和实际跑的不一样。
         $modeMaxSteps = [int]$Cfg.maxSteps
@@ -452,7 +463,8 @@ function Invoke-Dispatch {
         $ph = '{"status":"running","task":' + (J $next.task) + ',"steps":[],"step":1,"maxSteps":' + $modeMaxSteps +
               ',"elapsed":0,"phase":"第' + $slot + '路 准备","model":' + (J $Cfg.modelLabel) +
               ',"workspace":' + (J $Cfg.workspace) + ',"answer":"","logFile":"","slot":' + $slot +
-              ',"speed":0,"cacheHit":0,"mode":' + (J $nextMode) + '}'
+              ',"speed":0,"cacheHit":0,"mode":' + (J $nextMode) +
+              ',"reasoning":' + [int]$nextReason + '}'
         [IO.File]::WriteAllText($slotState, $ph, (New-Object Text.UTF8Encoding($false)))
         # 第 1 路的也同步到主 state，兼容老逻辑
         if ($slot -eq 1) { [IO.File]::WriteAllText($StateFile, $ph, (New-Object Text.UTF8Encoding($false))) }
@@ -462,7 +474,7 @@ function Invoke-Dispatch {
         $env:NAFX_STATE = $slotState
         try {
             $proc = Start-Process -FilePath 'powershell.exe' `
-                -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $AgentPath, '-MaxSteps', "$modeMaxSteps", '-Mode', $nextMode `
+                -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $AgentPath, '-MaxSteps', "$modeMaxSteps", '-Mode', $nextMode, '-Reasoning', "$nextReason" `
                 -RedirectStandardOutput $uiLog -WindowStyle Hidden -PassThru
             $Workers[$slot] = $proc
             # agent 进程也提一档优先级。
@@ -961,16 +973,17 @@ while ($listener.IsListening) {
 
                 '/api/run' {
                     if ($method -ne 'POST') { Send-Text -Response $resp -Text '{"ok":false,"msg":"只接受 POST"}' -Code 405; break }
-                    $task = ''; $prio = 5; $runMode = 'normal'
+                    $task = ''; $prio = 5; $runMode = 'normal'; $runReason = 2
                     try {
                         $b = Read-Body $ctx.Request | ConvertFrom-Json
                         $task = ([string]$b.task).Trim()
                         if ($b.PSObject.Properties.Name -contains 'priority') { $prio = [int]$b.priority }
                         if ($b.PSObject.Properties.Name -contains 'mode') { $runMode = [string]$b.mode }
+                        if ($b.PSObject.Properties.Name -contains 'reasoning') { $runReason = [int]$b.reasoning }
                     } catch { }
                     if ($runMode -notin @('normal', 'work', 'auto')) { $runMode = 'normal' }
                     if ([string]::IsNullOrWhiteSpace($task)) { Send-Text -Response $resp -Text '{"ok":false,"msg":"任务不能为空"}' -Code 400; break }
-                    $item = Add-QueueItem -TaskText $task -Priority $prio -Mode $runMode
+                    $item = Add-QueueItem -TaskText $task -Priority $prio -Mode $runMode -Reasoning $runReason
                     $q = Get-Queue
                     $pend = 0; $run = 0
                     foreach ($it in $q) { if ($it.status -eq 'pending') { $pend++ }; if ($it.status -eq 'running') { $run++ } }

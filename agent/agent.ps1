@@ -19,6 +19,11 @@ param(
     #   auto    自主：无人值守。**禁止 say（问了也没人答）**，
     #           卡住就自己想办法，实在不行 finish 说清楚卡在哪
     [string]$Mode = 'normal',
+    # 推理力度：0 关闭 / 1 弱 / 2 标准 / 3 强 / 4 MAX
+    # 决定「动手前想多深、做完自检几次」——面板那个滑块传进来的。
+    # 本地 4B 模型没有真正的 reasoning 开关，这里靠提示词约束行为；
+    # 接口模式会额外带 reasoning_effort 字段给支持的服务端。
+    [int]$Reasoning = 2,
     [switch]$ShowRaw
 )
 
@@ -34,6 +39,11 @@ $Root     = Split-Path -Parent $AgentDir
 $cfgName  = if ($env:NAFX_CONFIG) { [string]$env:NAFX_CONFIG } else { 'config.json' }
 $cfgPath  = if ([IO.Path]::IsPathRooted($cfgName)) { $cfgName } else { Join-Path $Root $cfgName }
 $Cfg      = Get-Content $cfgPath -Raw -Encoding UTF8 | ConvertFrom-Json
+
+# 推理力度：面板滑块传 0-4，传超范围的一律夹回边界，别让一个脏参数把任务弄崩
+$Reasoning = [Math]::Max(0, [Math]::Min(4, [int]$Reasoning))
+$script:ReasoningLevel = $Reasoning
+$ReasoningNames = @('关闭', '弱', '标准', '强', 'MAX')
 
 # api-key.json 顶部带 # 填写说明，直接 ConvertFrom-Json 会失败。
 # 这里只剥整行注释，正文仍是严格 JSON。
@@ -1503,10 +1513,21 @@ function Invoke-Model {
     if (-not $ToolsJson) { $ToolsJson = $ToolsSchemaRaw }
     $choice = if ($ForceTool) { '"required"' } else { '"auto"' }
 
+    # 单步输出上限：MAX 档不掐输出（本地 llama 传 -1 = 不限，
+    # 反正真正的天花板是 6144 的上下文窗口）；接口模式仍给有限值，
+    # 多数服务端不接受 -1，传了会被判参数错误。
+    $maxTok = if ($MaxTokens -gt 0) { $MaxTokens } else { [int]$Cfg.maxTokens }
+    if ($Reasoning -eq 4 -and -not $script:IsApiMode) { $maxTok = -1 }
+
     $jsonBody = '{"model":' + (To-JsonStr $script:ApiModelName) + ',"messages":[' + ($msgJson -join ',') + ']' +
                 ',"temperature":' + ([string]$Cfg.temperature) +
                 ',"top_p":' + ([string]$Cfg.topP) +
-                ',"max_tokens":' + $(if ($MaxTokens -gt 0) { $MaxTokens } else { [int]$Cfg.maxTokens }) +
+                ',"max_tokens":' + [string]$maxTok +
+                # 接口模式把滑块翻译成服务端的 reasoning_effort：0 不发（等于关闭），
+                # 3 和 4 都发 high —— 多数服务端只认 low/medium/high 三档。
+                $(if ($script:IsApiMode -and $Reasoning -ge 1) {
+                    ',"reasoning_effort":"' + (@('', 'low', 'medium', 'high', 'high')[$Reasoning]) + '"'
+                  } else { '' }) +
                 ',"tools":' + $ToolsJson +
                 ',"tool_choice":' + $choice +
                 # 本地 llama 明确开启 prompt cache：每一步只有尾部新增的
@@ -2502,6 +2523,22 @@ if (-not [string]::IsNullOrWhiteSpace($personalPrompt)) {
     Write-Log ("  带上个人指令（" + $personalPrompt.Length + " 字符）")
 }
 
+# 推理力度：把「想多深」写成可执行的规矩，而不是一句「请仔细思考」。
+# 本地 4B 没有真 reasoning，靠这段约束行为；关闭档要明确说「别多想」，
+# 否则模型照样会自己铺一堆 think，白白烧步数。
+$reasonBody = ''
+switch ($Reasoning) {
+    0 { $reasonBody = '用户把推理力度关掉了。直接作答或直接动手：不要额外的权衡和反复推翻，不要用 think 写分析；信息够就直接做，做完一句话交代结果。' }
+    1 { $reasonBody = '弱。只抓主干：想一步「先做什么」就动手，别铺完整计划；一次能做完的事不要拆成多步。' }
+    2 { $reasonBody = '标准。动手前想清楚三件事：入口是什么、输入输出各是什么、出错时怎么办。做完自检一次——结果对不对、有没有漏掉原话里的要求，有问题就修一次再收尾。' }
+    3 { $reasonBody = '强。先在心里列 3–5 步计划再动手；考虑边界情况（文件不存在、命令报错、路径带空格）；每步做完看一眼返回值是否印证预期，偏了就修正再继续；收尾前对照用户原话逐项确认。' }
+    4 { $reasonBody = 'MAX。这档不限制你的输出长度，不用为了省 token 把计划压成一行；但计划必须写出来，不能只在心里过一遍：第一轮用 think 列出目标、3–6 步计划、可能失败的两处、备选做法；按计划执行，每步检查结果并更新计划；同一问题连续两次没进展就换做法；收尾前逐条核对用户原话里的每个要求，缺一项就补上。' }
+}
+if ($reasonBody) {
+    $sysFull = $sysFull + "`n`n## 推理力度：$($ReasoningNames[$Reasoning])`n`n" + $reasonBody
+    Write-Log ("  推理力度：" + $ReasoningNames[$Reasoning])
+}
+
 # 用户从面板「上下文注入」里写的背景（config.self.json 的 contextInject）。
 # 用途：把那些「每次都得交代一遍」的事——项目结构、术语、口径、当前在做什么——
 # 一次性写在这儿，之后每条任务自动带上，不用再打字。
@@ -2638,6 +2675,8 @@ $state = [pscustomobject]@{
     logFile   = $logFile
     slot      = 1
     intent    = $intent
+    reasoning = $Reasoning
+    reasoningName = $ReasoningNames[$Reasoning]
     flow      = $(if ($script:ActiveFlow) { [string]$script:ActiveFlow.id } else { '' })
     flowName  = $(if ($script:ActiveFlow) { [string]$script:ActiveFlow.name } else { '' })
     # 实际发出去的工具定义有多大。面板拿这个算剩余上下文，
@@ -2938,6 +2977,10 @@ $target = [Math]::Min($targetByBudget, [Math]::Max($targetByShare, 1400))
         # 注入的背景同样不能丢：context 紧张时砍掉的该是举例和小节，不是用户交待的事
         if (-not [string]::IsNullOrWhiteSpace($contextInject) -and $slimSys -notmatch '用户注入的背景') {
             $slimSys += "`n`n## 用户注入的背景`n`n" + $contextInject
+        }
+        # 推理力度也保留：砍掉它等于把用户刚滑出来的档位作废
+        if ($Reasoning -gt 0 -and $reasonBody -and $slimSys -notmatch '推理力度：') {
+            $slimSys += "`n`n## 推理力度：$($ReasoningNames[$Reasoning])`n`n" + $reasonBody
         }
         $history[0] = @{ role = 'system'; content = $slimSys }
         # 写回之后重算 —— 上面那两段是「加回来」的，必须计入，

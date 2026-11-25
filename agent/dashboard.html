@@ -1005,6 +1005,60 @@ main{position:relative;z-index:1;flex:1;display:flex;min-height:0}
   padding:12px 18px;flex-shrink:0;
   backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur)}
 .composer-inner{display:flex;gap:10px;align-items:flex-end;max-width:900px;margin:0 auto}
+
+/* ---------- 推理力度：按钮 → 弹出滑块（只动 transform，不碰 left/width） ---------- */
+.reason-wrap{position:relative;flex-shrink:0;align-self:flex-end}
+.reason-btn{
+  width:38px;height:38px;padding:0;border-radius:11px;display:flex;align-items:center;justify-content:center;
+  background:var(--panel2);border:1px solid var(--line);color:var(--dim);cursor:pointer;position:relative;
+  transition:transform .18s cubic-bezier(.34,1.4,.64,1), background .18s, border-color .18s, color .18s;
+  will-change:transform;
+}
+.reason-btn:hover{color:var(--fg);border-color:var(--line2);transform:translateZ(0) scale(1.04)}
+.reason-btn:active{transform:translateZ(0) scale(.92)}
+.reason-btn svg{width:17px;height:17px}
+.reason-btn .r-dot{position:absolute;right:4px;bottom:4px;width:6px;height:6px;border-radius:99px;
+  background:#5560f0;box-shadow:0 0 6px rgba(85,96,240,.55);transition:background .2s, box-shadow .2s}
+
+.reason-pop{
+  position:absolute;right:0;bottom:calc(100% + 12px);width:252px;padding:11px 13px 9px;
+  border-radius:14px;border:1px solid rgba(255,255,255,.09);
+  background:rgba(26,28,34,.92);backdrop-filter:blur(18px) saturate(1.2);-webkit-backdrop-filter:blur(18px) saturate(1.2);
+  box-shadow:0 18px 44px rgba(0,0,0,.42), 0 2px 6px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.07);
+  transform-origin:bottom right;transform:translate3d(0,6px,0) scale(.86);opacity:0;pointer-events:none;
+  transition:transform .26s cubic-bezier(.34,1.5,.64,1), opacity .18s ease;z-index:40;color:#e8eaf0;
+}
+[data-theme="light"] .reason-pop,[data-theme="dsh"] .reason-pop,[data-theme="su"] .reason-pop{
+  background:rgba(255,255,255,.96);border-color:rgba(0,0,0,.08);
+  box-shadow:0 16px 40px rgba(37,41,58,.16), 0 1px 3px rgba(37,41,58,.10);
+  color:#22252c;
+}
+.reason-pop.on{transform:translate3d(0,0,0) scale(1);opacity:1;pointer-events:auto}
+.reason-head{display:flex;align-items:baseline;gap:8px;margin-bottom:9px;font-size:11px;opacity:.66}
+.reason-head b{margin-left:auto;font-size:12px;font-weight:600;opacity:.95;letter-spacing:.2px}
+.reason-track{position:relative;height:26px;touch-action:none;cursor:pointer;outline:none}
+.reason-rail{position:absolute;left:0;right:0;top:50%;height:6px;margin-top:-3px;border-radius:99px;
+  background:rgba(255,255,255,.08)}
+[data-theme="light"] .reason-rail,[data-theme="dsh"] .reason-rail,[data-theme="su"] .reason-rail{background:rgba(30,34,48,.09)}
+.reason-fill{position:absolute;left:0;top:50%;height:6px;margin-top:-3px;width:100%;border-radius:99px;
+  background:linear-gradient(90deg,#3b82f6 0%,#6366f1 45%,#a855f7 100%);
+  transform-origin:left center;transform:scaleX(0);will-change:transform;
+  transition:transform .3s cubic-bezier(.34,1.4,.64,1), opacity .2s}
+.reason-thumb{
+  position:absolute;left:0;top:50%;width:20px;height:20px;margin-top:-10px;border-radius:99px;
+  background:radial-gradient(circle at 34% 28%, #ffffff 0%, rgba(255,255,255,.55) 18%, var(--rc,#5560f0) 62%, var(--rc2,#3b82f6) 100%);
+  box-shadow:0 0 0 1px rgba(255,255,255,.14) inset, 0 3px 10px rgba(0,0,0,.38), 0 0 14px var(--rc-glow,rgba(85,96,240,.35));
+  will-change:transform;transform:translate3d(0,0,0);
+  transition:transform .32s cubic-bezier(.34,1.56,.64,1), background .2s, box-shadow .2s;
+  cursor:grab;
+}
+.reason-thumb.grab{transform:translate3d(var(--tx,0px),0,0) scale(.9);cursor:grabbing}
+.reason-ticks{display:flex;justify-content:space-between;margin-top:7px;font-size:9.5px;opacity:.55;letter-spacing:.4px}
+.reason-ticks span{flex:1;text-align:center;transition:opacity .2s}
+.reason-ticks span.on{opacity:1;font-weight:600}
+.reason-fx{position:absolute;inset:0;pointer-events:none;overflow:visible}
+.reason-particle{position:absolute;width:4px;height:4px;border-radius:99px;background:var(--rc,#5560f0);
+  box-shadow:0 0 8px var(--rc-glow,rgba(85,96,240,.5));will-change:transform,opacity;pointer-events:none}
 textarea{flex:1;resize:none;min-height:46px;max-height:170px;background:var(--panel2);
   border:1px solid var(--line);border-radius:var(--radius-lg);color:var(--fg);
   font-family:inherit;font-size:14px;padding:13px 14px;line-height:1.5;outline:none;transition:.15s}
@@ -3749,6 +3803,27 @@ header #btnModel,header #btnQueue,header #btnJobs,header #btnHist,header #btnSet
       </div>
       <div class="composer-inner">
         <textarea id="input" rows="1" placeholder="说点什么，让它去做…"></textarea>
+        <div class="reason-wrap">
+          <button class="reason-btn" id="reasonBtn" aria-haspopup="true" aria-expanded="false" title="推理力度：标准">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 3.2l1.7 4.6 4.6 1.7-4.6 1.7L12 15.8l-1.7-4.6L5.7 9.5l4.6-1.7z" fill="currentColor" opacity=".9"/>
+              <circle cx="18.2" cy="17.4" r="1.7" fill="currentColor" opacity=".55"/>
+              <circle cx="6.4" cy="17.8" r="1.1" fill="currentColor" opacity=".35"/>
+            </svg>
+            <span class="r-dot" id="reasonDot"></span>
+          </button>
+          <div class="reason-pop" id="reasonPop">
+            <div class="reason-head"><span>推理力度</span><b id="reasonName">标准</b></div>
+            <div class="reason-track" id="reasonTrack" tabindex="0" role="slider"
+                 aria-valuemin="0" aria-valuemax="4" aria-valuenow="2" aria-label="推理力度">
+              <i class="reason-rail"></i>
+              <i class="reason-fill" id="reasonFill"></i>
+              <div class="reason-fx" id="reasonFx"></div>
+              <div class="reason-thumb" id="reasonThumb"></div>
+            </div>
+            <div class="reason-ticks" id="reasonTicks"><span>关闭</span><span>弱</span><span>标准</span><span>强</span><span>MAX</span></div>
+          </div>
+        </div>
         <button class="primary" id="send" title="发送（Enter）">
           <svg class="send-ico" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M21.8 2.2 2.6 10.9c-.6.3-.6 1.1 0 1.3l6.1 2.3 2.3 6.1c.2.6 1 .6 1.3 0L21.8 2.2z"/>
@@ -6387,12 +6462,149 @@ function bindMode(){
   setMode(saved);
 }
 
+/* ---------- 推理力度滑块 ----------
+   0 关闭 / 1 弱 / 2 标准 / 3 强 / 4 MAX。
+   所有位移动画只改 transform（thumb / 填充 / 粒子），不碰 left/width ——
+   布局属性每帧重算会触发 reflow，低端机上直接掉帧。 */
+var REASON_NAMES = ['关闭', '弱', '标准', '强', 'MAX'];
+var REASON_DESC = ['不额外思考，直接做', '只抓主干，一次做完', '想清楚再动手，做完自检', '先列计划，逐步验证', '不掐输出，计划必须写出来'];
+var curReason = 2;
+try {
+  var rsaved = localStorage.getItem('nafx-reason');
+  if (rsaved !== null && rsaved !== '') curReason = Math.max(0, Math.min(4, parseInt(rsaved, 10) || 0));
+} catch(_){}
+
+function reasonColor(p){
+  // 蓝 #3b82f6 → 紫 #a855f7：滑块越靠右越紫
+  var a=[59,130,246], b=[168,85,247];
+  var r=Math.round(a[0]+(b[0]-a[0])*p), g=Math.round(a[1]+(b[1]-a[1])*p), bl=Math.round(a[2]+(b[2]-a[2])*p);
+  return 'rgb(' + r + ',' + g + ',' + bl + ')';
+}
+
+function layoutReason(){
+  var track = $('reasonTrack'), thumb = $('reasonThumb'), fill = $('reasonFill');
+  var nameEl = $('reasonName'), dot = $('reasonDot'), ticks = $('reasonTicks');
+  if (!track || !thumb) return;
+  var w = track.clientWidth || 220;
+  var p = curReason / 4;
+  var x = p * Math.max(0, w - 20);
+  thumb.style.setProperty('--tx', x.toFixed(1) + 'px');
+  if (fill) { fill.style.transform = 'scaleX(' + p + ')'; fill.style.opacity = curReason ? '1' : '.25'; }
+  if (curReason === 0) {
+    thumb.style.setProperty('--rc', '#8b93a5');
+    thumb.style.setProperty('--rc2', '#6f7787');
+    thumb.style.setProperty('--rc-glow', 'rgba(139,147,165,.22)');
+    if (dot) { dot.style.background = '#8b93a5'; dot.style.boxShadow = '0 0 0 rgba(0,0,0,0)'; }
+  } else {
+    var c = reasonColor(p);
+    thumb.style.setProperty('--rc', c);
+    thumb.style.setProperty('--rc-glow', c.replace('rgb(', 'rgba(').replace(')', ',.34)'));
+    if (dot) { dot.style.background = c; dot.style.boxShadow = '0 0 6px ' + c.replace('rgb(', 'rgba(').replace(')', ',.55)'); }
+  }
+  if (nameEl) nameEl.textContent = REASON_NAMES[curReason];
+  track.setAttribute('aria-valuenow', String(curReason));
+  if (ticks) {
+    var sp = ticks.querySelectorAll('span');
+    for (var i=0;i<sp.length;i++) sp[i].className = (i === curReason) ? 'on' : '';
+  }
+  var btn = $('reasonBtn');
+  if (btn) btn.title = '推理力度：' + REASON_NAMES[curReason] + (curReason ? '（' + REASON_DESC[curReason] + '）' : '');
+}
+
+function reasonParticles(){
+  var fx = $('reasonFx'), track = $('reasonTrack'), thumb = $('reasonThumb');
+  if (!fx || !track || !thumb) return;
+  var w = track.clientWidth || 220;
+  var p = curReason / 4;
+  var x0 = p * Math.max(0, w - 20) + 10;
+  var c = curReason ? reasonColor(p) : '#8b93a5';
+  for (var i=0;i<7;i++){
+    var d = document.createElement('span');
+    d.className = 'reason-particle';
+    var y0 = 13 + (Math.random() * 10 - 5);
+    d.style.setProperty('--rc', c);
+    d.style.setProperty('--rc-glow', c.replace('rgb(', 'rgba(').replace(')', ',.5)'));
+    d.style.transform = 'translate3d(' + x0.toFixed(1) + 'px,' + y0.toFixed(1) + 'px,0)';
+    fx.appendChild(d);
+    var len = 34 + Math.random() * 70;
+    var drift = Math.random() * 18 - 9;
+    var dur = 480 + Math.random() * 340;
+    var anim = d.animate([
+      { transform: 'translate3d(' + x0.toFixed(1) + 'px,' + y0.toFixed(1) + 'px,0) scale(1)', opacity: 0.85 },
+      { transform: 'translate3d(' + (x0 - len).toFixed(1) + 'px,' + (y0 + drift).toFixed(1) + 'px,0) scale(.25)', opacity: 0 }
+    ], { duration: dur, easing: 'cubic-bezier(.22,.68,.38,1)' });
+    anim.onfinish = (function(el){ return function(){ if (el.parentNode) el.parentNode.removeChild(el); }; })(d);
+  }
+}
+
+function setReason(v, burst){
+  v = Math.max(0, Math.min(4, v | 0));
+  var changed = (v !== curReason);
+  curReason = v;
+  try { localStorage.setItem('nafx-reason', String(v)); } catch(_){}
+  layoutReason();
+  if (burst && changed) reasonParticles();
+}
+
+function bindReason(){
+  var btn = $('reasonBtn'), pop = $('reasonPop'), track = $('reasonTrack');
+  if (!btn || !pop || !track) return;
+  btn.onclick = function(e){
+    e.stopPropagation();
+    var open = pop.className.indexOf('on') >= 0;
+    pop.className = 'reason-pop' + (open ? '' : ' on');
+    btn.setAttribute('aria-expanded', open ? 'false' : 'true');
+    if (!open) { layoutReason(); }
+  };
+  pop.onclick = function(e){ e.stopPropagation(); };
+  document.addEventListener('click', function(){
+    if (pop.className.indexOf('on') >= 0) { pop.className = 'reason-pop'; btn.setAttribute('aria-expanded','false'); }
+  });
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape' && pop.className.indexOf('on') >= 0) { pop.className = 'reason-pop'; btn.setAttribute('aria-expanded','false'); }
+  });
+
+  // 指针交互：按下即可跳档；拖动时按最近档位吸附，跨档才喷粒子
+  var dragging = false;
+  function pick(clientX){
+    var rect = track.getBoundingClientRect();
+    var w = rect.width || 220;
+    var p = Math.max(0, Math.min(1, (clientX - rect.left - 10) / Math.max(1, w - 20)));
+    setReason(Math.round(p * 4), true);
+  }
+  track.addEventListener('pointerdown', function(e){
+    dragging = true;
+    try { track.setPointerCapture(e.pointerId); } catch(_){}
+    var th = $('reasonThumb');
+    if (th) th.classList.add('grab');
+    pick(e.clientX);
+    e.preventDefault();
+  });
+  track.addEventListener('pointermove', function(e){
+    if (!dragging) return;
+    pick(e.clientX);
+  });
+  function endDrag(){
+    dragging = false;
+    var th = $('reasonThumb');
+    if (th) th.classList.remove('grab');
+  }
+  track.addEventListener('pointerup', endDrag);
+  track.addEventListener('pointercancel', endDrag);
+  track.addEventListener('keydown', function(e){
+    if (e.key === 'ArrowLeft') { setReason(curReason - 1, true); e.preventDefault(); }
+    if (e.key === 'ArrowRight') { setReason(curReason + 1, true); e.preventDefault(); }
+  });
+  window.addEventListener('resize', function(){ if (pop.className.indexOf('on') >= 0) layoutReason(); });
+  layoutReason();
+}
+
 function submit(){
   var t = input.value.trim();
   if (!t) return;
   var backup = input.value;
   input.value = ''; autoGrow();
-  fetch('/api/run', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({task:t, mode:curMode})})
+  fetch('/api/run', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({task:t, mode:curMode, reasoning:curReason})})
     .then(function(r){ return r.json(); })
     .then(function(j){
       if (!j || !j.ok){ toast((j&&j.msg)||'提交失败', true); input.value = backup; autoGrow(); return; }
@@ -7735,6 +7947,7 @@ bindChips();
 bindAnswer();
 bindAutopilot();
 bindMode();
+bindReason();
 bindModelWarn();
 bindLiveMeter();
 loadFiles();
