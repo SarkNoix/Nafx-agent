@@ -816,10 +816,14 @@ main{position:relative;z-index:1;flex:1;display:flex;min-height:0}
 .empty{max-width:540px;margin:9vh auto;text-align:center;color:var(--dim)}
 .empty h1{font-size:24px;color:var(--fg);margin:0 0 10px;font-weight:600;letter-spacing:.5px}
 .empty p{margin:7px 0;line-height:1.7;font-size:13px}
-.chips{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:22px}
+.chips{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:10px}
 .chip{border:1px solid var(--line);background:var(--panel);border-radius:20px;
   padding:8px 15px;font-size:13px;cursor:pointer;transition:.15s;color:var(--dim)}
 .chip:hover{border-color:var(--accent);color:var(--fg);background:var(--panel2)}
+.chip i{font-style:normal;font-size:11px;color:var(--faint);margin-left:4px}
+.chip:hover i{color:var(--dim)}
+.chip-label{font-size:11px;color:var(--faint);letter-spacing:.8px;margin-top:20px}
+.empty-tip{margin-top:22px !important;font-size:12px !important;color:var(--faint);line-height:1.8 !important}
 
 .msg{margin-bottom:15px;display:flex;gap:10px;align-items:flex-start}
 .msg.user{justify-content:flex-end}
@@ -4646,16 +4650,27 @@ function renderTools(){
 
 /* ---------- 会话渲染 ---------- */
 function emptyHtml(){
-  return '<div class="empty"><h1>Nafx</h1>' +
-    '<p>在下面输入任务，回车即可。它会自己列清单、动手、汇报。</p>' +
-    '<p style="font-size:12px;color:var(--faint)">同一个对话里可以连续做多件事，它会记得前文</p>' +
+  // 首屏决定"这个人会不会继续用"。三件事：
+  // ① 先给能立刻成功的任务（数文件 / 查空间），别一上来就让它写项目；
+  // ② 每个示例都标大概多久，新用户才不会以为卡死；
+  // ③ 会动文件的单独一组并写明，避免"点一下桌面被搬空"。
+  return '<div class="empty"><h1>说一句话，它自己动手</h1>' +
+    '<p>列清单 → 调工具 → 汇报结果。下面的点一下填进输入框，按 Enter 就跑。</p>' +
+    '<div class="chip-label">只看不动文件 · 通常 1 分钟内</div>' +
     '<div class="chips">' +
-    '<div class="chip" data-t="创建一个 hello.txt 写入 你好">创建文件</div>' +
-    '<div class="chip" data-t="统计 data 目录下有多少个文件">数文件</div>' +
-    '<div class="chip" data-t="写一个计算器 calc.ps1，支持加减乘除，用参数传入，然后跑 12 加 3 测试">写计算器</div>' +
-    '<div class="chip" data-t="列一下当前目录有哪些文件">列目录</div>' +
-    '<div class="chip" data-t="查一下 robocopy 怎么用">查命令</div>' +
-    '</div></div>';
+    '<div class="chip" data-t="统计 workspace 目录里有多少个文件，只要数字">数文件 <i>约 1 分钟</i></div>' +
+    '<div class="chip" data-t="看一下 C 盘和 E 盘各自还剩多少空间，说清楚哪个最紧张">查磁盘 <i>约 1 分钟</i></div>' +
+    '<div class="chip" data-t="列出你现在能做的事，按类别说清楚，每条一句话">它会什么 <i>约 1 分钟</i></div>' +
+    '</div>' +
+    '<div class="chip-label">会动手 · 2–4 分钟</div>' +
+    '<div class="chips">' +
+    '<div class="chip" data-t="写一个计算器 calc.ps1，支持加减乘除，用参数传入，然后跑 12 加 3 测试">写脚本 <i>约 3 分钟</i></div>' +
+    '<div class="chip" data-t="把 workspace 里的文件按扩展名分到子目录，重名的不要覆盖">分类文件 <i>会挪文件 · 3 分钟</i></div>' +
+    '<div class="chip" data-t="帮我整理一下桌面，按类型归档，别删东西">整理桌面 <i>会挪文件 · 3–5 分钟</i></div>' +
+    '</div>' +
+    '<p class="empty-tip">第一次跑会偏慢——模型要先读一遍提示词（约 2 分钟），之后同一会话快很多。<br>' +
+    '任务在跑时别关窗口：面板会一步步显示它现在在干什么。</p>' +
+    '</div>';
 }
 
 function msgMeter(m, idx){
@@ -4692,6 +4707,26 @@ function msgMeter(m, idx){
   return '<div class="msg-meter' + (live ? ' live' : '') + '">' + bits.join('<span class="mm-sep">·</span>') + '</div>';
 }
 
+function friendlyFail(text){
+  // 失败时别只丢一句内部错误。新用户看到"连续三次没有调用工具"只会觉得坏了，
+  // 这里补一句"下一步怎么做"，比多一个按钮有用。
+  var t = String(text || '');
+  if (!t) return '这次没跑成，原因没记下来。换个说法再试一次。';
+  var hint = '';
+  if (t.indexOf('连续三次没有调用工具') >= 0 || t.indexOf('没拿到任何结果') >= 0) {
+    hint = '把任务说得更具体一点：给路径、给文件名、给"做完要达到什么"。或者先只让它做第一步。';
+  } else if (t.indexOf('超时') >= 0 || t.indexOf('timeout') >= 0 || t.indexOf('太久') >= 0) {
+    hint = '这个任务对它来说太大了。拆成两步：先让它看清楚（列文件、读内容），再让它动手。';
+  } else if (t.indexOf('上下文') >= 0 || t.indexOf('token') >= 0 || t.indexOf('context') >= 0) {
+    hint = '这次带进去的内容太多。先用"清空会话"重开一轮，把任务范围缩小。';
+  } else if (t.indexOf('面板重启') >= 0 || t.indexOf('中断') >= 0) {
+    hint = '任务被打断了（面板或模型重启）。原样再发一次就行。';
+  } else if (t.indexOf('模型') >= 0 && (t.indexOf('没有响应') >= 0 || t.indexOf('没在跑') >= 0)) {
+    hint = '先确认模型服务活着：面板左上角「模型」抽屉里点启动，等状态变绿再发。';
+  }
+  return hint ? (t + '\n\n**接着怎么做**：' + hint) : t;
+}
+
 function msgBubble(m, idx){
   var role = (m.role === 'user') ? 'user' : 'assistant';
   // 分清三种内容的视觉分量：
@@ -4708,6 +4743,7 @@ function msgBubble(m, idx){
           : (isThink ? 'Nafx 在想' : (isNote ? 'Nafx · 进度' : 'Nafx'));
   var files = (m.files && m.files.length) ? ('<div class="files">涉及：' + esc(m.files.join('、')) + '</div>') : '';
   var content = String(m.content || '');
+  if (m.ok === false) content = friendlyFail(content);
   var ops = '<div class="ops">' +
     '<button data-op="copy" data-i="' + idx + '">复制</button>' +
     (role === 'user' ? '<button data-op="replay" data-i="' + idx + '">重答</button>' : '') +
@@ -5705,7 +5741,8 @@ function renderFlow(sess, st){
       // 不能用 esc()：它产出的 &lt; 这类实体塞给 textContent 后，
       // 下次读回来是原始字符，两者永远不相等 —— 于是每次轮询都重设一次，
       // 一直重排，页面就一卡一卡的。
-      var want = (st.phase||'') + ' · ' + (st.step||0) + '/' + (st.maxSteps||0) + ' · ' + fmtTime(st.elapsed);
+      var want = (st.phase||'') + ' · ' + (st.step||0) + '/' + (st.maxSteps||0) + ' · ' + fmtTime(st.elapsed) +
+                 (Number(st.elapsed||0) > 90 ? ' · 老机器上慢一点正常' : '');
       if (lbHead.textContent !== want) lbHead.textContent = want;
     }
     // 实时进度：步骤列表 / 进度条 / 进行中的一步，全在这条快通道里刷新。
