@@ -1065,11 +1065,11 @@ main{position:relative;z-index:1;flex:1;display:flex;min-height:0}
 .reason-ticks span.on{opacity:1;font-weight:600}
 /* 星星只画在彩色填充区里：用 clip-path 裁到滑块左侧，档位变化只改右侧 inset */
 .reason-stars{position:absolute;inset:0;pointer-events:none;z-index:3;
-  clip-path:inset(15px var(--clipR,100%) 15px 12px round 13px);will-change:clip-path}
+  clip-path:inset(15px 12px 15px 12px round 13px);will-change:clip-path}
 .reason-fx{position:absolute;inset:0;pointer-events:none;overflow:visible;z-index:5}
 .reason-star{position:absolute;left:0;top:0;border-radius:99px;pointer-events:none;
   background:radial-gradient(circle,#fff 0%,#fff 42%,rgba(255,255,255,.62) 60%,rgba(255,255,255,0) 100%);
-  box-shadow:0 0 7px rgba(255,255,255,.55);
+  box-shadow:0 0 9px rgba(255,255,255,.75);
   will-change:transform,opacity}
 .reason-particle{position:absolute;left:0;top:0;border-radius:99px;background:#fff;
   box-shadow:0 0 8px #fff, 0 0 18px rgba(255,255,255,.85), 0 0 30px var(--pg,rgba(168,85,247,.55));
@@ -6518,8 +6518,6 @@ function layoutReason(){
   // 不再出现推到最右还差半个滑块的情况。
   var cx = m.pad + m.span * p;
   thumb.style.setProperty('--tx', (cx - m.tw / 2).toFixed(1) + 'px');
-  var starsBox = $('reasonStars');
-  if (starsBox) starsBox.style.setProperty('--clipR', Math.max(0, m.w - 12 - (12 + (m.w - 24) * p)).toFixed(1) + 'px');
   thumb.style.setProperty('--rc-glow', (curReason ? reasonColor(p).replace('rgb(', 'rgba(').replace(')', ',.34)') : 'rgba(139,147,165,.20)'));
   if (fill) { fill.style.transform = 'scaleX(' + p + ')'; fill.style.opacity = curReason ? '1' : '.22'; }
   if (curReason === 0) {
@@ -6556,10 +6554,10 @@ function reasonStars(){
   for (var k=0;k<old.length;k++) old[k].parentNode.removeChild(old[k]);
   var w = track.clientWidth || 260, h = track.clientHeight || 56;
   var rate = reasonStarRate();
-  for (var i=0;i<11;i++){
+  for (var i=0;i<16;i++){
     var s = document.createElement('span');
     s.className = 'reason-star';
-    var sz = 3 + Math.random() * 3;
+    var sz = 4 + Math.random() * 4;
     s.style.width = sz.toFixed(1) + 'px';
     s.style.height = sz.toFixed(1) + 'px';
     var x = 20 + Math.random() * (w - 46);
@@ -6569,7 +6567,7 @@ function reasonStars(){
     box.appendChild(s);
     // 透明度的呼吸 + 左右缓慢漂移，两段动画都只碰 opacity / transform
     var a = s.animate([
-      { opacity: .3 }, { opacity: .95 }, { opacity: .42 }
+      { opacity: .45 }, { opacity: 1 }, { opacity: .5 }
     ], { duration: 1800 + Math.random() * 2200, delay: Math.random() * 1600, iterations: Infinity, easing: 'ease-in-out' });
     // 行程不许把星星甩出轨道左端，按起点收着走
     var drift = Math.min(34 + Math.random() * 46, Math.max(6, x - 16));
@@ -6612,8 +6610,8 @@ function reasonParticles(){
     d.style.setProperty('--pg', pg);
     var tail = 14 + Math.random() * 28;     // 拖尾长度≈快门时间内的位移
     d.style.setProperty('--tail', tail.toFixed(0) + 'px');
-    var y0 = cy + (Math.random() * 16 - 8);
-    var x0 = cx + (Math.random() * 6 - 3);
+    var y0 = cy + (Math.random() * 20 - 10);
+    var x0 = cx + (Math.random() * 10 - 5) - (i % 4) * 7;
     d.style.transform = 'translate3d(' + (x0 - sz/2).toFixed(1) + 'px,' + (y0 - sz/2).toFixed(1) + 'px,0) scale(.35)';
     fx.appendChild(d);
     // 飞行距离随档位拉长，MAX 最远，但不越过轨道左端
@@ -6622,7 +6620,7 @@ function reasonParticles(){
     var len = Math.min(base * (0.85 + Math.random() * 0.3), room);
     var drift = Math.random() * 14 - 7;
     var dur = 800 + len * 3.2 + Math.random() * 320;   // 飞得远，飘得也久一点
-    var delay = Math.random() * 260;
+    var delay = i * 52 + Math.random() * 110;   // 一颗接一颗出，摊开成流
     var anim = d.animate([
       { transform: 'translate3d(' + (x0 - sz/2).toFixed(1) + 'px,' + (y0 - sz/2).toFixed(1) + 'px,0) scale(.35)', opacity: 0 },
       { transform: 'translate3d(' + (x0 - sz/2 - len * .2).toFixed(1) + 'px,' + (y0 - sz/2 + drift * .2).toFixed(1) + 'px,0) scale(1)', opacity: 1, offset: .2 },
