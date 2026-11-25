@@ -153,12 +153,14 @@
         "grep_file",
         "list_dir",
         "web_search",
+        "web_fetch",
         "syshelp",
         "help",
         "http_request",
         "pdf_read",
         "note",
-        "finish"
+        "finish",
+        "file_editor"
       ],
       "name": "查东西 / 找某个值",
       "match": [
@@ -242,6 +244,7 @@
         "list_dir",
         "note",
         "finish",
+        "file_editor",
         "append_file"
       ],
       "name": "创建文件 / 写内容",
@@ -307,6 +310,8 @@
         "write_file",
         "note",
         "finish",
+        "file_editor",
+        "git",
         "multi_edit"
       ],
       "name": "改内容 / 替换",
@@ -382,7 +387,8 @@
         "http_request",
         "pdf_read",
         "note",
-        "finish"
+        "finish",
+        "file_editor"
       ],
       "name": "格式转换",
       "match": [
@@ -440,6 +446,7 @@
         "plan",
         "think",
         "web_search",
+        "web_fetch",
         "download_file",
         "write_file",
         "read_file",
@@ -524,7 +531,10 @@
         "make_dir",
         "note",
         "finish",
+        "file_editor",
+        "git",
         "web_search",
+        "web_fetch",
         "multi_edit"
       ],
       "name": "写脚本 / 做工具",
@@ -843,6 +853,7 @@
         "make_dir",
         "move_path",
         "find_files",
+        "file_editor",
         "note",
         "finish"
       ],
