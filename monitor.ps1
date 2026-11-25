@@ -68,6 +68,8 @@ try {
 } catch { }
 
 $StateFile = Join-Path $Root 'agent\state.json'
+# 累计用量：agent 每发一次请求就累加进这个文件，面板顶栏的「总用量」直接读它。
+$UsageFile = Join-Path $Root 'agent\logs\usage.json'
 $HtmlPath  = Join-Path $Root 'agent\dashboard.html'
 $AgentPath = Join-Path $Root 'agent\agent.ps1'
 $QueueFile = Join-Path $Root 'agent\queue.json'
@@ -466,6 +468,20 @@ function Invoke-Dispatch {
 
 # ---------------- 汇总状态 ----------------
 # 把多路 state 合并成一个给面板看
+function Get-UsageTotals {
+    $u = [ordered]@{
+        since = ''; reqs = 0; inTok = 0; outTok = 0; cacheTok = 0
+        apiInTok = 0; apiOutTok = 0; apiCacheTok = 0; cost = 0.0; currency = '¥'
+    }
+    try {
+        if (Test-Path $UsageFile) {
+            $o = [IO.File]::ReadAllText($UsageFile, [Text.Encoding]::UTF8) | ConvertFrom-Json
+            foreach ($k in @($u.Keys)) { if ($null -ne $o.$k) { $u[$k] = $o.$k } }
+        }
+    } catch { }
+    return [pscustomobject]$u
+}
+
 function Get-MergedState {
     $list = @()
     for ($slot = 1; $slot -le $WorkerCount; $slot++) {
@@ -503,6 +519,7 @@ function Get-MergedState {
             maxSteps = [int]$Cfg.maxSteps; elapsed = 0; model = [string]$Cfg.modelLabel
             workspace = [string]$Cfg.workspace; answer = ''; plan = ''; summary = ''
             logFile = ''; workers = @()
+            usage = (Get-UsageTotals)
         }
     }
 
@@ -637,6 +654,8 @@ if ($script:agentMissStreak -ge 2 -and -not $hasAgent -and -not $hasResult -and 
         genTok    = $(if ($main.PSObject.Properties.Name -contains 'genTok') { [int]$main.genTok } else { 0 })
         phase     = [string]$main.phase
         workers   = $summary
+        # 累计用量（跨任务、跨重启），面板顶栏「总用量」就是它
+        usage     = (Get-UsageTotals)
     }
 }
 

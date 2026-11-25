@@ -668,6 +668,8 @@ header{position:relative;z-index:1;display:flex;align-items:center;gap:14px;padd
 .live-pop .lp-row span{color:var(--dim)}
 .live-pop .lp-row b{color:var(--fg);font-weight:500;font-variant-numeric:tabular-nums;text-align:right}
 .live-pop .lp-note{margin-top:8px;color:var(--faint);font-size:10.5px;line-height:1.5}
+.live-pop .lp-sub{margin-top:9px;padding-top:8px;border-top:1px solid var(--line);
+  color:var(--fg);font-size:11.5px;font-weight:600;letter-spacing:.3px}
 @media(max-width:1100px){ .hbar-live{gap:4px;padding:4px 7px;font-size:10.5px} }
 @media(max-width:760px){
   .hbar-live{padding:3px 8px;font-size:10.5px;gap:5px;max-width:none;overflow:visible}
@@ -2776,9 +2778,10 @@ header .theme-switch button{white-space:nowrap}
 
 /* ① 实时胶囊 */
 .hbar-live{position:relative;overflow:hidden}
-.hbar-live #hlSpeed{color:var(--run)}
+.hbar-live #hlTotal{color:var(--fg)}
+.hbar-live #hlCost{color:var(--run)}
+.hbar-live #hlBar{background:linear-gradient(90deg,var(--ok),var(--accent))}
 .hbar-live #hlCache{color:var(--ok)}
-.hbar-live #hlCtx{color:var(--accent)}
 .hbar-live .hl-bar{
   position:absolute;left:0;bottom:0;height:2px;width:0;
   background:linear-gradient(90deg,var(--accent),var(--accent2));
@@ -3503,12 +3506,12 @@ header #btnModel,header #btnQueue,header #btnHist,header #btnSettings{
     <span id="hSlot">—</span>
     <span id="hQueue">—</span>
   </div>
-  <div class="hbar-live idle" id="hLive" title="点击查看缓存 / 上下文详情">
-    <span class="hl-item"><span class="hl-ico">↯</span><b id="hlSpeed">—</b><span class="hl-unit"> tok/s</span></span>
+  <div class="hbar-live idle" id="hLive" title="累计用量（点开看明细）">
+    <span class="hl-item"><span class="hl-ico">Σ</span><span class="hl-label">总用量 </span><b id="hlTotal">—</b><span class="hl-unit"> tok</span></span>
     <span class="hl-sep">·</span>
     <span class="hl-item"><span class="hl-ico">⧉</span><span class="hl-label">缓存 </span><b id="hlCache">—</b></span>
     <span class="hl-sep">·</span>
-    <span class="hl-item"><span class="hl-ico">▭</span><span class="hl-label">上下文 </span><b id="hlCtx">—</b><span class="hl-ratio"></span></span>
+    <span class="hl-item"><span class="hl-ico" id="hlCostIco">↗</span><span class="hl-label" id="hlCostLabel">输出 </span><b id="hlCost">—</b></span>
     <span class="hl-bar" id="hlBar"></span>
   </div>
   <div class="spacer"></div>
@@ -3528,7 +3531,7 @@ header #btnModel,header #btnQueue,header #btnHist,header #btnSettings{
 </header>
 
 <div class="live-pop" id="livePop">
-  <div class="lp-head"><span>本次请求用量</span><span class="lp-close" id="livePopClose">×</span></div>
+  <div class="lp-head"><span>累计用量</span><span class="lp-close" id="livePopClose">×</span></div>
   <div id="livePopBody"></div>
 </div>
 
@@ -4843,15 +4846,53 @@ function toggleThink(el){
    ④ 上下文    —— state.ctxUsed / contextPerSlot
    所有主题都显示；任务没在跑就整条隐藏、把 hint 露出来。
    ============================================================ */
-/* 顶栏实时用量 + 点击详情。
-   设计原则：数字每轮 state 都覆盖写，不依赖 session 的 3.6 秒慢通道；
-   点击展开的明细也只从同一个 state 组装，不再额外请求。 */
+/* 顶栏累计用量 + 点击详情。
+   顶栏那三个数是「总用量」：agent 每次请求把 token 累加到 usage.json，
+   面板随 /api/state 带过来；点击展开的明细也只从同一个 state 组装，不再额外请求。 */
 function renderLiveMeter(st){
   var live = $('hLive');
   if (!live) return;
+
+  /* ---- 累计（顶栏） ----
+     st.usage 由面板从 agent\logs\usage.json 读出来，跨任务、跨重启累加。
+     顶栏显示的就是「总用量」：输入+输出 token、累计缓存命中率、输出量或花费。 */
+  var u = (st && st.usage) || window.__lastUsage || {};
+  window.__lastUsage = u;
+  var uIn = Number(u.inTok) || 0, uOut = Number(u.outTok) || 0;
+  var uCache = Number(u.cacheTok) || 0, uReqs = Number(u.reqs) || 0;
+  var uCost = Number(u.cost) || 0;
+  var total = uIn + uOut;
+  var isApi = (((st && st.modelMode) || (window.__lastSys && window.__lastSys.modelMode) || 'local') === 'api');
+  var hitPct = (uIn > 0 && uCache > 0) ? (uCache / uIn * 100) : 0;
+
+  var running = !!(st && st.status === 'running');
+  live.classList.toggle('idle', !running);
+  live.classList.toggle('fresh', running);
+
+  $('hlTotal').textContent = total > 0 ? fmtTok(total) : '—';
+  $('hlCache').textContent = hitPct > 0 ? hitPct.toFixed(0) + '%' : '—';
+  var costB = $('hlCost'), costLbl = $('hlCostLabel'), costIco = $('hlCostIco');
+  if (isApi) {
+    // 接口模式：花的是真钱，顶栏直接给累计花费
+    if (costLbl) costLbl.textContent = '花费 ';
+    if (costIco) costIco.textContent = '¥';
+    costB.textContent = uReqs > 0 ? ('¥' + (uCost >= 0.01 ? uCost.toFixed(3) : uCost.toFixed(4))) : '—';
+  } else {
+    // 本地模式不花钱，这一格放累计输出 token
+    if (costLbl) costLbl.textContent = '输出 ';
+    if (costIco) costIco.textContent = '↗';
+    costB.textContent = uOut > 0 ? fmtTok(uOut) : '—';
+  }
+  var liveBar = $('hlBar');
+  if (liveBar) liveBar.style.width = (hitPct > 0 ? Math.min(100, hitPct) : 0).toFixed(1) + '%';
+
+  // 详情面板只在打开时重建，避免每 350ms 白写 DOM。
+  var pop = $('livePop');
+  if (!pop || !pop.classList.contains('on')) return;
+
+  /* ---- 本次请求的实时值（详情里留一组，排查用） ---- */
   var prev = window.__lastLiveMeter || {};
   var hasSt = !!(st && typeof st === 'object');
-  // 有 state 就信 state（包括 0）；没有 state 才留上一次的数，避免新任务开头挂着上一轮的高缓存。
   var speed = hasSt ? (Number(st.speed) || 0) : (prev.speed || 0);
   var cache = hasSt ? ((typeof st.cacheHit === 'number' && st.cacheHit > 0) ? st.cacheHit : null) : (prev.cacheHit || null);
   var used = hasSt ? (Number(st.ctxUsed) || 0) : (prev.used || 0);
@@ -4863,56 +4904,40 @@ function renderLiveMeter(st){
   var ctxPrompt = hasSt ? (Number(st.ctxPrompt) || 0) : (prev.ctxPrompt || 0);
   var ctxHistory = hasSt ? (Number(st.ctxHistory) || 0) : (prev.ctxHistory || 0);
   var ctxTools = hasSt ? (Number(st.ctxTools) || 0) : (prev.ctxTools || 0);
-  var snap = {
+  window.__lastLiveMeter = {
     speed: speed, cacheHit: cache, used: used, real: real, limit: limit,
     cacheN: cacheN, promptN: promptN, genTok: genTok,
     ctxPrompt: ctxPrompt, ctxHistory: ctxHistory, ctxTools: ctxTools
   };
-  window.__lastLiveMeter = snap;
 
-  var running = !!(st && st.status === 'running');
-  live.classList.toggle('idle', !running);
-  live.classList.toggle('fresh', running && (speed > 0 || cache !== null));
-
-  var sp = speed > 0 ? speed.toFixed(1) : '—';
-  $('hlSpeed').textContent = sp;
-  $('hlCache').textContent = (cache !== null) ? cache.toFixed(0) + '%' : '—';
-  var ctxB = $('hlCtx');
-  var ctxRatio = ctxB.parentElement.querySelector('.hl-ratio');
-  if (used > 0) {
-    var p = real > 0 ? Math.min(100, Math.round(used / real * 100)) : 0;
-    ctxB.textContent = used;
-    if (ctxRatio) ctxRatio.textContent = real > 0 ? ' / ' + real + ' · ' + p + '%' : '';
-  } else {
-    ctxB.textContent = '—';
-    if (ctxRatio) ctxRatio.textContent = '';
-  }
-  var liveBar = $('hlBar');
-  if (liveBar) {
-    var barPct = (used > 0 && real > 0) ? Math.min(100, used / real * 100) : 0;
-    liveBar.style.width = barPct.toFixed(1) + '%';
-  }
-
-  // 详情面板只在打开时重建，避免每 350ms 白写 DOM。
-  var pop = $('livePop');
-  if (!pop || !pop.classList.contains('on')) return;
-  var rows = [];
   function row(k, v){ return '<div class="lp-row"><span>' + k + '</span><b>' + v + '</b></div>'; }
-  if (cache !== null) rows.push(row('缓存命中', cache.toFixed(1) + '%'));
-  if (cacheN > 0) rows.push(row('命中 token', cacheN.toLocaleString()));
-  if (promptN > 0) rows.push(row('本次新算 token', promptN.toLocaleString()));
-  if (speed > 0) rows.push(row('生成速度', speed.toFixed(1) + ' tok/s'));
-  if (genTok > 0) rows.push(row('本次生成 token', genTok.toLocaleString()));
+  var rows = [];
+  if (uReqs > 0) rows.push(row('累计请求', uReqs + ' 次'));
+  if (uIn > 0) rows.push(row('累计输入', uIn.toLocaleString() + ' tok'));
+  if (uCache > 0) rows.push(row('其中缓存命中', uCache.toLocaleString() + ' tok（' + hitPct.toFixed(1) + '%）'));
+  if (uOut > 0) rows.push(row('累计输出', uOut.toLocaleString() + ' tok'));
+  if (total > 0) rows.push(row('累计总计', total.toLocaleString() + ' tok'));
+  if (isApi) rows.push(row('累计花费', '¥' + uCost.toFixed(4)));
+
+  var rows2 = [];
+  if (cacheN > 0) rows2.push(row('本次命中', cacheN.toLocaleString() + ' tok'));
+  if (promptN > 0) rows2.push(row('本次新算', promptN.toLocaleString() + ' tok'));
+  if (genTok > 0) rows2.push(row('本次生成', genTok.toLocaleString() + ' tok'));
+  if (speed > 0) rows2.push(row('本次速度', speed.toFixed(1) + ' tok/s'));
   if (used > 0) {
     var pct = real > 0 ? (used / real * 100).toFixed(1) + '%' : '—';
-    rows.push(row('已消耗上下文', used.toLocaleString() + ' / ' + (real || '?') + ' （' + pct + '）'));
+    rows2.push(row('本次上下文', used.toLocaleString() + ' / ' + (real || '?') + ' （' + pct + '）'));
   }
-  if (limit > 0) rows.push(row('输入预算', limit.toLocaleString()));
-  if (ctxPrompt > 0) rows.push(row('其中提示词', ctxPrompt.toLocaleString()));
-  if (ctxHistory > 0) rows.push(row('其中对话历史', ctxHistory.toLocaleString()));
-  if (ctxTools > 0) rows.push(row('其中工具定义', ctxTools.toLocaleString()));
+  if (limit > 0) rows2.push(row('输入预算', limit.toLocaleString()));
+  if (ctxPrompt > 0) rows2.push(row('其中提示词', ctxPrompt.toLocaleString()));
+  if (ctxHistory > 0) rows2.push(row('其中对话历史', ctxHistory.toLocaleString()));
+  if (ctxTools > 0) rows2.push(row('其中工具定义', ctxTools.toLocaleString()));
+
   $('livePopBody').innerHTML = rows.join('') +
-    '<div class="lp-note">数据来自 agent 每次模型请求的 timings；缓存命中 = cache_n / (cache_n + prompt_n)。</div>';
+    (rows2.length ? '<div class="lp-sub">本次请求</div>' + rows2.join('') : '') +
+    '<div class="lp-note">累计从 ' + (u.since || '—') + ' 起算，跨任务、重启不清零；' +
+    '缓存命中 = 累计缓存 / 累计输入。' +
+    (isApi ? '花费按 config.json 里的单价估算。' : '本地模式不花钱，只计 token。') + '</div>';
 }
 
 function bindLiveMeter(){

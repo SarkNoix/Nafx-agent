@@ -152,6 +152,56 @@ $script:LiveChars     = 0
 # （实测缓存没命中时第一步要等 119 秒）。
 $script:PrefixFile = Join-Path $LogDir 'last-request.json'
 
+# ---- 累计用量 ----
+# 面板顶栏的「总用量」靠这个文件：每发一次请求就把输入/输出 token 累加进去，
+# 接口模式再按 config.json 里的单价折成钱。落盘是故意的 —— 重启不清零。
+$script:UsageFile = Join-Path $LogDir 'usage.json'
+$script:LastUsage = $null
+
+function Get-UsageTotals {
+    $u = @{
+        since = ''; reqs = 0; inTok = 0; outTok = 0; cacheTok = 0
+        apiInTok = 0; apiOutTok = 0; apiCacheTok = 0; cost = 0.0; currency = '¥'
+    }
+    try {
+        if (Test-Path $script:UsageFile) {
+            $o = [IO.File]::ReadAllText($script:UsageFile, [Text.Encoding]::UTF8) | ConvertFrom-Json
+            foreach ($k in @($u.Keys)) { if ($null -ne $o.$k) { $u[$k] = $o.$k } }
+        }
+    } catch { }
+    if (-not $u['since']) { $u['since'] = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') }
+    return $u
+}
+
+# 记一次请求的用量。只累加，不覆盖。
+function Add-Usage([int]$InTok, [int]$OutTok, [int]$CacheTok) {
+    if ($InTok -le 0 -and $OutTok -le 0) { return }
+    try {
+        $u = Get-UsageTotals
+        $u['reqs']     = [int]$u['reqs'] + 1
+        $u['inTok']    = [int]$u['inTok'] + [Math]::Max(0, $InTok)
+        $u['outTok']   = [int]$u['outTok'] + [Math]::Max(0, $OutTok)
+        $u['cacheTok'] = [int]$u['cacheTok'] + [Math]::Max(0, $CacheTok)
+        $cost = [double]$u['cost']
+        if ($script:IsApiMode) {
+            # 单价单位是「元 / 百万 token」，配在 config.json 里（默认 DeepSeek 官方价）。
+            $pIn  = [double]$Cfg.apiPriceIn
+            $pOut = [double]$Cfg.apiPriceOut
+            $pHit = [double]$Cfg.apiPriceCacheHit
+            if ($pIn -le 0)  { $pIn = 2.0 }
+            if ($pOut -le 0) { $pOut = 3.0 }
+            if ($pHit -le 0) { $pHit = 0.2 }
+            $miss = [Math]::Max(0, $InTok - $CacheTok)
+            $cost += ($miss * $pIn + $CacheTok * $pHit + $OutTok * $pOut) / 1000000.0
+            $u['apiInTok']    = [int]$u['apiInTok'] + [Math]::Max(0, $InTok)
+            $u['apiOutTok']   = [int]$u['apiOutTok'] + [Math]::Max(0, $OutTok)
+            $u['apiCacheTok'] = [int]$u['apiCacheTok'] + [Math]::Max(0, $CacheTok)
+        }
+        $u['cost'] = [Math]::Round($cost, 6)
+        [IO.File]::WriteAllText($script:UsageFile, ($u | ConvertTo-Json -Depth 3), (New-Object Text.UTF8Encoding($false)))
+    } catch { }
+}
+
 # ---- 真实上下文长度 ----
 # 问 llama 一次要它实际的 n_ctx，拿 config.json 的值当兜底。
 #
@@ -1369,6 +1419,7 @@ function Invoke-Model {
     $sw = [Diagnostics.Stopwatch]::StartNew()
     # 每次请求前清掉上一步的 timings，别把上一步的命中当成这一步的。
     $script:LastTimings = $null
+    $script:LastUsage = $null
     $resp = $null
     $reader = $null
     $acc = ''
@@ -1416,6 +1467,9 @@ function Invoke-Model {
                 # llama-server 开了 include_usage 后最后一块带 timings：
                 # predicted_per_second = 真 tok/s；cache_n/(cache_n+prompt_n) = 真缓存命中率。
                 if ($chunk.timings) { $script:LastTimings = $chunk.timings }
+                # 接口模式：DeepSeek 在 usage 里给 prompt_tokens / completion_tokens /
+                # prompt_cache_hit_tokens —— 这是唯一能算钱的地方。
+                if ($chunk.usage) { $script:LastUsage = $chunk.usage }
                 if (-not $chunk.choices) { continue }
                 $d = $chunk.choices[0].delta
                 if ($chunk.choices[0].finish_reason) { $finishReason = [string]$chunk.choices[0].finish_reason }
@@ -1524,6 +1578,35 @@ function Invoke-Model {
             }
         } catch { }
     }
+
+    # ---- 累计用量（面板顶栏「总用量」的数据源）----
+    # 输入 = prompt_n + cache_n：本地 llama 的 prompt_n 只是「这次新算的」，
+    # 加上缓存命中的 cache_n 才是这次请求真正的输入总量。
+    # 接口模式直接用服务商返回的 usage；两样都没拿到就跳过，不记 0 的假数。
+    try {
+        $uIn = 0; $uOut = 0; $uCache = 0
+        # 本地模式优先用 llama 的 timings：它才带 cache_n（真实缓存命中）。
+        # llama 开了 include_usage 也会回一个 usage，但里面只有 prompt_tokens，
+        # 没有缓存命中信息 —— 用它会把缓存命中率算成 0。
+        if ($script:IsApiMode -and $script:LastUsage) {
+            $u = $script:LastUsage
+            if ($u.prompt_tokens)           { $uIn = [int]$u.prompt_tokens }
+            if ($u.completion_tokens)       { $uOut = [int]$u.completion_tokens }
+            if ($u.prompt_cache_hit_tokens) { $uCache = [int]$u.prompt_cache_hit_tokens }
+        } elseif ($script:LastTimings) {
+            $t2 = $script:LastTimings
+            $pn2 = 0; if ($t2.prompt_n) { $pn2 = [int]$t2.prompt_n }
+            $cn2 = 0; if ($t2.cache_n)  { $cn2 = [int]$t2.cache_n }
+            $uIn    = $pn2 + $cn2
+            $uCache = $cn2
+            if ($t2.predicted_n) { $uOut = [int]$t2.predicted_n }
+        } elseif ($script:LastUsage) {
+            $u = $script:LastUsage
+            if ($u.prompt_tokens)     { $uIn = [int]$u.prompt_tokens }
+            if ($u.completion_tokens) { $uOut = [int]$u.completion_tokens }
+        }
+        Add-Usage $uIn $uOut $uCache
+    } catch { }
 
     # ---- 把分片拼成调用 ----
     $calls = @()
