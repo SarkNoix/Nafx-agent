@@ -1677,6 +1677,13 @@ button:disabled{opacity:.42;cursor:not-allowed;transform:none!important}
 /* ---------- 会话区 ---------- */
 .bubble{border-radius:var(--radius-lg)}
 .thread{padding:20px 24px 12px}
+/* 主问答区底部预加载空间（2026-11-26）
+   滑到最底时还能再往下拖一段，不会"嘭"地顶死在最后一条消息上。
+   用 ::after 而不是真实 DOM：thread.innerHTML 每次重渲染都会整体覆盖
+   （见 thread.innerHTML = html 那一行），加进去的节点会被冲掉；
+   伪元素跟着 .thread 走，不受影响，也不占内容高度以外的布局。
+   高度取 180px ≈ 一条消息的高度，够滑、又不至于滑出一整屏空白。 */
+.thread::after{content:'';display:block;height:180px;flex:0 0 auto}
 
 /* 空状态淡入 */
 .empty{animation:emptyIn .45s cubic-bezier(.4,0,.2,1)}
