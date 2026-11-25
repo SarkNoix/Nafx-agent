@@ -1067,11 +1067,16 @@ main{position:relative;z-index:1;flex:1;display:flex;min-height:0}
 .reason-stars{position:absolute;inset:0;pointer-events:none;z-index:3;
   clip-path:inset(15px var(--clipR,100%) 15px 12px round 13px);will-change:clip-path}
 .reason-fx{position:absolute;inset:0;pointer-events:none;overflow:visible;z-index:5}
-.reason-star{position:absolute;left:0;top:0;border-radius:99px;background:#fff;pointer-events:none;
-  box-shadow:0 0 8px rgba(255,255,255,.75);will-change:opacity}
+.reason-star{position:absolute;left:0;top:0;border-radius:99px;pointer-events:none;
+  background:radial-gradient(circle,rgba(255,255,255,1) 0%,rgba(255,255,255,.85) 40%,rgba(255,255,255,0) 72%);
+  will-change:transform,opacity}
 .reason-particle{position:absolute;left:0;top:0;border-radius:99px;background:#fff;
-  box-shadow:0 0 8px #fff, 0 0 18px rgba(255,255,255,.85), 0 0 34px var(--pg,rgba(168,85,247,.55));
+  box-shadow:0 0 8px #fff, 0 0 18px rgba(255,255,255,.85), 0 0 30px var(--pg,rgba(168,85,247,.55));
   will-change:transform,opacity;pointer-events:none}
+/* 拖尾：粒子往左飞，尾巴朝右渐隐，等于低成本的动态模糊 */
+.reason-particle::after{content:'';position:absolute;left:100%;top:50%;width:var(--tail,22px);height:3px;
+  margin-top:-1.5px;border-radius:99px;pointer-events:none;
+  background:linear-gradient(90deg,rgba(255,255,255,.9) 0%,rgba(255,255,255,.45) 45%,rgba(255,255,255,0) 100%)}
 textarea{flex:1;resize:none;min-height:46px;max-height:170px;background:var(--panel2);
   border:1px solid var(--line);border-radius:var(--radius-lg);color:var(--fg);
   font-family:inherit;font-size:14px;padding:13px 14px;line-height:1.5;outline:none;transition:.15s}
@@ -6604,6 +6609,8 @@ function reasonParticles(){
     d.style.height = sz.toFixed(1) + 'px';
     d.style.opacity = '0';
     d.style.setProperty('--pg', pg);
+    var tail = 14 + Math.random() * 28;     // 拖尾长度≈快门时间内的位移
+    d.style.setProperty('--tail', tail.toFixed(0) + 'px');
     var y0 = cy + (Math.random() * 16 - 8);
     var x0 = cx + (Math.random() * 6 - 3);
     d.style.transform = 'translate3d(' + (x0 - sz/2).toFixed(1) + 'px,' + (y0 - sz/2).toFixed(1) + 'px,0) scale(.35)';
