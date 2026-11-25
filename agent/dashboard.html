@@ -967,6 +967,30 @@ main{position:relative;z-index:1;flex:1;display:flex;min-height:0}
   max-height:260px;overflow:auto;line-height:1.55}
 .step-obs.bad{border-color:var(--err-bd);background:var(--err-bg);color:var(--err)}
 
+/* ---------- 改文件的 diff：文件名后面 +N 绿 / -M 红 ---------- */
+.diff-badges{display:inline-flex;gap:5px;margin-left:8px;flex-shrink:0;
+  font-family:ui-monospace,Consolas,monospace;font-size:11px;font-weight:600}
+.diff-add{color:#3fbf6f;background:rgba(63,191,111,.12);border:1px solid rgba(63,191,111,.35);
+  border-radius:5px;padding:0 5px;cursor:pointer}
+.diff-del{color:#e5534b;background:rgba(229,83,75,.12);border:1px solid rgba(229,83,75,.35);
+  border-radius:5px;padding:0 5px;cursor:pointer}
+[data-theme="light"] .diff-add, [data-theme="dsh"] .diff-add{color:#0f7b3f;background:rgba(15,123,63,.10)}
+[data-theme="light"] .diff-del, [data-theme="dsh"] .diff-del{color:#b3261e;background:rgba(179,38,30,.10)}
+.diff-wrap{margin:8px 0 0;border:1px solid var(--line);border-radius:9px;overflow:hidden;
+  background:var(--code-bg)}
+.diff-head{display:flex;align-items:center;gap:8px;padding:7px 11px;cursor:pointer;
+  font-size:11.5px;color:var(--dim);border-bottom:1px solid var(--line);user-select:none}
+.diff-head b{color:var(--fg);font-weight:600}
+.diff-head .diff-caret{margin-left:auto;color:var(--faint);font-size:11px}
+.diff-body{margin:0;padding:6px 0;font-family:ui-monospace,Consolas,monospace;font-size:11.5px;
+  line-height:1.6;max-height:320px;overflow:auto;white-space:pre-wrap;word-break:break-word}
+.diff-line{padding:0 12px;display:block}
+.diff-line.add{background:rgba(63,191,111,.10);color:#2f9e56}
+.diff-line.del{background:rgba(229,83,75,.10);color:#c9413a}
+[data-theme="light"] .diff-line.add, [data-theme="dsh"] .diff-line.add{background:#e6f7ec;color:#0f7b3f}
+[data-theme="light"] .diff-line.del, [data-theme="dsh"] .diff-line.del{background:#fdeaea;color:#b3261e}
+.diff-line.ctx{color:var(--faint)}
+
 /* ---------- 输入 ---------- */
 .composer{border-top:1px solid var(--line);background:var(--panel);
   padding:12px 18px;flex-shrink:0;
@@ -4839,6 +4863,66 @@ function toolPhrase(tool, arg){
   }
 }
 
+function diffBodyHtml(s){
+  var d = s.diff;
+  if (!d || !d.lines) return '';
+  var out = [];
+  for (var i = 0; i < d.lines.length; i++){
+    var ln = String(d.lines[i]);
+    var c = ln.charAt(0);
+    var cls = c === '+' ? 'add' : (c === '-' ? 'del' : 'ctx');
+    out.push('<span class="diff-line ' + cls + '">' + esc(ln) + '</span>');
+  }
+  return out.join('');
+}
+
+function diffHtml(s){
+  var d = s.diff;
+  if (!d || (!d.add && !d.del)) return '';
+  var n = s.n || 0;
+  // 小改动（增删合计 ≤12 行）默认就展开：用户改完文件最想看的就是「哪几行动了」，
+  // 还要再点一下才看得见，等于没做。大改动默认收起，别把对话区撑满。
+  var ov = (window.__diffOpen && window.__diffOpen[n]);
+  var autoOpen = (d.add + d.del) <= 12;
+  var open = (typeof ov === 'undefined') ? autoOpen : !!ov;
+  window.__diffCache = window.__diffCache || {};
+  window.__diffCache[n] = diffBodyHtml(s);
+  var counts = '';
+  if (d.add) counts += '<span class="diff-add">+' + d.add + '</span>';
+  if (d.del) counts += '<span class="diff-del">-' + d.del + '</span>';
+  return '<div class="diff-wrap" data-n="' + n + '">' +
+    '<div class="diff-head" onclick="toggleDiff(this)">' +
+      '<b>' + esc(d.path || s.arg || '') + '</b>' +
+      '<span class="diff-badges" style="margin-left:2px">' + counts + '</span>' +
+      (d.truncated ? '<span style="color:var(--faint)">（大文件，只统计行数）</span>' : '') +
+      '<span class="diff-caret">' + (open ? '收起 ▴' : '展开 ▾') + '</span>' +
+    '</div>' +
+    '<div class="diff-body" style="display:' + (open ? 'block' : 'none') + '">' +
+      (open ? window.__diffCache[n] : '') +
+    '</div>' +
+  '</div>';
+}
+
+function toggleDiff(el){
+  var wrap = el.closest ? el.closest('.diff-wrap') : null;
+  if (!wrap) return;
+  var n = wrap.getAttribute('data-n');
+  var body = wrap.querySelector('.diff-body');
+  var caret = wrap.querySelector('.diff-caret');
+  if (!body) return;
+  var hiding = body.style.display !== 'none';
+  if (hiding){
+    body.style.display = 'none';
+    if (caret) caret.textContent = '展开 ▾';
+  } else {
+    if (!body.innerHTML && window.__diffCache) body.innerHTML = window.__diffCache[n] || '';
+    body.style.display = 'block';
+    if (caret) caret.textContent = '收起 ▴';
+  }
+  window.__diffOpen = window.__diffOpen || {};
+  window.__diffOpen[n] = !hiding;
+}
+
 function stepHtml(s){
   var bad = (s.ok === false);
   var tool = String(s.tool || '?');
@@ -4870,6 +4954,11 @@ function stepHtml(s){
     '<span class="step-tool' + (bad?' bad':'') + '" title="工具 ' + esc(tool) + '">' +
     '<span class="ti">' + toolIcon(tool) + '</span>' + esc(phrase) + '</span>' +
     (arg ? '<span class="step-arg">' + esc(arg) + '</span>' : '') +
+    ((s.diff && (s.diff.add || s.diff.del)) ?
+      '<span class="diff-badges">' +
+        (s.diff.add ? '<span class="diff-add" onclick="toggleDiff(this)" title="这次新增了 ' + s.diff.add + ' 行，点开看">+' + s.diff.add + '</span>' : '') +
+        (s.diff.del ? '<span class="diff-del" onclick="toggleDiff(this)" title="这次删掉了 ' + s.diff.del + ' 行，点开看">-' + s.diff.del + '</span>' : '') +
+      '</span>' : '') +
     '<span class="step-sec" style="margin-left:auto">' + fmtTime(s.sec) + '</span>' +
     '</div></div>';
 
@@ -4889,7 +4978,7 @@ function stepHtml(s){
   }
   var obs = body ? ('<div class="step-obs-wrap' + (bad?' bad':'') + '">' + body + '</div>') : '';
 
-  return '<div class="step ' + (bad ? 'bad' : 'ok') + '">' + think + act + obs + '</div>';
+  return '<div class="step ' + (bad ? 'bad' : 'ok') + '">' + think + act + diffHtml(s) + obs + '</div>';
 }
 
 function toggleThink(el){

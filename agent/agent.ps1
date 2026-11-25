@@ -577,6 +577,120 @@ function To-JsonStr {
     return $sb.ToString()
 }
 
+function Get-LineDiffForPanel {
+    # 给面板用的行级 diff：返回 @{ add=新增行数; del=删除行数; lines=@(' ','-旧行','+新行'...) }
+    # 目的只有一个：用户能直接看出「这次改文件到底动了哪儿」——
+    # 新加的字绿、删掉的字红，而不是只有一句「已写入」。
+    #
+    # 用 LCS 对齐而不是 Compare-Object 集合比较：后者会把「改了一行」
+    # 显示成一删一增两行独立条目，看不出它们在同一位置。
+    # 文件很大（>1200 行）时 LCS 的矩阵在 PowerShell 里太慢，
+    # 退回「只报增删条数」的粗粒度结果，不阻塞任务。
+    param([string]$Before, [string]$After, [int]$MaxLines = 400, [int]$Context = 3)
+    $res = [ordered]@{ add = 0; del = 0; lines = @(); truncated = $false }
+    if ($null -eq $Before -or $null -eq $After -or $Before -ceq $After) { return $res }
+
+    # 注意：这里必须显式赋值，不能用 `$a = if (...) { @() } else { @($x) }` ——
+    # 单元素数组经过 if 表达式会被 PowerShell 展开成字符串，
+    # 后面 $a[0] 拿到的是第一个字符（实测 diff 里出现「-W」这种鬼东西）。
+    $a = @()
+    $b = @()
+    if (-not [string]::IsNullOrEmpty($Before)) { $a = @($Before -split "`r?`n") }
+    if (-not [string]::IsNullOrEmpty($After))  { $b = @($After -split "`r?`n") }
+    # 文件末尾换行会 split 出一个空元素，不想要「凭空多一行空行」的假改动
+    if ($a.Count -gt 0 -and $a[$a.Count - 1] -eq '') { if ($a.Count -eq 1) { $a = @() } else { $a = @($a[0..($a.Count - 2)]) } }
+    if ($b.Count -gt 0 -and $b[$b.Count - 1] -eq '') { if ($b.Count -eq 1) { $b = @() } else { $b = @($b[0..($b.Count - 2)]) } }
+
+    # 先掐掉公共前缀/后缀，只对真正不同的那一段做 LCS。
+    # 改代码通常只动几行，整文件做 O(n*m) 在 PowerShell 里能跑到几秒，
+    # 掐完常见情况就剩几十行，毫秒级。
+    $p = 0
+    $minLen = [Math]::Min($a.Count, $b.Count)
+    while ($p -lt $minLen -and $a[$p] -ceq $b[$p]) { $p++ }
+    $s = 0
+    while ($s -lt ($minLen - $p) -and $a[$a.Count - 1 - $s] -ceq $b[$b.Count - 1 - $s]) { $s++ }
+
+    $aMid = @(); $bMid = @()
+    if ($a.Count - $p - $s -gt 0) { $aMid = $a[$p..($a.Count - 1 - $s)] }
+    if ($b.Count - $p - $s -gt 0) { $bMid = $b[$p..($b.Count - 1 - $s)] }
+
+    if ($aMid.Count -gt 600 -or $bMid.Count -gt 600) {
+        $cmp = @(Compare-Object -ReferenceObject $aMid -DifferenceObject $bMid)
+        $res.add = @($cmp | Where-Object { $_.SideIndicator -eq '=>' }).Count
+        $res.del = @($cmp | Where-Object { $_.SideIndicator -eq '<=' }).Count
+        $res.truncated = $true
+        return $res
+    }
+
+    $ops = New-Object System.Collections.Generic.List[object]
+    for ($k = 0; $k -lt $p; $k++) { $ops.Add(@(' ', $a[$k])) }
+
+    $n = $aMid.Count; $m = $bMid.Count
+    if ($n -gt 0 -or $m -gt 0) {
+        # dp[i][j] = aMid[i..] 与 bMid[j..] 的 LCS 长度
+        $dp = New-Object 'int[][]' ($n + 1)
+        for ($i = 0; $i -le $n; $i++) { $dp[$i] = New-Object 'int[]' ($m + 1) }
+        for ($i = $n - 1; $i -ge 0; $i--) {
+            for ($j = $m - 1; $j -ge 0; $j--) {
+                if ($aMid[$i] -ceq $bMid[$j]) { $dp[$i][$j] = $dp[$i + 1][$j + 1] + 1 }
+                else { $dp[$i][$j] = [Math]::Max($dp[$i + 1][$j], $dp[$i][$j + 1]) }
+            }
+        }
+        $i = 0; $j = 0
+        while ($i -lt $n -and $j -lt $m) {
+            if ($aMid[$i] -ceq $bMid[$j]) { $ops.Add(@(' ', $aMid[$i])); $i++; $j++ }
+            elseif ($dp[$i + 1][$j] -ge $dp[$i][$j + 1]) { $ops.Add(@('-', $aMid[$i])); $i++ }
+            else { $ops.Add(@('+', $bMid[$j])); $j++ }
+        }
+        while ($i -lt $n) { $ops.Add(@('-', $aMid[$i])); $i++ }
+        while ($j -lt $m) { $ops.Add(@('+', $bMid[$j])); $j++ }
+    }
+
+    if ($s -gt 0) {
+        for ($k = $a.Count - $s; $k -lt $a.Count; $k++) { $ops.Add(@(' ', $a[$k])) }
+    }
+
+    foreach ($o in $ops) { if ($o[0] -eq '+') { $res.add++ } elseif ($o[0] -eq '-') { $res.del++ } }
+    if ($res.add -eq 0 -and $res.del -eq 0) { return $res }
+
+    # 只保留变更点前后 Context 行，中间大段没动的不往面板塞（省 token 也更好读）
+    $keep = New-Object 'bool[]' $ops.Count
+    for ($k = 0; $k -lt $ops.Count; $k++) {
+        if ($ops[$k][0] -ne ' ') {
+            $lo = [Math]::Max(0, $k - $Context); $hi = [Math]::Min($ops.Count - 1, $k + $Context)
+            for ($q = $lo; $q -le $hi; $q++) { $keep[$q] = $true }
+        }
+    }
+    $out = New-Object System.Collections.Generic.List[string]
+    $skipped = 0
+    for ($k = 0; $k -lt $ops.Count; $k++) {
+        if ($keep[$k]) {
+            if ($skipped -gt 0) { $out.Add('…'); $skipped = 0 }
+            $out.Add($ops[$k][0] + $ops[$k][1])
+        } else { $skipped++ }
+    }
+    if ($out.Count -gt $MaxLines) {
+        $res.truncated = $true
+        $out = $out.GetRange(0, $MaxLines)
+        $out.Add('…（还有更多改动，面板只显示前 ' + $MaxLines + ' 行）')
+    }
+    $res.lines = @($out)
+    return [pscustomobject]$res
+}
+
+function Get-PanelFileText([string]$RelPath) {
+    # 读一份用于 diff 的文本快照；二进制/不存在/读不动都返回 $null（不显示 diff）
+    try {
+        if ([string]::IsNullOrWhiteSpace($RelPath)) { return $null }
+        $full = Resolve-AiPath $RelPath
+        if (-not (Test-Path -LiteralPath $full -PathType Leaf)) { return $null }
+        $fi = Get-Item -LiteralPath $full
+        if ($fi.Length -gt 2MB) { return $null }
+        if ($full -match '\.(png|jpe?g|gif|webp|zip|7z|rar|pdf|docx|xlsx|exe|dll|gguf|mp4|mp3|wav)$') { return $null }
+        return [IO.File]::ReadAllText($full)
+    } catch { return $null }
+}
+
 function Write-Log {
     param([string]$Text)
     try { Add-Content -Path $logFile -Value $Text -Encoding UTF8 } catch { }
@@ -758,11 +872,13 @@ function Get-ToolNamesFor {
     switch ($Intent) {
         'chat'    { return @('say', 'finish') }
         'query'   { return @('think', 'web_search', 'web_fetch', 'file_editor', 'read_file', 'list_dir', 'say', 'finish') }
-        'build'   { return @('think', 'file_editor', 'write_script', 'write_file', 'read_file', 'replace_in_file', 'run_ps1', 'run_cmd', 'make_dir', 'git', 'web_search', 'web_fetch', 'say', 'finish') }
-        'analyze' { return @('think', 'file_editor', 'list_dir', 'read_file', 'run_cmd', 'write_file', 'web_search', 'web_fetch', 'git', 'say', 'finish') }
-        default   { return @('think', 'file_editor', 'list_dir', 'read_file', 'write_file', 'append_file',
-                             'make_dir', 'delete_path', 'run_cmd', 'find_files', 'grep_file',
-                             'git', 'web_search', 'web_fetch', 'say', 'finish') }
+        'build'   { return @('think', 'plan', 'write_script', 'write_file', 'read_file', 'multi_edit',
+                             'replace_in_file', 'append_file', 'run_ps1', 'run_cmd', 'make_dir',
+                             'say', 'note', 'finish', 'web_search') }
+        'analyze' { return @('think', 'plan', 'list_dir', 'read_file', 'multi_edit', 'run_cmd',
+                             'write_file', 'web_search', 'say', 'note', 'finish') }
+        default   { return @('think', 'list_dir', 'read_file', 'write_file', 'append_file', 'multi_edit',
+                             'make_dir', 'run_cmd', 'find_files', 'grep_file', 'say', 'note', 'finish') }
     }
 }
 
@@ -777,6 +893,12 @@ function Get-ExtraToolsByTask {
     if ($TaskText -match '提醒|弹窗|通知|做完.*(叫|喊|告诉)|完成.*(叫|喊|告诉)') { $need += 'notify' }
     # 多文件查看/编辑、后缀识别、按类型运行
     if ($TaskText -match '多文件|多个文件|批量.*(改|替换|查看|编辑)|跨文件|后缀|扩展名|文件类型|怎么运行|运行.*(脚本|程序|文件)|查看.*(两个|三个|几个).*文件') { $need += 'file_editor' }
+    if ($TaskText -match '改|替换|修改|重写|换成|改成|调整') { $need += 'multi_edit'; $need += 'replace_in_file' }
+    # 现成技能：29 个验证过能跑的 .ps1，命中关键词就让它优先复用，而不是现写脚本
+    if ($TaskText -match '重复文件|扩展名|求和|合计|大文件|批量改名|重命名|行数|字数|比较文件|搜索|查找|替换|目录树|合并|去重|csv|jsonl|json|空文件夹|日志|归档|解压|压缩|表格|xlsx|excel|网页|归类|整理|体检|安全|端口|dns|http|接口') { $need += 'skill' }
+    if ($TaskText -match '第.{1,4}行') { $need += 'set_line'; $need += 'replace_in_file' }
+    if ($TaskText -match '删除|删掉|清理掉|移除') { $need += 'delete_path' }
+    if ($TaskText -match '新建.{0,4}(目录|文件夹)|建.{0,4}(目录|文件夹)|mkdir') { $need += 'make_dir' }
     # Git：只给工具，不替用户做决定
     if ($TaskText -match '(?i)git|提交|暂存|commit|diff|版本|仓库|push|pull|分支|clone') { $need += 'git' }
     # 不会/不确定/最新/官方用法：先联网，别凭记忆
@@ -3107,6 +3229,17 @@ Add-SessionNote -Text $bcSay -Kind 'say'
     $callId = [string]$call.id
     $toolName = [string]$call.name
 
+    # 模型一次吐多个工具调用时，只执行第一个，但必须让它知道其余被丢了。
+    # 实测它会把 write_file 和 run_ps1 一起发过来：第二个被静默丢掉后，
+    # 下一轮它又发一遍同样的调用 —— 白白多跑一个回合（这回合要几十秒）。
+    if (@($res.calls).Count -gt 1) {
+        $extraNames = (@($res.calls)[1..(@($res.calls).Count - 1)] | ForEach-Object { [string]$_.name }) -join '、'
+        $history += @{ role = 'user'; content = (
+            "你这一轮一次发了 $($res.calls.Count) 个工具调用，系统只执行第一个（$toolName）。" +
+            "被忽略的是：$extraNames。一次只调一个工具，等结果回来再决定下一步。") }
+        Write-Log ("  [多调用] 只执行 $toolName，忽略 " + $extraNames)
+    }
+
     # ---- 工作模式：第一步必须是 plan ----
     #
     # 提示词里已经写了「第一步必须是 plan，不是 think」，
@@ -3344,7 +3477,7 @@ Add-SessionNote -Text $bcSay -Kind 'say'
                            ForEach-Object { $_.Value } | Select-Object -Unique)
         }
         $wroteSomething = (@($state.steps | Where-Object {
-            [string]$_.tool -in @('write_file', 'append_file', 'set_line', 'replace_in_file', 'write_script')
+            [string]$_.tool -in @('write_file', 'append_file', 'set_line', 'replace_in_file', 'multi_edit', 'write_script')
         }).Count -gt 0)
         if ($wantFiles.Count -gt 0 -and -not $wroteSomething -and $script:fileNudge -lt 2) {
             $script:fileNudge = [int]$script:fileNudge + 1
@@ -3726,6 +3859,7 @@ Add-SessionNote -Text $bcSay -Kind 'say'
     # phase 用人话：让面板上的「执行 write_file」变成「编辑文件」等用户看得懂的词
     $phaseName = switch ($toolName) {
         'write_file' { '编辑文件' }
+        'multi_edit' { '改文件' }
         'read_file'  { '读取文件' }
         'list_dir'   { '查看目录' }
         'make_dir'   { '创建目录' }
@@ -3737,12 +3871,45 @@ Add-SessionNote -Text $bcSay -Kind 'say'
     }
     $state.phase = $phaseName
     Write-State $state
+
+    # ---- diff 快照：只有「会改文件」的工具才读一次改前内容 ----
+    # 面板要把这次改动画成「删的标红、加的标绿」，
+    # 所以必须在调用前留一份原文；读不到（新文件/二进制/太大）就跳过 diff。
+    $diffSnap = $null
+    $diffPath = ''
+    if ($toolName -in @('write_file', 'write_script', 'append_file', 'set_line', 'replace_in_file', 'multi_edit', 'file_editor')) {
+        $diffPath = [string]$act.path
+        if ($toolName -eq 'file_editor') {
+            # file_editor 走 paths/单个 path；只对真正写入类 action 做 diff
+            $feAct = [string]$act.action
+            if ($feAct -notin @('write', 'replace', 'append', 'insert')) { $diffPath = '' }
+            elseif (-not $diffPath -and $act.paths) { $diffPath = @($act.paths)[0] }
+        }
+        if ($diffPath) { $diffSnap = Get-PanelFileText $diffPath }
+    }
+
     try {
         $obs = [string](Invoke-AiTool -Action $act)
         if (-not $obs) { $obs = '（没有输出）' }
     } catch {
         $ok = $false
         $obs = Format-ToolError -Tool $toolName -Arg ([string]$act.path) -Message $_.Exception.Message
+    }
+
+    # ---- 改动后算 diff，挂到这一步上 ----
+    $stepDiff = $null
+    if ($ok -and $diffPath) {
+        try {
+            $afterSnap = Get-PanelFileText $diffPath
+            if ($null -ne $afterSnap) {
+                if ($null -eq $diffSnap) { $diffSnap = '' }   # 新文件：整段算新增
+                $d = Get-LineDiffForPanel -Before $diffSnap -After $afterSnap
+                if ($d.add -gt 0 -or $d.del -gt 0) {
+                    $stepDiff = @{ path = $diffPath; add = [int]$d.add; del = [int]$d.del
+                                   lines = @($d.lines); truncated = [bool]$d.truncated }
+                }
+            }
+        } catch { }
     }
 
     $stepArg = $path
@@ -3757,7 +3924,7 @@ Add-SessionNote -Text $bcSay -Kind 'say'
 
     $state.steps += @{ n = $step; think = $think; tool = $toolName; arg = $stepArg; ok = $ok
                        note = (($obs -split "`n")[0]); raw = $res.raw_calls; obs = $obs; sec = $res.seconds; tok = $res.tokens
-                       fp2 = [string]$act.command }
+                       fp2 = [string]$act.command; diff = $stepDiff }
 
     if ($ok -and $planList.Count -gt 0) { $planList = Set-PlanStepDone -Plan $planList }
 
@@ -3898,7 +4065,7 @@ Add-SessionNote -Text $bcSay -Kind 'say'
     #
     # 这里按「写类工具 + 同一路径」单独计一次数，不看 command、不区分是
     # write_script 还是 write_file —— 反正都是在反复覆盖同一个文件。
-    $writeTools = @('write_file', 'write_script', 'append_file', 'replace_in_file', 'set_line')
+    $writeTools = @('write_file', 'write_script', 'append_file', 'replace_in_file', 'multi_edit', 'set_line')
     if ($toolName -in $writeTools -and $stepArg) {
         $prevWrites = @($state.steps | Select-Object -Last 8 | Where-Object {
             ([string]$_.tool -in $writeTools) -and ([string]$_.arg -eq $stepArg)
@@ -4097,7 +4264,7 @@ if (-not $finished) {
 # ---------- 记进会话 ----------
 try {
     $sessFiles = @($state.steps |
-        Where-Object { $_.ok -and $_.tool -in @('write_file', 'append_file', 'set_line', 'replace_in_file', 'make_dir', 'delete_path') } |
+        Where-Object { $_.ok -and $_.tool -in @('write_file', 'append_file', 'set_line', 'replace_in_file', 'multi_edit', 'make_dir', 'delete_path') } |
         ForEach-Object { [string]$_.arg } | Where-Object { $_ })
     $sessText = [string]$state.answer
     if ([string]::IsNullOrWhiteSpace($sessText)) { $sessText = [string]$state.summary }

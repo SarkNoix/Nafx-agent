@@ -1640,6 +1640,43 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                 $r = [math]::Round($result, 4)
                 return "$val $from = $r $to（$unit）"
             }
+            'multi_edit' {
+                # 一次调用做多处替换。写代码时最费时间的不是想，是「改一处 → 等模型
+                # 想下一处 → 再改」这个循环：每一轮都要几十秒。
+                # 把同一文件里的 3–5 处改动一次性提交，能直接砍掉 2–4 个回合。
+                $full = Resolve-AiPath $Action.path
+                Assert-CanWrite -Full $full -RelPath ([string]$Action.path)
+                if (-not (Test-Path $full)) { throw "文件不存在：$($Action.path)" }
+                $edits = @($Action.edits)
+                if ($edits.Count -eq 0) { throw 'edits 不能为空，至少给一组 find/replace' }
+                $text = [IO.File]::ReadAllText($full)
+                $done = 0
+                $miss = New-Object System.Collections.ArrayList
+                foreach ($ed in $edits) {
+                    $find = [string]$ed.find
+                    if ([string]::IsNullOrEmpty($find)) { throw 'edits 里每一条都要有 find' }
+                    $idx = $text.IndexOf($find, [StringComparison]::Ordinal)
+                    if ($idx -lt 0) { [void]$miss.Add($find); continue }
+                    $text = $text.Substring(0, $idx) + [string]$ed.replace + $text.Substring($idx + $find.Length)
+                    $done++
+                }
+                # 一处都没匹配上：不写文件，直接把「文件里真实存在的前几行」还给模型，
+                # 让它照抄准确的原文，别猜缩进/空格继续错。
+                if ($done -eq 0) {
+                    $head = ($text -split "`r?`n" | Select-Object -First 40) -join "`n"
+                    throw ("find 文本一处都没匹配上，文件没有改动。`n" +
+                           "要替换的原文必须和文件里完全一致（含缩进和空格）。`n" +
+                           "文件前 40 行如下，照抄其中一段：`n" + $head)
+                }
+                Write-AiFileText $full $text
+                $msg = "已改 $(Get-RelDisplay $full)：$done 处替换成功"
+                if ($miss.Count -gt 0) {
+                    $msg += "；有 $($miss.Count) 处没找到（这些没改）：" + (($miss | ForEach-Object { '「' + $_ + '」' }) -join '、')
+                }
+                $msg += "。改完直接 finish，不用再读一遍验证。"
+                return $msg
+            }
+
             'replace_in_file' {
                 $full = Resolve-AiPath $Action.path
                 Assert-CanWrite -Full $full -RelPath ([string]$Action.path)

@@ -89,11 +89,16 @@ function Get-Flow {
     # 所以改成一刀切：不管当前匹配到哪个 flow，只要产物是程序就换 build。
     #
     # 判据看「产物形态」，不看关键词：
-    #   任务里点了 .ps1 / .bat 文件名  → 一定是在写程序
+    #   任务里点了 .ps1 / .bat 文件名  → 一般是在写程序
     #   出现「支持/功能/计算器/管理器」→ 是在要一个能用的东西
+    # 但必须同时有「要动手写/改」的动词。否则「读一下 greet.ps1 有几行」
+    # 也会因为文件名带 .ps1 被判成 build，拿到 write_file —— 实测模型
+    # 真去重写了一遍那个文件，只想读内容的用户白丢一次文件。
     # 例外：modify（改现有文件内容）不抢 —— 「把 a.txt 改成 b」里也可能出现 .ps1 字样。
-    $isProgram = ($Task -match '\.(ps1|bat|cmd)\b') -or
-                 ($Task -match '支持|功能|能够|实现|计算器|管理器|系统|程序|工具|脚本|游戏|转换器|解析器')
+    $writeIntent = ($Task -match '写|做|实现|开发|生成|创建|新建|搭|改|修|加|补|重构|替换')
+    $isProgram = $writeIntent -and (
+                 ($Task -match '\.(ps1|bat|cmd)\b') -or
+                 ($Task -match '支持|功能|能够|实现|计算器|管理器|系统|程序|工具|脚本|游戏|转换器|解析器'))
 
     if ($isProgram -and $best -and $best.id -notin @('build', 'modify')) {
         $buildFlow = @($script:Flows | Where-Object { $_.id -eq 'build' })

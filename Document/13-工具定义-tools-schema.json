@@ -608,6 +608,47 @@
   {
     "type": "function",
     "function": {
+      "name": "multi_edit",
+      "description": "一次改同一个文件的多处：给一组 find→replace，按顺序执行。写代码/改代码要动好几处时优先用它，比连续调 Replace_in_file 少好几个回合。find 必须和文件里一字不差（含缩进）。哪一处没匹配上会在结果里点出来，那一处不改。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "文件路径（相对工作区）"
+          },
+          "edits": {
+            "type": "array",
+            "description": "要做的多处替换，按顺序执行",
+            "items": {
+              "type": "object",
+              "properties": {
+                "find": {
+                  "type": "string",
+                  "description": "要找的原文，必须和文件里完全一致"
+                },
+                "replace": {
+                  "type": "string",
+                  "description": "替换成什么；传空字符串表示删掉这段"
+                }
+              },
+              "required": [
+                "find",
+                "replace"
+              ]
+            }
+          }
+        },
+        "required": [
+          "path",
+          "edits"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
       "name": "set_line",
       "description": "改文件的第 N 行。用户说「把第 N 行改成 X」时用它。",
       "parameters": {
