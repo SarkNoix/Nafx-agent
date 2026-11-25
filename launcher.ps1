@@ -52,7 +52,14 @@ if (-not (Test-AiUp)) {
 
     $loadMode = 'mmap'
     if ($Cfg.loadMode) { $loadMode = [string]$Cfg.loadMode }
-    $prio = '1'
+    # 优先级：只有 0 = normal 才是安全默认。
+    # 之前默认 1（medium），llama.cpp 会在进程基类上再抬高一级 ——
+    # 实际跑起来整个 llama-server 是 AboveNormal、7 个计算线程更高，
+    # 8 核机器直接被它吃干净，面板只能排队：实测 /api/state 往返 500~2400ms，
+    # 顶栏延迟徽标 70~1000ms 全红。
+    # 现在默认 normal，并在就绪后把进程压到 BelowNormal（见下方），
+    # 面板（monitor 自己是 AboveNormal）随时插队，往返回到 10~20ms。
+    $prio = '0'
     if ($Cfg.prio) { $prio = [string]$Cfg.prio }
 
     # 线程数。
@@ -206,9 +213,22 @@ if (-not (Test-AiUp)) {
         if (-not [string]::IsNullOrWhiteSpace($extra)) {
             foreach ($a in ($extra -split '\s+' | Where-Object { $_ })) { $argList += $a }
         }
+
+
     } else {
         $argList += '--jinja'
     }
+
+    # ---- 重复惩罚（2026-11-26）----
+    # 现象：模型偶尔会一直吐数字 123456789432425...，停不下来。
+    # 原因：启动参数里从来没有 repeat-penalty，llama 默认 1.0 = 不惩罚；
+    #       temperature 0.3 / top_p 0.7 偏低，一旦选中数字就会顺着
+    #       同一方向一直续写，靠概率自己出不来。
+    # 1.1 是温和档：够打断循环，又不至于让正常复述（列文件名）变形。
+    # --repeat-last-n 256 只惩罚最近 256 token，不影响更早的上下文。
+    # 想关掉设 1.0；想更发散可以 1.15，再高中文重复用词会变别扭。
+    # 放在 if/else 外面：不管有没有 modelProfile 都要生效。
+    $argList += @('--repeat-penalty', '1.1', '--repeat-last-n', '256')
 
     # 用 cmd 的 start 让推理服务彻底脱离本脚本的进程树。
     # 之前用 Start-Process 直接起，脚本进程一退出，服务会被一起带走
@@ -248,6 +268,22 @@ if (-not (Test-AiUp)) {
         exit 1
     }
     Write-Host ('服务就绪（' + $waited + 's）') -ForegroundColor Green
+
+    # 把 llama-server 进程压到 BelowNormal。
+    # --prio 只能改 llama 自己的线程优先级（取值有限，没有 below normal 这一档），
+    # 而进程基类决定了那些线程最终落在哪 —— 直接改进程优先级最省事：
+    # 面板请求一来就立刻插队，模型不再挡在它前面。
+    # 找不到进程就跳过（不影响启动），用户自己设了 $Cfg.prio 也不强制覆盖。
+    try {
+        if (-not $Cfg.prio) {
+            $lp = Get-CimInstance Win32_Process -Filter "Name='llama-server.exe'" |
+                  Where-Object { $_.ExecutablePath -eq $Server } | Select-Object -First 1
+            if ($lp) {
+                (Get-Process -Id $lp.ProcessId).PriorityClass = [Diagnostics.ProcessPriorityClass]::BelowNormal
+                Write-Host '推理服务优先级：BelowNormal（面板优先）' -ForegroundColor DarkGray
+            }
+        }
+    } catch { }
 
     # 就绪后立刻在后台把 prompt.md 的前缀灌进 KV 缓存。
     # 为什么：KV 缓存只活在进程里，重启就清空，而每个任务的第一步

@@ -550,6 +550,12 @@ function Get-MergedState {
     $o = Build-MergedState
     $script:MergedCache = $o
     $script:MergedCacheAt = Get-Date
+    # 顺手把 JSON 也缓存一份。
+    # 面板 450ms 轮询一次，1.2 秒窗口里通常有 2~3 个请求拿到的是同一个对象，
+    # 原来每个请求都要 ConvertTo-Json -Depth 10 把同一坨东西再序列化一遍 ——
+    # 模型满载时这一下就是几十毫秒，而且都堵在同一个单线程里。
+    # 缓存的字符串只在本函数重建对象时更新，所以不会比 MergedCache 更旧。
+    try { $script:MergedJson = ($o | ConvertTo-Json -Depth 10 -Compress) } catch { $script:MergedJson = $null }
     return $o
 }
 
@@ -952,8 +958,12 @@ while ($listener.IsListening) {
                 }
 
                 '/api/state' {
+                    # 面板最热的接口（450ms 一次），走缓存好的 JSON 字符串：
+                    # Get-MergedState 只在重建对象时才序列化，命中窗口内这里几乎零成本。
                     $merged = Get-MergedState
-                    Send-Text -Response $resp -Text ($merged | ConvertTo-Json -Depth 10 -Compress)
+                    $json = $script:MergedJson
+                    if (-not $json) { $json = $merged | ConvertTo-Json -Depth 10 -Compress }
+                    Send-Text -Response $resp -Text $json
                 }
 
 
@@ -985,7 +995,17 @@ while ($listener.IsListening) {
                     Send-Text -Response $resp -Text ($obj2 | ConvertTo-Json -Depth 4 -Compress)
                 }
                 '/api/system' {
-                    Send-Text -Response $resp -Text ((Get-SystemContext) | ConvertTo-Json -Depth 5 -Compress)
+                    # 这个接口要跑 CIM / Get-Process / 模型健康探测，实测 30~3000ms（冷的时候最狠）。
+                    # 面板每 3 轮才拉一次，数据本身也是秒级变化，缓存 2 秒不损失什么，
+                    # 但能保证它不再把后面排队的 /api/state 一起按在地上。
+                    $sysAt = $script:SysCtxAt
+                    $sysJson = $script:SysCtxJson
+                    if (-not $sysJson -or -not $sysAt -or ((Get-Date) - $sysAt).TotalSeconds -ge 2) {
+                        $sysJson = (Get-SystemContext) | ConvertTo-Json -Depth 5 -Compress
+                        $script:SysCtxJson = $sysJson
+                        $script:SysCtxAt = Get-Date
+                    }
+                    Send-Text -Response $resp -Text $sysJson
                 }
 
                 '/api/queue' {
@@ -1228,28 +1248,75 @@ while ($listener.IsListening) {
                     if ($mSince.Success) { $since = [int]$mSince.Groups[1].Value }
 
                     $sf = Join-Path $Root 'agent\stream.jsonl'
-                    $all = @()
-                    $fileMax = 0
-                    if (Test-Path $sf) {
+                    # 增量读。
+                    # 原来每个请求都把整个 stream.jsonl ReadToEnd 再逐行 ConvertFrom-Json：
+                    # 刚起步 46~80ms，跑上几分钟文件涨到几百 KB 后更慢。它和 /api/state 在
+                    # 同一个单线程里排队，所以面板上看到的就是「回环还 70+ms」。
+                    # 现在记住上次读到哪个字节，每次只吃新追加的部分 —— 一轮任务下来
+                    # 整个文件也只被读一遍，单次请求基本是零成本。
+                    if ($null -eq $script:StItems) { $script:StItems = @(); $script:StMax = 0; $script:StPos = 0 }
+                    $stSize = 0
+                    try { if (Test-Path $sf) { $stSize = [int64](Get-Item $sf -ErrorAction Stop).Length } } catch { }
+                    if ($stSize -lt [int64]$script:StPos) {
+                        # 文件变短 = 新一轮把 stream 清空重写了，缓冲作废
+                        $script:StPos = 0; $script:StItems = @(); $script:StMax = 0
+                    }
+                    if ($stSize -gt [int64]$script:StPos) {
+                        # 极少数情况：文件被截断重写，但新版已经涨得比旧版还长，
+                        # 光看长度判断不出来。上次读到 pos 时 pos-1 一定是换行符
+                        # （我们只吃到完整行为止），不是就说明文件被重写过，从头来。
+                        if ([int64]$script:StPos -gt 0) {
+                            $peek = $null
+                            try {
+                                $fsp = [IO.File]::Open($sf, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+                                try {
+                                    $fsp.Position = [int64]$script:StPos - 1
+                                    $one = New-Object byte[] 1
+                                    [void]$fsp.Read($one, 0, 1)
+                                    $peek = $one[0]
+                                } finally { $fsp.Close() }
+                            } catch { }
+                            if ($peek -ne 10) { $script:StPos = 0; $script:StItems = @(); $script:StMax = 0 }
+                        }
                         try {
-                            # agent 正在写的时候也能读，所以要 FileShare.ReadWrite
+                            $n = [int]$stSize - [int]$script:StPos
+                            $buf = New-Object byte[] $n
+                            $readN = 0
                             $fsr = [IO.File]::Open($sf, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
                             try {
-                                $srd = New-Object IO.StreamReader($fsr, [Text.Encoding]::UTF8)
-                                $txt = $srd.ReadToEnd()
-                                $srd.Close()
+                                $fsr.Position = [int64]$script:StPos
+                                while ($readN -lt $n) {
+                                    $k = $fsr.Read($buf, $readN, $n - $readN)
+                                    if ($k -le 0) { break }
+                                    $readN += $k
+                                }
                             } finally { $fsr.Close() }
-                            foreach ($ln in ($txt -split "`n")) {
-                                if (-not $ln.Trim()) { continue }
-                                try {
-                                    $o = $ln | ConvertFrom-Json
-                                    $sq = [int]$o.seq
-                                    if ($sq -gt $fileMax) { $fileMax = $sq }
-                                    $all += [pscustomobject]@{ seq = $sq; kind = [string]$o.kind; text = [string]$o.text }
-                                } catch { }
+
+                            # 只消费到最后一个换行为止：agent 还在写的那半行留到下一轮，
+                            # 否则被拆成两截的 JSON 两边都解析失败，界面上的字就缺一块。
+                            $lastNl = -1
+                            for ($bi = $readN - 1; $bi -ge 0; $bi--) { if ($buf[$bi] -eq 10) { $lastNl = $bi; break } }
+                            if ($lastNl -ge 0) {
+                                $txt = [Text.Encoding]::UTF8.GetString($buf, 0, $lastNl + 1)
+                                $script:StPos = [int64]$script:StPos + $lastNl + 1
+                                $items2 = $script:StItems
+                                foreach ($ln in ($txt -split "`n")) {
+                                    if (-not $ln.Trim()) { continue }
+                                    try {
+                                        $o = $ln | ConvertFrom-Json
+                                        $sq = [int]$o.seq
+                                        if ($sq -gt [int]$script:StMax) { $script:StMax = $sq }
+                                        $items2 += [pscustomobject]@{ seq = $sq; kind = [string]$o.kind; text = [string]$o.text }
+                                    } catch { }
+                                }
+                                # 缓冲别无限涨：只留最后 2000 条（面板最多也就回看这么多）
+                                if (@($items2).Count -gt 2000) { $items2 = @(@($items2) | Select-Object -Last 2000) }
+                                $script:StItems = $items2
                             }
                         } catch { }
                     }
+                    $fileMax = [int]$script:StMax
+                    $all = $script:StItems
 
                     # 新一轮任务开始时 agent 会清空 stream.jsonl，seq 从 1 重新开始。
                     # 面板还记着上一轮的 max seq（比如 300），于是它只请求 since=300，
@@ -1638,6 +1705,22 @@ while ($listener.IsListening) {
                     # 现在：用 FileShare.ReadWrite 显式共享读，跳过错行但记数，
                     # 并且把上限提到 200 行。
                     $sf = Join-Path $Root 'agent\logs\session.jsonl'
+                    # 缓存：key = 文件大小 + 修改时间。
+                    # 这个接口每次都要把整个 session.jsonl 读出来、逐行 ConvertFrom-Json，
+                    # 长会话下几十万字节约 80~600ms；单线程里它一跑，排队的 /api/state
+                    # 就被顶到几百毫秒，顶栏延迟徽标立刻变红。
+                    # 文件没变就原样复用上次那份 JSON —— 命中时这里是零成本，
+                    # 也不会比真读更旧（内容一变 key 就变）。
+                    $sessJson = $null
+                    $sessKey = 'none'
+                    try {
+                        if (Test-Path $sf) {
+                            $sfi = Get-Item $sf -ErrorAction Stop
+                            $sessKey = '{0}/{1}' -f $sfi.Length, $sfi.LastWriteTimeUtc.Ticks
+                        }
+                        if ($script:SessJson -and [string]$script:SessKey -eq $sessKey) { $sessJson = $script:SessJson }
+                    } catch { }
+                    if (-not $sessJson) {
                     $list = New-Object System.Collections.ArrayList
                     if (Test-Path $sf) {
                         $lines = @()
@@ -1659,7 +1742,11 @@ while ($listener.IsListening) {
                         }
                         if ($bad -gt 0) { Write-Host ("  [session] 跳过 $bad 条不完整记录") -ForegroundColor DarkGray }
                     }
-                    Send-Text -Response $resp -Text (ConvertTo-Json -InputObject $list.ToArray() -Depth 6 -Compress)
+                    $sessJson = ConvertTo-Json -InputObject $list.ToArray() -Depth 6 -Compress
+                    $script:SessJson = $sessJson
+                    $script:SessKey = $sessKey
+                    }
+                    Send-Text -Response $resp -Text $sessJson
                 }
 
                 '/api/session/clear' {
@@ -1867,8 +1954,19 @@ while ($listener.IsListening) {
             }
         }
 
-        # 无论有没有请求，都做一次调度
+        # 无论有没有请求，都做一次调度。
+        #
+        # 但请求已经排上队就得先回去处理它 —— 调度是「顺手做的事」，
+        # 不能让它挡在用户请求前面。原来这里无条件 Invoke-Dispatch：
+        # 调度一旦读到冷文件、扫进程，面板 450ms 的轮询就得整个等它干完，
+        # 顶栏延迟徽标就是这么窜到 300~1000ms 的。
+        # BeginGetContext 的 IAsyncResult 完成 = 有人在等连接。
+        if ($async.IsCompleted) { continue }
+
+        $dsw = [Diagnostics.Stopwatch]::StartNew()
         Invoke-Dispatch
+        $dms = [int]$dsw.Elapsed.TotalMilliseconds
+        if ($dms -ge 150) { Write-PanelLog ('调度耗时 ' + $dms + 'ms') 'WARN' }
 
     } catch {
         # 单次请求出错不能拖垮整个面板。
