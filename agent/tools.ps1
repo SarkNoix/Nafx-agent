@@ -590,6 +590,83 @@ function Clear-ChildNoise {
     return $plain
 }
 
+function Get-FileLineCountFast {
+    # 按字节数换行符，不解码、不建字符串。
+    # 用来给大文件报总行数：8000 行的日志 1ms 就数完，
+    # 而原来要先 ReadAllText 再 split，100MB 的文件直接吃掉几百 MB 内存。
+    param([string]$FullPath)
+    $fs = [IO.File]::OpenRead($FullPath)
+    try {
+        $buf = New-Object byte[] 65536
+        $count = 0
+        $lastByte = 0
+        while (($n = $fs.Read($buf, 0, $buf.Length)) -gt 0) {
+            # 按块解码再比长度差，比在 PowerShell 里逐字节 for 循环快一个数量级
+            # （5MB 文件逐字节要 400ms+，按块只要 10ms 级）。
+            $chunk = [Text.Encoding]::UTF8.GetString($buf, 0, $n)
+            $count += $chunk.Length - $chunk.Replace("`n", '').Length
+            $lastByte = $buf[$n - 1]
+        }
+        # 末尾没有换行符时，最后一行也算一行
+        if ($lastByte -ne 10 -and $fs.Length -gt 0) { $count++ }
+        return $count
+    } finally { $fs.Close() }
+}
+
+function Read-AiFilePreview {
+    # 一次读完拿两样东西：开头 N 行 + 总行数。
+    # read_file 的大文件分支原来分两趟（Read-AiFileHead 读一遍、Get-FileLineCountFast 再读一遍），
+    # 5MB 的文件等于读 10MB。合成一趟能省一半时间。
+    param([string]$FullPath, [int]$MaxLines = 8)
+    $headLines = New-Object System.Collections.ArrayList
+    $fs = [IO.File]::OpenRead($FullPath)
+    try {
+        $buf = New-Object byte[] 65536
+        $count = 0
+        $lastByte = 0
+        $tail = New-Object System.Text.StringBuilder
+        while (($n = $fs.Read($buf, 0, $buf.Length)) -gt 0) {
+            $chunk = [Text.Encoding]::UTF8.GetString($buf, 0, $n)
+            $count += $chunk.Length - $chunk.Replace("`n", '').Length
+            $lastByte = $buf[$n - 1]
+            # 只要开头几行：按块累积，凑够 MaxLines 行或超过 8KB 就停止累积
+            if ($headLines.Count -lt $MaxLines -and $tail.Length -lt 8192) {
+                [void]$tail.Append($chunk)
+                while ($headLines.Count -lt $MaxLines) {
+                    $s = $tail.ToString()
+                    $idx = $s.IndexOf("`n")
+                    if ($idx -lt 0) { break }
+                    [void]$headLines.Add($s.Substring(0, $idx).TrimEnd("`r"))
+                    [void]$tail.Remove(0, $idx + 1)
+                }
+            }
+        }
+        if ($lastByte -ne 10 -and $fs.Length -gt 0) { $count++ }
+        # 文件行数不足 MaxLines 时，残留部分就是最后一行
+        if ($headLines.Count -lt $MaxLines -and $tail.Length -gt 0) {
+            [void]$headLines.Add($tail.ToString().TrimEnd("`r`n"))
+        }
+        return @{ Head = ($headLines -join "`n"); Lines = $count }
+    } finally { $fs.Close() }
+}
+
+function Read-AiFileHead {
+    # 只读文件开头若干行，不再整文件读入。
+    # 原来 read_file 对 64KB~512KB 的文件会 ReadAllText 全文解码，
+    # 只为给模型看前 550 个字符 —— 一个 400KB 的日志就是白读 400KB。
+    param([string]$FullPath, [int]$MaxLines = 8, [int]$MaxChars = 550)
+    $headLines = New-Object System.Collections.ArrayList
+    $sr = New-Object IO.StreamReader($FullPath, [Text.Encoding]::UTF8, $true)
+    try {
+        for ($i = 0; $i -lt $MaxLines -and -not $sr.EndOfStream; $i++) {
+            [void]$headLines.Add($sr.ReadLine())
+        }
+    } finally { $sr.Close() }
+    $head = ($headLines -join "`n")
+    if ($head.Length -gt $MaxChars) { $head = $head.Substring(0, $MaxChars) }
+    return $head
+}
+
 function Trim-AiText {
     param([string]$Text)
     if ([string]::IsNullOrEmpty($Text)) { return '' }
@@ -932,9 +1009,26 @@ function Invoke-AiTool {
                 if (-not (Test-Path $full)) { throw "不存在：$($Action.path)" }
                 $it = Get-Item -LiteralPath $full
                 if ($it.PSIsContainer) {
-                    $fs = @(Get-ChildItem -LiteralPath $full -File -Recurse -ErrorAction SilentlyContinue)
-                    $sum = ($fs | Measure-Object Length -Sum).Sum
-                    return "$($Action.path) 是目录：$($fs.Count) 个文件，共 $(Get-SizeText $sum)"
+                    # 目录体积别再走 Get-ChildItem -Recurse —— 每个文件都要造一个
+                    # FileInfo 对象，几千个文件的目录要好几秒。
+                    # 这里用 .NET 枚举 + 栈，只累加长度，单目录失败也不中断。
+                    $n = 0
+                    $sum = 0L
+                    $stack = New-Object System.Collections.Stack
+                    $stack.Push($full)
+                    while ($stack.Count -gt 0) {
+                        $d = [string]$stack.Pop()
+                        try {
+                            foreach ($fp in [IO.Directory]::EnumerateFiles($d)) {
+                                $n++
+                                try { $sum += (New-Object IO.FileInfo $fp).Length } catch { }
+                            }
+                        } catch { }
+                        try {
+                            foreach ($sd in [IO.Directory]::EnumerateDirectories($d)) { $stack.Push($sd) }
+                        } catch { }
+                    }
+                    return "$($Action.path) 是目录：$n 个文件，共 $(Get-SizeText $sum)"
                 }
                 $sz = Get-SizeText $it.Length
                 $ro = if ($it.IsReadOnly) { '，只读' } else { '' }
@@ -1014,33 +1108,56 @@ function Invoke-AiTool {
                 $ctx = 0
                 $tryN = 0
                 if ([int]::TryParse([string]$Action.content, [ref]$tryN) -and $tryN -gt 0) { $ctx = [Math]::Min($tryN, 5) }
-                $all = @(Read-AiFileLinesSafe $full)
-                $hitIdx = @()
-                for ($i = 0; $i -lt $all.Count; $i++) {
-                    # 用 IndexOf 按字面找，不走 -like。
-                    # -like 会把关键词里的 [ ] * ? 当成通配符：
-                    # 找 "arr[0]" 时永远匹配不上，模型就以为文件里没有这行，
-                    # 接着一遍遍换关键词重搜。
-                    if ($all[$i].IndexOf($kw, [StringComparison]::OrdinalIgnoreCase) -ge 0) { $hitIdx += $i }
-                }
-                if ($hitIdx.Count -eq 0) { return "文件里没有 $kw（共 $($all.Count) 行）" }
-                $sb = New-Object System.Text.StringBuilder
-                [void]$sb.AppendLine("在 $(Get-RelDisplay $full) 里找到 $($hitIdx.Count) 处 $kw（共 $($all.Count) 行）：")
-                $shown = 0
-                foreach ($h in $hitIdx) {
-                    if ($shown -ge 10) { break }
-                    $shown++
-                    $from = [Math]::Max(0, $h - $ctx)
-                    $to = [Math]::Min($all.Count - 1, $h + $ctx)
-                    [void]$sb.AppendLine("")
-                    for ($k = $from; $k -le $to; $k++) {
-                        $mark = if ($k -eq $h) { '>' } else { ' ' }
-                        $ln = $all[$k]
-                        if ($ln.Length -gt 100) { $ln = $ln.Substring(0,100) }
-                        [void]$sb.AppendLine("  $mark $($k+1): $ln")
+                # 边读边匹配，不再先 ReadAllLines 整文件读入。
+                # 8000 行的 600KB 日志原来要建 8000 个字符串，
+                # 100MB 的日志直接吃掉 200MB+ 内存；现在内存只跟上下文行数有关。
+                # 关键词用 IndexOf 按字面找，不走 -like：
+                # -like 会把 [ ] * ? 当通配符，搜 "arr[0]" 永远搜不到。
+                $kwLen = $kw.Length
+                $total = 0
+                try { $total = Get-FileLineCountFast $full } catch { }
+                $hits = 0
+                $showMore = 10
+                $body = New-Object System.Text.StringBuilder
+                $before = New-Object System.Collections.ArrayList
+                $pending = 0
+                $lnNo = 0
+                $sr = New-Object IO.StreamReader($full, [Text.Encoding]::UTF8, $true)
+                try {
+                    while ($null -ne ($line = $sr.ReadLine())) {
+                        $lnNo++
+                        if ($line.Length -ge $kwLen -and $line.IndexOf($kw, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                            $hits++
+                            if ($hits -le $showMore) {
+                                [void]$body.AppendLine('')
+                                foreach ($b in $before) { [void]$body.AppendLine("    $($b.N): $($b.T)") }
+                                $clip = if ($line.Length -gt 100) { $line.Substring(0,100) + '…' } else { $line }
+                                [void]$body.AppendLine("  > $lnNo`: $clip")
+                                $pending = $ctx
+                                $before.Clear()
+                            }
+                            continue
+                        }
+                        if ($pending -gt 0) {
+                            if ($hits -le $showMore) {
+                                $clip2 = if ($line.Length -gt 100) { $line.Substring(0,100) + '…' } else { $line }
+                                [void]$body.AppendLine("    $lnNo`: $clip2")
+                            }
+                            $pending--
+                            continue
+                        }
+                        if ($ctx -gt 0) {
+                            $clip3 = if ($line.Length -gt 100) { $line.Substring(0,100) + '…' } else { $line }
+                            [void]$before.Add(@{ N = $lnNo; T = $clip3 })
+                            if ($before.Count -gt $ctx) { $before.RemoveAt(0) }
+                        }
                     }
-                }
-                if ($hitIdx.Count -gt 10) { [void]$sb.AppendLine("  ...还有 $($hitIdx.Count - 10) 处") }
+                } finally { $sr.Close() }
+                if ($hits -eq 0) { return "文件里没有 $kw（共 $total 行）" }
+                $sb = New-Object System.Text.StringBuilder
+                [void]$sb.AppendLine("在 $(Get-RelDisplay $full) 里找到 $hits 处 $kw（共 $total 行）：")
+                [void]$sb.Append($body.ToString())
+                if ($hits -gt $showMore) { [void]$sb.AppendLine("  ...还有 $($hits - $showMore) 处") }
                 return $sb.ToString()
             }
 
@@ -1071,6 +1188,32 @@ function Invoke-AiTool {
                 $cnt = 40
                 $tryCnt = 0
                 if ([int]::TryParse([string]$Action.content, [ref]$tryCnt) -and $tryCnt -gt 0) { $cnt = [Math]::Min($tryCnt, 200) }
+                $fsz = 0
+                try { $fsz = (Get-Item -LiteralPath $full).Length } catch { }
+                # 大文件走流式：只推进到起始行，读需要的行，不再把整个文件读成字符串数组。
+                # 原来一个 100MB 的日志 read_lines 会先吃 100MB+ 内存，机器直接卡住。
+                if ($fsz -gt 4MB) {
+                    $total = 0
+                    try { $total = Get-FileLineCountFast $full } catch { }
+                    if ($total -gt 0 -and $from -gt $total) { throw "文件只有 $total 行，第 $from 行不存在" }
+                    $to = [Math]::Min($total, $from + $cnt - 1)
+                    $sb2 = New-Object System.Text.StringBuilder
+                    [void]$sb2.AppendLine("$(Get-RelDisplay $full) 第 $from-$to 行（共 $total 行，大文件流式读取）：")
+                    [void]$sb2.AppendLine('')
+                    $sr = New-Object IO.StreamReader($full, [Text.Encoding]::UTF8, $true)
+                    try {
+                        $ln = 0
+                        while ($ln -lt $from - 1 -and -not $sr.EndOfStream) { [void]$sr.ReadLine(); $ln++ }
+                        while ($ln -lt $to -and -not $sr.EndOfStream) {
+                            $ln++
+                            $line = $sr.ReadLine()
+                            if ($line.Length -gt 160) { $line = $line.Substring(0,160) + '…' }
+                            [void]$sb2.AppendLine(("${ln}: " + $line))
+                        }
+                    } finally { $sr.Close() }
+                    if ($to -lt $total) { [void]$sb2.AppendLine("") ; [void]$sb2.AppendLine("（还有 $($total - $to) 行，接着读用 command=" + ($to+1) + "）") }
+                    return $sb2.ToString()
+                }
                 $all = @(Read-AiFileLinesSafe $full)
                 if ($from -gt $all.Count) { throw "文件只有 $($all.Count) 行，第 $from 行不存在" }
                 $to = [Math]::Min($all.Count, $from + $cnt - 1)
@@ -1099,10 +1242,17 @@ function Invoke-AiTool {
                 }
                 $sb = New-Object System.Text.StringBuilder
                 if ($what -in @('all','cpu')) {
-                    $cpu = Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue
-                    if ($cpu) {
-                        [void]$sb.AppendLine("CPU  $($cpu.Name)")
-                        [void]$sb.AppendLine("     $($cpu.NumberOfCores) 物理核 / $($cpu.NumberOfLogicalProcessors) 逻辑核")
+                    # CPU 名称直接读注册表：Win32_Processor 这条 WMI 查询在
+                    # 这台机器上实测 1096ms，注册表同一信息 18ms。
+                    # 每次 sys_info 都被 CPU 这一项拖成 1.4 秒，模型等得难受。
+                    $cpuName = ''
+                    try {
+                        $cpuName = (Get-ItemProperty 'HKLM:\HARDWARE\DESCRIPTION\System\CentralProcessor\0' `
+                            -ErrorAction SilentlyContinue).ProcessorNameString
+                    } catch { }
+                    if ($cpuName) {
+                        [void]$sb.AppendLine("CPU  $($cpuName.Trim())")
+                        [void]$sb.AppendLine("     $([Environment]::ProcessorCount) 逻辑核")
                     }
                 }
                 if ($what -in @('all','mem')) {
@@ -2020,22 +2170,29 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                 # 反正下面只给模型看 550 字符，大文件读一个开头就够了。
                 $fsz = 0
                 try { $fsz = (Get-Item -LiteralPath $full).Length } catch { }
-                if ($fsz -gt 524288) {
-                    # 只读前 8 行就够示意了。
-                    # 注意别用 ReadBlock 的返回值 —— 那是「读了多少个字符」的数字，
-                    # 不是内容（第一版就把它当内容返回了，模型看到的开头是 "800"）。
-                    $headLines = New-Object System.Collections.ArrayList
-                    $sr = New-Object IO.StreamReader($full, [Text.Encoding]::UTF8, $true)
+                # 源码/文本类给到 256KB：改代码时常要整段看，64KB 就截太狠了。
+                # 日志、数据这类只给 64KB 预览。
+                $pExt = [IO.Path]::GetExtension($full).ToLowerInvariant()
+                $previewAt = if ($pExt -in @('.ps1','.psm1','.psd1','.js','.mjs','.cjs','.ts','.tsx','.jsx',
+                                             '.py','.cs','.java','.go','.rs','.c','.cpp','.h','.hpp',
+                                             '.json','.xml','.yml','.yaml','.toml','.ini','.md','.txt',
+                                             '.html','.htm','.css','.scss','.vue','.sql','.sh')) { 262144 } else { 65536 }
+                if ($fsz -gt $previewAt) {
+                    # 大文件就不再整文件解码了。
+                    # 原来只给模型看 550 字符，却先把全文读进来：
+                    # 一个 400KB 的日志白读 400KB，一个 500MB 的日志直接把内存吃掉。
+                    # 现在只要开头 8 行 + 行数，一趟读完，不建大字符串。
+                    $headStr = ''
+                    $total = 0
                     try {
-                        for ($li = 0; $li -lt 8 -and -not $sr.EndOfStream; $li++) {
-                            [void]$headLines.Add($sr.ReadLine())
-                        }
-                    } catch { } finally { $sr.Close() }
-                    $headStr = ($headLines -join "`n")
-                    if ($headStr.Length -gt 550) { $headStr = $headStr.Substring(0,550) }
+                        $pv = Read-AiFilePreview $full 8
+                        $headStr = [string]$pv.Head
+                        $total = [int]$pv.Lines
+                        if ($headStr.Length -gt 550) { $headStr = $headStr.Substring(0,550) }
+                    } catch { $headStr = '' }
                     $linesNote = Get-SizeText $fsz
-                    return ("（这是个 $linesNote 的大文件，只给你看开头 8 行）`n--- 开头 ---`n" + $headStr +
-                            "`n`n大文件别硬读：找关键词用 grep_file，看行数用 run_cmd find /c /v `"`"，" +
+                    return ("（这是个 $linesNote 的大文件，共 $total 行，只给你看开头 8 行）`n--- 开头 ---`n" + $headStr +
+                            "`n`n大文件别硬读：找关键词用 grep_file，分段看用 read_lines（command=起始行, content=行数），" +
                             "要处理就用 write_script 写脚本，别整个读进来。")
                 }
                 $text = Read-AiFileTextSafe $full

@@ -78,6 +78,16 @@ T 'read_gbk'        @{ tool='read_file'; path='gbk.txt' }
 # ---------- 删除（应留备份） ----------
 T 'delete_path'     @{ tool='delete_path'; path='bracket.txt' }
 
+# ---------- 大文件（走流式/预览路径） ----------
+$bigLog = Join-Path $tmp 'big.log'
+$sw = [IO.StreamWriter]::new($bigLog, $false, [Text.Encoding]::UTF8)
+for ($i = 1; $i -le 70000; $i++) { $sw.WriteLine("line $i filler filler filler filler") }
+$sw.Dispose()
+T 'read_file_big'   @{ tool='read_file'; path='big.log' }
+T 'read_lines_big'  @{ tool='read_lines'; path='big.log'; command='69995'; content='5' }
+T 'grep_big'        @{ tool='grep_file'; path='big.log'; command='line 6999 '; content='1' }
+T 'file_info_dir'   @{ tool='file_info'; path='.' }
+
 # ---------- 断言 ----------
 $fail = @()
 function Need([string]$name, [string]$cond, [string]$desc) {
@@ -103,6 +113,13 @@ Need 'run_ps_error'   '-match ''找不到路径'''                       '真错
 Need 'run_ps_error'   '-notmatch ''CLIXML'''                        '错误里不该出现 XML 外壳'
 Need 'write_script_bad' '-match ''第 1 行'''                        '语法错误要指出行号'
 Need 'write_script_bad' '-match ''已写入'''                         '语法错误也先落盘，别逼模型整段重写'
+Need 'read_file_big'  '-match ''共 70000 行'''                      '大文件预览也要给准确行数'
+Need 'read_file_big'  '-notmatch ''line 20'''                       '大文件只给开头，不该把全文塞回来'
+Need 'read_lines_big' '-match ''69999: line 69999'''                '流式 read_lines 行号要对得上'
+Need 'read_lines_big' '-match ''大文件流式读取'''                    '大文件该走流式，不是整读'
+Need 'grep_big'       '-match ''找到 1 处''                          '流式 grep 命中数要对'
+Need 'grep_big'       '-match ''> 69999: line 69999'''              '流式 grep 要标对行号'
+Need 'file_info_dir'  '-match ''个文件''                             '目录体积统计要能跑完'
 
 $linesAfter = (Get-Content -LiteralPath (Join-Path $tmp 'a.txt')).Count
 if ($linesAfter -ne 6) { $fail += "[append_file] 结尾换行导致多空行：应为 6 行，实际 $linesAfter" }
