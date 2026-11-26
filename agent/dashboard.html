@@ -4026,15 +4026,15 @@ header #btnModel,header #btnQueue,header #btnJobs,header #btnHist,header #btnSet
               <div class="reason-fx" id="reasonFx"></div>
               <div class="reason-thumb" id="reasonThumb"></div>
             </div>
-            <div class="reason-ticks" id="reasonTicks"><span>关闭</span><span>弱</span><span>标准</span><span>强</span></div>
+            <div class="reason-ticks" id="reasonTicks"><span>关闭</span><span>弱</span><span>标准</span><span>强</span><span style="display:none">MAX</span></div>
             <div class="reason-next" id="reasonNext">下一次回答生效</div>
             <div class="reason-about" id="reasonAbout">
               <p class="ra-lead">这不是让模型“更用力”，而是决定它动手前愿意花多少内心草稿。档位越高，越会先排查、列计划、事后自检；代价是更慢，也更费 token。</p>
               <div class="ra-row"><i class="ra-lv lv0">关闭</i><span>不额外思考，直接给结果。适合一两个字、纯执行类指令。</span></div>
               <div class="ra-row"><i class="ra-lv lv1">弱</i><span>只抓主干，一遍做完。适合简单问答、格式改写、短文案。</span></div>
               <div class="ra-row"><i class="ra-lv lv2">标准</i><span>想清楚再动手，做完自检。日常默认档，绝大多数任务够用。</span></div>
-              <div class="ra-row"><i class="ra-lv lv3">强</i><span>先在 think 里列计划、逐步验证，走偏了会回头改做法。适合多步任务、改代码、排查问题。<b>现在是面板能拖到的最高档。</b></span></div>
-              <div class="ra-row"><i class="ra-lv lv4">MAX（已下线）</i><span>原来那档：不掐输出、计划必须写全。纯 CPU 机器上三次实测只有 19.8 / 33 / 33 分，全靠强制收尾结束，比「强」更慢也更差，所以从滑块里拿掉了（命令行 -Reasoning 4 仍可用）。</span></div>
+              <div class="ra-row"><i class="ra-lv lv3">强</i><span id="raLv3T">先在 think 里列计划、逐步验证，走偏了会回头改做法。适合多步任务、改代码、排查问题。<b>现在是面板能拖到的最高档。</b></span></div>
+              <div class="ra-row" id="raLv4"><i class="ra-lv lv4" id="raLv4L">MAX（接口模式）</i><span id="raLv4T">只在接口模式出现：不掐输出、计划必须写全。接口上跑得动，纯 CPU 本地跑三次只有 19.8 / 33 / 33 分，所以本地模式里把它藏起来。</span></div>
               <p class="ra-how">它怎么想：先在 think 里过一遍 目标 → 约束 → 步骤 → 风险；每执行一步检查结果；同一个问题连续两次没进展就换做法；收尾前逐条核对你的原话，缺哪条补哪条。</p>
             </div>
           </div>
@@ -6641,6 +6641,7 @@ function tick(){
     .then(function(res){
       failStreak = 0;
       var st = res[0];
+      if (st) applyReasonMax(st.modelMode === 'api');
       var sys = slow ? res[1] : window.__lastSys;
       var sess = slow ? res[2] : window.__lastSess;
 
@@ -6831,10 +6832,13 @@ function bindMode(){
    布局属性每帧重算会触发 reflow，低端机上直接掉帧。 */
 var REASON_NAMES = ['关闭', '弱', '标准', '强', 'MAX'];
 var REASON_DESC = ['不额外思考，直接做', '只抓主干，一次做完', '想清楚再动手，做完自检', '先列计划，逐步验证', '不掐输出，计划必须写出来'];
-/* 面板能拖到的最高档。MAX(4) 在纯 CPU 机器上实测三次 19.8 / 33 / 33，
-   全是强制收尾，又慢又差 —— 从滑块里下线，agent 侧仍保留 4 供命令行使用。
-   所有和「档位→位置/颜色/星星」有关的换算都走 REASON_MAX，别再写死 4。 */
+/* 面板能拖到的最高档，随模型来源变：
+   本地模式 → 最高「强」(3)。纯 CPU 上 MAX 三次实测 19.8 / 33 / 33，全靠强制收尾，
+              又慢又差，所以不给拖。
+   接口模式 → 把 MAX(4) 放回来（会发 reasoning_effort=max，接口上真的会多想）。
+   所有「档位→位置/颜色/星星」的换算都走 REASON_MAX，别再写死数字。 */
 var REASON_MAX = 3;
+var REASON_HAS_MAX = false;
 var curReason = 2;
 try {
   var rsaved = localStorage.getItem('nafx-reason');
@@ -6892,12 +6896,37 @@ function layoutReason(){
   if (btn) btn.title = '推理力度：' + REASON_NAMES[curReason] + (curReason ? '（' + REASON_DESC[curReason] + '）' : '');
 }
 
-function reasonStarRate(){
-  // 星星漂移速度跟着推理档位走：越强越快
-  return [0.45, 0.8, 1.25, 2.1][curReason] || 1.25;
+/* MAX 只给接口模式：跟着 /api/state 的 modelMode 开关。
+   ticks 第 5 格、轨道上限、关于里的文案一起改。 */
+function applyReasonMax(apiMode){
+  apiMode = !!apiMode;
+  if (apiMode === REASON_HAS_MAX) return;
+  REASON_HAS_MAX = apiMode;
+  REASON_MAX = apiMode ? 4 : 3;
+  var ticks = $('reasonTicks');
+  if (ticks) { var sp = ticks.querySelectorAll('span'); if (sp[4]) sp[4].style.display = apiMode ? '' : 'none'; }
+  var track = $('reasonTrack'); if (track) track.setAttribute('aria-valuemax', String(REASON_MAX));
+  var lv3 = $('raLv3T');
+  if (lv3) lv3.innerHTML = apiMode
+    ? '先在 think 里列计划、逐步验证，走偏了会回头改做法。适合多步任务、改代码、排查问题。'
+    : '先在 think 里列计划、逐步验证，走偏了会回头改做法。适合多步任务、改代码、排查问题。<b>现在是本地模式能拖到的最高档。</b>';
+  var lv4 = $('raLv4');
+  if (lv4) lv4.style.display = apiMode ? '' : 'none';
+  // 从接口切回本地：当前若是 MAX，降回「强」，别留一个本地不显示的档位
+  if (!apiMode && curReason > REASON_MAX) {
+    curReason = REASON_MAX;
+    try { localStorage.setItem('nafx-reason', String(curReason)); } catch(_){}
+    if (window.__lastBusy) reasonNextHint();
+  }
+  layoutReason();
+  var pop = $('reasonPop');
+  if (pop && pop.className.indexOf('on') >= 0) reasonStars();
 }
 
-function reasonStars(){
+function reasonStarRate(){
+  // 星星漂移速度跟着推理档位走：越强越快
+  return [0.45, 0.8, 1.25, 2.1, 2.8][curReason] || 1.25;
+}function reasonStars(){
   var box = $('reasonStars'); if (!box) return;
   var old = box.querySelectorAll('.reason-star');
   for (var k=0;k<old.length;k++) old[k].parentNode.removeChild(old[k]);
@@ -6960,12 +6989,12 @@ function reasonParticles(){
   var cx = m.pad + m.span * p;
   var cy = track.clientHeight / 2;
   // 档位越高，喷得越多；关闭档不喷
-  var count = [0, 8, 12, 17][curReason];
+  var count = [0, 8, 12, 17, 21][curReason];
   if (!count) return;
   var c = curReason ? reasonColor(p) : '#8b93a5';
   var pg = c.replace('rgb(', 'rgba(').replace(')', ',.42)');
   // 飞行速度按档位走（px/s）：MAX 最快，弱最慢
-  var spd = [0, 72, 112, 165][curReason] || 72;
+  var spd = [0, 72, 112, 165, 210][curReason] || 72;
   for (var i=0;i<count;i++){
     var d = document.createElement('span');
     d.className = 'reason-particle';
