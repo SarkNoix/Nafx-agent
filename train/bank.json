@@ -2186,6 +2186,129 @@
         }
       ],
       "forbid": []
+    },
+    {
+      "id": "proj-ledger-messy",
+      "category": "项目",
+      "weight": 4,
+      "task": "我有一份乱七八糟的记账数据 raw.json（12 条）。写一个能长期用的 ledger.ps1：-Import raw.json 清洗入库到 data.json，-Report 生成 report.md 和 report.html，另外要有 -SelfTest 自测开关。清洗规则一条都不能漏：同一个 id 只保留第一条（后面重复的丢掉）；category 为空记作「未分类」；amount 为空或 date 为空的行直接丢弃；金额里可能带 ¥ 和逗号，要能识别；负数代表退款，单独归到「退款」一行，不计入支出合计。report.md 要有一张按分类的表（分类、笔数、金额），金额一律保留两位小数；表下写「支出合计」「退款」「净支出」三行。report.html 用同一套数字生成一张能直接双击打开的表，也要包含这三个汇总。自测至少断言 9 条（覆盖重复 id、缺分类、千分位、退款、空字段），全部通过就打印 SELFTEST PASS 9/9。最后你自己跑一遍 -Import 和 -Report，再跑 -SelfTest，把它最后那行输出告诉我。",
+      "maxSteps": 24,
+      "mode": "work",
+      "setup": {
+        "files": [
+          {
+            "path": "raw.json",
+            "content": "[\r\n  {\r\n    \"date\": \"2026-11-01\",\r\n    \"note\": \"午饭\",\r\n    \"amount\": \"¥45.50\",\r\n    \"id\": \"t1\",\r\n    \"category\": \"餐饮\"\r\n  },\r\n  {\r\n    \"date\": \"2026-11-03\",\r\n    \"note\": \"地铁\",\r\n    \"amount\": \"12\",\r\n    \"id\": \"t2\",\r\n    \"category\": \"交通\"\r\n  },\r\n  {\r\n    \"date\": \"2026-11-05\",\r\n    \"amount\": \"88.00\",\r\n    \"id\": \"t3\",\r\n    \"category\": \"餐饮\"\r\n  },\r\n  {\r\n    \"date\": \"2026-11-08\",\r\n    \"note\": \"显示器\",\r\n    \"amount\": \"320.00\",\r\n    \"id\": \"t4\",\r\n    \"category\": \"购物\"\r\n  },\r\n  {\r\n    \"date\": \"2026-11-12\",\r\n    \"note\": \"打车\",\r\n    \"amount\": \"56.30\",\r\n    \"id\": \"t5\",\r\n    \"category\": \"交通\"\r\n  },\r\n  {\r\n    \"date\": \"2026-11-15\",\r\n    \"note\": \"耳机\",\r\n    \"amount\": \"129.90\",\r\n    \"id\": \"t6\",\r\n    \"category\": \"购物\"\r\n  },\r\n  {\r\n    \"date\": \"2026-11-20\",\r\n    \"amount\": \"36.20\",\r\n    \"id\": \"t7\",\r\n    \"category\": \"餐饮\"\r\n  },\r\n  {\r\n    \"date\": \"2026-11-20\",\r\n    \"note\": \"忘了填分类\",\r\n    \"amount\": \"20.00\",\r\n    \"id\": \"t8\"\r\n  },\r\n  {\r\n    \"date\": \"2026-11-25\",\r\n    \"note\": \"退款\",\r\n    \"amount\": \"-8.00\",\r\n    \"id\": \"t9\",\r\n    \"category\": \"交通\"\r\n  },\r\n  {\r\n    \"date\": \"2026-11-03\",\r\n    \"note\": \"地铁\",\r\n    \"amount\": \"12\",\r\n    \"id\": \"t2\",\r\n    \"category\": \"交通\"\r\n  },\r\n  {\r\n    \"date\": \"2026-11-26\",\r\n    \"note\": \"金额是空的\",\r\n    \"amount\": \"\",\r\n    \"id\": \"t10\",\r\n    \"category\": \"餐饮\"\r\n  },\r\n  {\r\n    \"date\": \"\",\r\n    \"note\": \"日期是空的\",\r\n    \"amount\": \"99.00\",\r\n    \"id\": \"t11\",\r\n    \"category\": \"购物\"\r\n  }\r\n]"
+          }
+        ]
+      },
+      "checks": [
+        {
+          "w": 8,
+          "spec": [
+            "file_exists",
+            "ledger.ps1"
+          ]
+        },
+        {
+          "w": 6,
+          "spec": [
+            "file_contains",
+            "ledger.ps1",
+            "-SelfTest"
+          ]
+        },
+        {
+          "w": 6,
+          "spec": [
+            "file_exists",
+            "data.json"
+          ]
+        },
+        {
+          "w": 8,
+          "spec": [
+            "file_exists",
+            "report.md"
+          ]
+        },
+        {
+          "w": 8,
+          "spec": [
+            "file_exists",
+            "report.html"
+          ]
+        },
+        {
+          "w": 12,
+          "spec": [
+            "file_contains",
+            "report.md",
+            "707.90"
+          ]
+        },
+        {
+          "w": 12,
+          "spec": [
+            "file_contains",
+            "report.md",
+            "699.90"
+          ]
+        },
+        {
+          "w": 10,
+          "spec": [
+            "file_contains",
+            "report.md",
+            "未分类"
+          ]
+        },
+        {
+          "w": 8,
+          "spec": [
+            "file_contains",
+            "report.md",
+            "20.00"
+          ]
+        },
+        {
+          "w": 8,
+          "spec": [
+            "file_contains",
+            "report.html",
+            "699.90"
+          ]
+        },
+        {
+          "w": 6,
+          "spec": [
+            "file_matches",
+            "report.html",
+            "<table"
+          ]
+        },
+        {
+          "w": 8,
+          "spec": [
+            "last_run_ok"
+          ]
+        },
+        {
+          "w": 6,
+          "spec": [
+            "answer_match",
+            "SELFTEST PASS 9/9"
+          ]
+        },
+        {
+          "w": 4,
+          "spec": [
+            "status_is",
+            "done"
+          ]
+        }
+      ],
+      "forbid": []
     }
   ]
 }

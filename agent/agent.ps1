@@ -1695,8 +1695,13 @@ function Invoke-Model {
     # 接口模式：很多新模型是「始终思考」的（GLM-5.3 / o 系），
     # 思考 token 也算在 max_tokens 里。600 这种本地额度会被思考吃光，
     # 表现就是 content 全空、finish_reason=length —— 看起来像模型不会干活。
-    # 接口不需要为速度省 token，给一个下限。
-    if ($script:IsApiMode -and $maxTok -lt 1200) { $maxTok = 1200 }
+    # 1200 也不够：MAX 档实测写一段 multi_edit 都撞上限，后半截参数被切掉，
+    # 于是「参数解析失败 → 空转 → failed」—— 看着像模型烂，其实是额度给小了。
+    # 接口不需要为速度省 token，按档位给足。
+    if ($script:IsApiMode -and $maxTok -ge 200) {
+        $apiFloor = if ($Reasoning -ge 4) { 8000 } elseif ($Reasoning -ge 3) { 6000 } else { 4000 }
+        if ($maxTok -lt $apiFloor) { $maxTok = $apiFloor }
+    }
     if ($Reasoning -eq 4 -and -not $script:IsApiMode) { $maxTok = 1500 }
     # 请求超时跟着输出额度走。
     # 本地 3~3.5 tok/s：600 token ≈ 180 秒（240 够），1500 token ≈ 450 秒（240 不够）。
@@ -2913,6 +2918,14 @@ MAX。想法要写在文件里，不要全堆在回复里 —— 这台机器上
 '@ }
 }
 if ($reasonBody) {
+    # MAX 那段话是按本地六千上下文写的（「上下文只有六千」「单步上限 1500」）。
+    # 接口模式 128K 上下文、单步 8000，照抄过去等于骗它，改成真实数字。
+    if ($script:IsApiMode) {
+        $reasonBody = $reasonBody.Replace('这台机器上下文只有六千', ('这台机器上下文有 ' + [int]([double]$Cfg.apiContext / 1000) + 'K'))
+        if ($Reasoning -ge 4) {
+            $reasonBody = $reasonBody.Replace('单步输出上限 1500 token，够写 4~5 块', '单步输出上限 8000 token，够一次写完一个完整脚本')
+        }
+    }
     $sysFull = $sysFull + "`n`n## 推理力度：$($ReasoningNames[$Reasoning])`n`n" + $reasonBody
     Write-Log ("  推理力度：" + $ReasoningNames[$Reasoning])
 }
@@ -3267,6 +3280,12 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
         # MAX 档给宽松但有限的一步额度，并且预算跟着它一起收 ——
         # 不能只放大输出却按 600 算输入，否则 prompt+输出会顶穿 n_ctx。
         if ($Reasoning -eq 4 -and -not $script:IsApiMode) { $mt0 = 1500 }
+        # 接口模式按档位给足额度：思考 token 也算在里面，
+        # 1200 写一段 multi_edit 就撞上限，后半截参数被切掉 → 空转 → failed。
+        if ($script:IsApiMode) {
+            $apiFloor0 = if ($Reasoning -ge 4) { 8000 } elseif ($Reasoning -ge 3) { 6000 } else { 4000 }
+            if ($mt0 -lt $apiFloor0) { $mt0 = $apiFloor0 }
+        }
     }
 
     # 输入上限 = 真实上下文 - 这次要留的输出 - 一点余量。
@@ -3621,6 +3640,16 @@ $target = [Math]::Min($targetByBudget, [Math]::Max($targetByShare, 1400))
 
         $res = Invoke-Model -Messages $history -ToolsJson $toolsJson -ForceTool:($noToolCount -gt 0) -MaxTokens $mt0 `
             -SaveRequest:$(if ($step -eq 1) { $script:PrefixFile } else { '' })
+
+        # 接口模式撞到单步上限：不是模型笨，是额度给小了。
+        # 同一条请求（历史一字不改）直接翻倍重发一次，别让它拿着半截参数去瞎试。
+        if ($res.truncated -and $script:IsApiMode) {
+            $mt2 = [Math]::Min(8000, [Math]::Max($mt0 * 2, 4000))
+            if ($mt2 -gt $mt0) {
+                Write-Log ("  [补额度] 撞到 {0} token 上限，按 {1} 重发这一步" -f $mt0, $mt2)
+                $res = Invoke-Model -Messages $history -ToolsJson $toolsJson -ForceTool:($noToolCount -gt 0) -MaxTokens $mt2
+            }
+        }
 
         # 拿到结果就停心跳
         if ($hbPs) { try { $hbPs.Stop() } catch { } }

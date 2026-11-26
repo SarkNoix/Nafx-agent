@@ -167,6 +167,53 @@ function Get-AgentProcessList {
     return ,$list
 }
 
+function Stop-ProcessTree([int]$TopPid) {
+    # 只 Stop-Process 父进程不够：agent 调 run_ps1 还会再起 powershell 子进程，
+    # 父进程被杀了，子进程照样攥着 CPU 往下跑 —— 用户看到的「点了暂停还在跑」
+    # 一半是这个原因。先递归杀子孙，再杀自己。
+    $kids = @()
+    try { $kids = @(Get-CimInstance Win32_Process -Filter "ParentProcessId=$TopPid" -ErrorAction SilentlyContinue) } catch { }
+    foreach ($k in $kids) { try { Stop-ProcessTree -TopPid ([int]$k.ProcessId) } catch { } }
+    try { Stop-Process -Id $TopPid -Force -ErrorAction SilentlyContinue } catch { }
+}
+
+function Stop-AgentProcesses {
+    # 暂停/停止的唯一入口。返回真正杀掉的进程数。
+    $killed = 0
+    # ① 面板自己拉起的 worker（$Workers 里记着句柄）
+    foreach ($slot in @($Workers.Keys)) {
+        try {
+            $wp = $Workers[$slot]
+            if ($wp -and $wp.Id) { Stop-ProcessTree -TopPid ([int]$wp.Id); $killed++ }
+        } catch { }
+    }
+    $Workers.Clear()
+    # ② 不在 $Workers 里的 agent / 训练器。
+    #    训练器（train.ps1）自己起 agent，watchdog、手工跑的也都不进 $Workers，
+    #    只按 $Workers 杀就是「点了没反应」。这里按命令行捞一遍。
+    #    ⚠ 必须现查，不能用 Get-AgentProcessList 的 10 秒缓存 ——
+    #    实测暂停时缓存里还没有这个刚起的进程，结果 stopped=0、一点没停。
+    $fresh = @()
+    foreach ($nm in @('powershell.exe', 'pwsh.exe')) {
+        try { $fresh += @(Get-CimInstance Win32_Process -Filter "Name='$nm'" -ErrorAction SilentlyContinue) } catch { }
+    }
+    $selfPid = $PID
+    foreach ($p in $fresh) {
+        try {
+            if ([int]$p.ProcessId -eq $selfPid) { continue }
+            $cl = [string]$p.CommandLine
+            if (-not $cl) { continue }
+            if ($cl -notmatch 'agent\\agent\.ps1' -and $cl -notmatch 'train\\train\.ps1') { continue }
+            # 面板本体是 monitor.ps1，不会命中这两条，不会把自己杀了
+            Stop-ProcessTree -TopPid ([int]$p.ProcessId)
+            $killed++
+        } catch { }
+    }
+    # 进程缓存立刻作废，否则接下来 10 秒面板还认为它们在跑
+    try { $script:ProcCacheAt = (Get-Date).AddSeconds(-30) } catch { }
+    return $killed
+}
+
 function Test-ModelUp {
     try {
         if (((Get-Date) - $script:ModelUpAt).TotalSeconds -lt 3) { return $script:ModelUpVal }
@@ -1212,11 +1259,7 @@ while ($listener.IsListening) {
                 '/api/pause' {
                     # 强停：kill 掉正在跑 agent，队列里那条标成 paused
                     if ($method -ne 'POST') { Send-Text -Response $resp -Text '{"ok":false}' -Code 405; break }
-                    $n = 0
-                    foreach ($slot in @($Workers.Keys)) {
-                        try { $Workers[$slot] | Stop-Process -Force -ErrorAction SilentlyContinue; $n++ } catch { }
-                    }
-                    $Workers.Clear()
+                    $n = Stop-AgentProcesses
 
                     # 强停时也把提问文件清掉，否则前端会一直显示"等你回答"
                     foreach ($f2 in @('ask.json', 'answer.json')) {
@@ -1244,7 +1287,7 @@ while ($listener.IsListening) {
                     for ($sl = 1; $sl -le $WorkerCount; $sl++) {
                         $sf2 = Get-SlotStateFile $sl
                         $st2 = Read-JsonFile $sf2
-                        if ($st2 -and [string]$st2.status -eq 'running') {
+                        if ($st2 -and ([string]$st2.status -in @('running', 'waiting', 'stuck'))) {
                             $st2.status = 'paused'
                             $st2.phase = '已暂停（你手动停的）'
                             $st2.answer = '你手动暂停了这个任务，前面的进度都保留着。'
@@ -1257,11 +1300,7 @@ while ($listener.IsListening) {
 
                 '/api/stop' {
                     if ($method -ne 'POST') { Send-Text -Response $resp -Text '{"ok":false}' -Code 405; break }
-                    $n = 0
-                    foreach ($slot in @($Workers.Keys)) {
-                        try { $Workers[$slot] | Stop-Process -Force -ErrorAction SilentlyContinue; $n++ } catch { }
-                    }
-                    $Workers.Clear()
+                    $n = Stop-AgentProcesses
 
                     # 光杀进程不够。任务状态还留在 running，面板会一直显示"跑着"，
                     # 下一个任务的 state 又把它覆盖掉，看起来就像两个任务的答案串了。
@@ -1862,7 +1901,7 @@ while ($listener.IsListening) {
                         foreach ($kp in @(Get-AgentProcessList)) {
                             $kcl = [string]$kp.CommandLine
                             if ($kcl -match 'agent\.ps1' -or $kcl -match 'autopilot\.ps1') {
-                                try { Stop-Process -Id $kp.ProcessId -Force -ErrorAction SilentlyContinue; $killed++ } catch { }
+                                try { Stop-ProcessTree -TopPid ([int]$kp.ProcessId); $killed++ } catch { }
                             }
                         }
                     } catch { }
@@ -1870,6 +1909,7 @@ while ($listener.IsListening) {
                         try { $Workers[$slot] | Stop-Process -Force -ErrorAction SilentlyContinue } catch { }
                     }
                     $Workers.Clear()
+                    try { $script:ProcCacheAt = (Get-Date).AddSeconds(-30) } catch { }
 
                     $items = Get-Queue
                     foreach ($it in $items) {
