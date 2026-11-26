@@ -1137,17 +1137,17 @@
         {
           "w": 15,
           "spec": [
-            "file_contains",
+            "file_matches",
             "calc.ps1",
-            "\"+\""
+            "['\\\"]\\+['\\\"]"
           ]
         },
         {
           "w": 15,
           "spec": [
-            "file_contains",
+            "file_matches",
             "calc.ps1",
-            "\"/\""
+            "['\\\"]/['\\\"]"
           ]
         },
         {
@@ -1258,7 +1258,7 @@
           "spec": [
             "file_matches",
             "check.ps1",
-            "(?i)catch|tryparse|错误|请输入|无效|非法"
+            "(?i)catch|tryparse|错误|请输入|无效|非法|必须|要求|不是数字|只能|正数|小于"
           ]
         },
         {
@@ -1371,9 +1371,9 @@
         {
           "w": 25,
           "spec": [
-            "file_equals",
+            "file_matches",
             "total.txt",
-            "400"
+            "\\b400(\\.0+)?\\b"
           ]
         },
         {

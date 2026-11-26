@@ -59,6 +59,16 @@ if (-not $script:NoSplit) {
     try { if (Test-Path $script:ProgressFile) { Remove-Item -LiteralPath $script:ProgressFile -Force } } catch { }
 }
 
+# 字符估 token 的「校准系数」。
+# Get-CtxTokens 是按经验估的（中文 1.47 字/token、英文 3.5 字/token），
+# 但实际请求里 JSON 转义、工具 schema、消息包装都会让它偏低。
+# 实测本地 6144 上下文：估 5111、实发 5962，差 851 —— 于是预算算得「够用」，
+# 请求一出去 llama 直接回 400 Bad Request，整个任务就这么挂了。
+# 这里用 llama 每次回报的真实 prompt_n 反推系数（指数平滑），
+# 再用它去收预算：估得不准就按比例收紧，不靠拍脑袋留余量。
+$script:TokBias   = 1.0
+$script:LastEstIn = 0
+
 # api-key.json 顶部带 # 填写说明，直接 ConvertFrom-Json 会失败。
 # 这里只剥整行注释，正文仍是严格 JSON。
 function Read-JsonFile([string]$Path) {
@@ -863,6 +873,36 @@ function Test-ProjectDeliverable {
     }
 }
 
+function Get-NamedFiles {
+    # 从任务文本里抠出「文件名」，而且要把目录前缀一起带上。
+    # 只抓 `[\w\-.]+\.ext` 会把 "data/orders.jsonl" 抓成 "orders.jsonl"，
+    # 于是「写到 paid.jsonl」这种题会被判成「根目录少了 orders.jsonl」——
+    # 实测 pipe-filter-paid 就是被这条假警报打回的：模型明明写对了根目录的
+    # paid.jsonl，却被要求去补一个 data\orders.jsonl，接着 make_dir、重写、
+    # 空转，最后答案都写坏了。
+    # 另一头也得管：任务说「在 mini 目录下建三个文件：main.ps1、config.txt、README.md」，
+    # 光抓文件名会去查根目录，同样误报。所以按「句」处理：一句话里出现
+    # 「在 X 目录下」，这一句剩下的裸文件名都补上 X 前缀。
+    param([string]$Text)
+    $ext = 'txt|csv|jsonl|json|md|ps1|bat|log'
+    $pat = '(?<![\w\-\.])((?:[\w\-\.\u4e00-\u9fa5]+[\\/])*[\w\-\.\u4e00-\u9fa5]*\w\.(' + $ext + '))'
+    $t = [string]$Text
+    $out = @()
+    # 先按句号/分号/换行切句，句内共享目录前缀
+    foreach ($sent in [regex]::Split($t, '(?<=[。；;\n])')) {
+        $dir = ''
+        $dm = [regex]::Match($sent, '(在|到|放到|放在|存到|建在|生成到|存进)\s*([\w\-\.\u4e00-\u9fa5]+)\s*(目录下|目录里|目录|文件夹|子目录)')
+        if ($dm.Success -and $dm.Groups[2].Value -notmatch '(?i)^(我|你|它|这里|那里)') { $dir = $dm.Groups[2].Value }
+        foreach ($mm in [regex]::Matches($sent, $pat)) {
+            $v = $mm.Value -replace '/', '\'
+            if ($dir -and $v -notmatch '\\') { $v = $dir + '\' + $v }
+            $v = $v.Trim('\')
+            if ($v -and ($out -notcontains $v)) { $out += $v }
+        }
+    }
+    return $out
+}
+
 function Repair-AnswerTail {
     # 4B 把 answer 写成“...例如 `.\scripts\...`”时，常在示例中途被截断：
     # 反引号/字符串没闭合，用户看到半句。README 里已有完整用法，
@@ -1532,6 +1572,11 @@ function Invoke-Model {
     if (-not $ToolsJson) { $ToolsJson = $ToolsSchemaRaw }
     $choice = if ($ForceTool) { '"required"' } else { '"auto"' }
 
+    # 记下「这次估计要发多少 token」。等 llama 回报真实 prompt_n 后拿它反推校准系数。
+    try {
+        $script:LastEstIn = [int]((Get-CtxTokens (($msgJson -join ','))) + (Get-CtxTokens $ToolsJson) + 8)
+    } catch { $script:LastEstIn = 0 }
+
     # 单步输出上限。
     # ⚠ 实测教训：MAX 档原来传 -1（llama 不限长度），模型在第 3 步把工具调用
     # JSON 当文本吐完之后掉进了「0123456789…」无限复读，1.8 tok/s 磨了 8 分钟不
@@ -1749,6 +1794,23 @@ function Invoke-Model {
         } catch { }
     }
 
+    # ---- 校准「字符估 token」的偏差 ----
+    # 真实输入 = prompt_n（这次新算的）+ cache_n（缓存命中的），
+    # 拿它除以发请求前估出来的数，就是这次估得偏了多少。
+    # 只在 0.7~3.0 这种「没离谱」的区间里采纳，免得个别畸形回报把系数带飞。
+    try {
+        $pnx = 0; if ($script:LastTimings.prompt_n) { $pnx = [int]$script:LastTimings.prompt_n }
+        $cnx = 0; if ($script:LastTimings.cache_n)  { $cnx = [int]$script:LastTimings.cache_n }
+        $trueIn = $pnx + $cnx
+        if ($script:LastEstIn -gt 0 -and $trueIn -gt 0) {
+            $ratio = [double]$trueIn / [double]$script:LastEstIn
+            if ($ratio -ge 0.7 -and $ratio -le 3.0) {
+                $script:TokBias = [math]::Round(0.7 * $script:TokBias + 0.3 * $ratio, 3)
+                Write-Log ("  [校准] 估值 {0} → 实发 {1}，系数 {2}" -f $script:LastEstIn, $trueIn, $script:TokBias)
+            }
+        }
+    } catch { }
+
     # ---- 把真实 timings 写进 LiveState（面板进度条的数据源）----
     # 有 timings（include_usage 生效）就用真实值：
     #   speed    = predicted_per_second，真 tok/s
@@ -1934,6 +1996,9 @@ function Invoke-Model {
         seconds   = $sw.Elapsed.TotalSeconds
         # 这次生成是否被「原地复读」保险掐断（上层据此收尾，不再打回重试）
         degenerate = [bool]$script:Degenerate
+        # 是否撞到单步 token 上限（finish_reason=length）。
+        # 撞上的典型后果：工具调用 JSON 断在半路，参数变成半个字符串。
+        truncated = ([string]$finishReason -eq 'length')
     }
 }
 
@@ -2841,6 +2906,8 @@ $script:ThinkHint = ''
 $script:HealedOnce = $false
 # finish 时「任务要文件但一个都没写」的打回次数。同样限 2 次。
 $script:fileNudge = 0
+# finish 时「题目点名的文件缺失 / 写到了别的位置」的打回次数。同样限 2 次。
+$script:missNudge = 0
 # finish 时「任务是归类/整理但一个文件都没挪」的打回次数。同样限 2 次。
 $script:organizeNudge = 0
 # finish 时「项目型任务缺入口/说明/数据/运行痕迹」的打回次数。限 2 次。
@@ -2851,6 +2918,9 @@ $script:projectPassed = $false
 $script:errThinkNudge = 0
 # 时效性问题却没联网搜索的打回次数。同样限 2 次。
 $script:webNudge = 0
+# finish 时「答案啰嗦」的打回次数。只给 1 次（问一句答一段是 4B 的老毛病，
+# 实测 85 字的答复去回答「几行」这种问题，光字数就扣掉 1/3 分）。
+$script:lenNudge = 0
 $planList    = @()
 $lastToolKey = ''
 $repeatCount = 0
@@ -2958,7 +3028,15 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
     # 所以：启动时问一次 /props 拿真实 n_ctx，问不到才退回配置值。
     # 这台机器上这一步很快（10ms 左右），而且整个任务只做一次。
     # 留 180 余量：字符估 token 会偏低，实测按 60 估还能超出 116 tok 被 llama 回 400
-    $ctxLimit = [int]$script:RealCtx - $mt0 - 180
+    #
+    # 更进一步：余量拍死没用 —— 低估幅度会变（实测一次估 5111、实发 5962）。
+    # 所以用 $script:TokBias（每次由真实 prompt_n 反推的校准系数）按比例收紧：
+    # 估得偏 17%，预算就按 17% 缩。系数是逐步收敛的，第一次请求仍按 1.0 算。
+    $src_ctx = [int]$script:RealCtx - $mt0
+    $bias = [double]$script:TokBias
+    if ($bias -lt 1.0) { $bias = 1.0 }
+    $ctxLimit = [int]($src_ctx / $bias - 180)
+    if ($ctxLimit -lt 900) { $ctxLimit = 900 }
     $histTok = Get-HistoryTokens -History $history
     $toolsTokNow = Get-CtxTokens $toolsJson
 
@@ -3287,6 +3365,18 @@ $target = [Math]::Min($targetByBudget, [Math]::Max($targetByShare, 1400))
 
     $rate = if ($res.seconds -gt 0) { $res.tokens / $res.seconds } else { 0 }
     Write-Host ("`r  [{0}] {1:N1}s · {2} tok · {3:N1} tok/s  " -f $step, $res.seconds, $res.tokens, $rate) -ForegroundColor DarkGray
+
+    # ---------- 被 token 上限截断 ----------
+    # 实测量能题：写 day_log.ps1 时 160 秒生成到 600 token 上限，
+    # 工具调用 JSON 断在字符串中间 → 解析失败 → path 变成空 → 再瞎试两步就挂了。
+    # 模型自己看不出「我只写了一半」，所以必须由框架告诉它，并给可执行的分块写法。
+    if ($res.truncated) {
+        Write-Log '  [被截断] 这次生成撞到单步 token 上限，内容可能只写了一半'
+        $history += @{ role = 'user'; content = (
+            '注意：上一条回复被「单步 token 上限」截断了，内容只写了一半（工具参数可能是残的）。' +
+            '长内容别一次写完：先用 write_file 写前 20~30 行，再用 append_file 每次补 20~30 行，' +
+            '分几次补完，最后读一下确认结尾完整。') }
+    }
 
     # ---------- 没有工具调用 ----------
     if (-not $res.calls -or @($res.calls).Count -eq 0) {
@@ -3643,6 +3733,30 @@ Add-SessionNote -Text $bcSay -Kind 'say'
         }
         $answer = Repair-AnswerTail $answer
 
+        # ---- 收尾前查：答案是不是啰嗦 ----
+        # 只在「一句话就能答完的小活」上拦：任务本身短、只问一个点、没要求文档。
+        # 实测 expr-no-echo（在 tag.txt 里写一句话）答了 85 字、
+        # net-search-basic（一句话说清 llama.cpp）答了 167 字，
+        # 内容都对，纯因为啰嗦丢掉 1/3 的分。
+        #
+        # 踩过的坑：这个守卫一开始只看长度，结果把「读 local.txt + 讲 404」
+        # 这种两问两答的任务也拦了 —— 268 字本来就得这么说，
+        # 打回去之后模型反而不会答了，连着两次空转、最后被截断，答得更差。
+        # 所以现在要求三件事同时成立：任务短（≤34 字）、只问一件事（没有「然后/再/分别」）、
+        # 明确是一句话类的要求。
+        $oneShotAsk = ($TaskText.Trim().Length -le 34) -and
+                      (-not ($TaskText -match '然后|，再|；再|分别|同时|两个|以及|并且')) -and
+                      ($TaskText -match '告诉我|一句话|写一句话|几行|多少|是谁|是什么|叫什么|哪个')
+        if ($oneShotAsk -and $script:lenNudge -lt 1 -and $answer.Trim().Length -gt 60) {
+            $script:lenNudge = 1
+            Write-Log ("  [太啰嗦] 答案 " + $answer.Trim().Length + " 字，题目只要一句结论，打回让它压缩")
+            $history += @{ role = 'user'; content = (
+                "你这句答复 " + $answer.Trim().Length + " 个字，太长了。这个任务只要一句话的结论" +
+                "（比如「写好了 tag.txt」、或者直接给那个数字/名字）。" +
+                "不要再重新推理：把结论压到 30 字以内，直接放进 finish 的 answer 字段交回来。") }
+            continue
+        }
+
         # ---- 收尾前查：该联网搜的题有没有真搜 ----
         # 实测题库 6 道联网题全部失分，共同原因是「没用到 web_search」。
         # 典型：「查一下今年诺贝尔文学奖得主是谁」——
@@ -3692,15 +3806,21 @@ Add-SessionNote -Text $bcSay -Kind 'say'
         # 例外：删除 / 移动 / 改名的任务本来就不写文件。
         # 实测「删掉 victim.txt」——delete_path 已经删成功了，
         # 却被这条判成"没写文件"，打回重来三次，最后绕圈收尾。
+        #
+        # 另一个例外：只读任务。「数一下 data/inv.txt 有多少行」本来就不该写文件，
+        # 这条却只看「点了文件名」，于是被判成没写，硬逼模型把 inv.txt 覆盖重写，
+        # 数出来的答案反而被自己改坏（实测 expr-report-number 就是这么丢分的）。
+        $isReadOnlyTask = (($TaskText -match '读一下|读一下|读|数一下|数数|统计|算一下|告诉我|列一下|列出|查一下|看一眼|多少行|几行|是什么') -and
+                           -not ($TaskText -match '写|建|生成|保存|存进|存到|追加|改成|修改|替换|合并|转成|转换|导出|放到|记进|记到|做成'))
         $isNotWriteTask = ($TaskText -match '删|移除|重命名|改名|移动|挪|剪切' -or
+                           $isReadOnlyTask -or
                            $TaskText -match '不要(自己)?新建|不要(自己)?创建|不要写文件|别(自己)?新建|别(自己)?创建' -or
                            @($state.steps | Where-Object {
                                [string]$_.tool -in @('delete_path', 'move_path', 'copy_path')
                            }).Count -gt 0)
         $wantFiles = @()
         if (-not $isNotWriteTask) {
-            $wantFiles = @([regex]::Matches($TaskText, '[\w\-\.]+\.(txt|csv|jsonl|json|md|ps1|bat|log)') |
-                           ForEach-Object { $_.Value } | Select-Object -Unique)
+            $wantFiles = @(Get-NamedFiles $TaskText)
         }
         $wroteSomething = (@($state.steps | Where-Object {
             [string]$_.tool -in @('write_file', 'append_file', 'set_line', 'replace_in_file', 'multi_edit', 'write_script')
@@ -3713,6 +3833,63 @@ Add-SessionNote -Text $bcSay -Kind 'say'
                 "光在 answer 里说「内容为...」不算做完——那文件根本不存在。" +
                 "现在用 write_file 真的把它写出来，写完再 finish。") }
             continue
+        }
+
+        # ---- 收尾前核对：题目点名的文件，是不是真在它说的位置上 ----
+        # 三种真实失分都出在这里：
+        #   ①「mini 下建三个文件，包含 main.ps1」→ 只写了 config.txt、README.md，主入口没写；
+        #   ②「写到 paid.jsonl」→ 写成了 data\paid.jsonl，根目录那份根本没有；
+        #   ③「gen.ps1 生成 numbers.txt」→ 脚本写了但没跑，产物不存在。
+        # 光看 answer 永远发现不了 —— 它一律说「已完成」。所以按题目点名的文件名逐个查磁盘。
+        # 跳过：删除/移动/只读任务，以及题目本来就允许缺失的（「不存在就跳过」这类）。
+        if (-not $isNotWriteTask -and $script:missNudge -lt 2 -and
+            -not ($TaskText -match '如果(某个|这个|该)?文件?不存在|不存在就|没有就|跳过它|文件太大')) {
+            $named = @($wantFiles)
+            if ($named.Count -eq 0) {
+                $named = @(Get-NamedFiles $TaskText)
+            }
+            $missingFiles = @()
+            $misplaced = @()
+            foreach ($nf in $named) {
+                # 输入文件不查：任务里是「读 data/orders.jsonl」「从 a.txt 里…」这种，
+                # 它是素材，不是要交付的产物；查它只会逼模型去造一个假的输入文件。
+                $pos = $TaskText.IndexOf(($nf -replace '\\', '/'))
+                if ($pos -lt 0) { $pos = $TaskText.IndexOf($nf) }
+                $lead = ''
+                if ($pos -gt 0) { $lead = $TaskText.Substring([Math]::Max(0, $pos - 14), [Math]::Min(14, $pos)) }
+                if ($lead -match '读|从|打开|看看|分析|根据|参照') { continue }
+
+                $rel = ([string]$nf) -replace '/', '\'
+                $full = Join-Path $Workspace $rel
+                if (Test-Path -LiteralPath $full -PathType Leaf) { continue }
+                # 同名文件写到了别的目录 —— 全工作区按文件名找一遍，好给出可执行的纠正
+                $leaf = Split-Path $rel -Leaf
+                $hit = $null
+                try {
+                    $hit = Get-ChildItem -LiteralPath $Workspace -Recurse -File -Filter $leaf -ErrorAction SilentlyContinue |
+                           Select-Object -First 1
+                } catch { }
+                if ($hit) {
+                    $shown = $hit.FullName
+                    if ($shown.Length -gt $Workspace.Length) { $shown = $shown.Substring($Workspace.Length).TrimStart('\') }
+                    $misplaced += ($nf + '（实际在 ' + $shown + '）')
+                } else {
+                    $missingFiles += $nf
+                }
+            }
+            if ($missingFiles.Count -gt 0 -or $misplaced.Count -gt 0) {
+                $script:missNudge = [int]$script:missNudge + 1
+                $bits = @()
+                if ($missingFiles.Count -gt 0) { $bits += ('还不存在：' + ($missingFiles -join '、')) }
+                if ($misplaced.Count -gt 0) { $bits += ('位置不对：' + ($misplaced -join '、')) }
+                Write-Log ('  [文件核对] ' + ($bits -join '；'))
+                $history += @{ role = 'user'; content = (
+                    '【文件核对】任务点名的文件还有问题 —— ' + ($bits -join '；') + '。' +
+                    '按任务说的路径真的把它做出来：路径逐字照抄，别自己加 data\ 之类的前缀；' +
+                    '写错位置的可以用 copy_path 挪到正确位置，挪完读一下确认。做完再 finish。' +
+                    '如果这个东西本来就该由别的脚本生成，就把那个脚本跑起来。') }
+                continue
+            }
         }
 
         # ---- 收尾前查：项目型任务是不是只做了半成品 ----
@@ -3904,16 +4081,25 @@ Add-SessionNote -Text $bcSay -Kind 'say'
         if (Test-Path $ansFile) { Remove-Item $ansFile -Force -ErrorAction SilentlyContinue }
 
         if (-not $userAnswer) {
-            $state.status = 'timeout'
-            $state.phase  = '没等到回答'
-            $state.answer = "等了你 $waitSec 秒没回音，这个回合先结束了。想继续就把任务再说一遍。"
-            $state.summary = '等你回答超时'
+            # 原来是「问不到就整轮结束」：状态标 timeout、后面该做的全丢。
+            # 没人在电脑前时（训练、自主跑、半夜挂机）几乎每题都栽在这一刀，
+            # 而且 answer 里连「我不做」都没写，等于白问一场。
+            # 现在改成「问不到就自己拍板」：把这次没回答当成一条工具观察喂回去，
+            # 明确禁止再问同一个问题，让它按最保守的做法继续，或者如实收尾。
+            Write-Log ("  等回答超时（{0} 秒），用户不在；转成自己拍板继续" -f $waitSec)
+            $state.status = 'running'
+            $state.phase  = '继续（没等到回答）'
+            $state.answer = ''
+            $state.summary = ''
             $state.elapsed = $clock.Elapsed.TotalSeconds
             Write-State $state
-            Write-Log ("  等回答超时（{0} 秒），结束回合" -f $waitSec)
-            Write-Closing -State $state -Status 'timeout' -Summary $state.summary -StepCount $step
-            $finished = $true
-            break
+            $noAns = ("（用户 " + $waitSec + " 秒内没有回答，可能不在电脑前。）" +
+                      "不要再问同一个问题，也不要再 say 等回答。" +
+                      "这个问题如果只是「确认一下」，就按最稳妥、最保守的做法自己决定并继续；" +
+                      "如果确实做不下去（缺参数、缺权限、风险太大），就直接 finish，把卡在哪、要什么写清楚。")
+            $history += (Format-ToolCallMessage -Act $act -CallId $callId)
+            $history += @{ role = 'tool'; tool_call_id = $callId; content = $noAns }
+            continue
         }
 
         Write-Log ("  用户回答：" + $userAnswer)

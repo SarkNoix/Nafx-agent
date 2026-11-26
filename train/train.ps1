@@ -23,7 +23,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
-Set-ExecutionPolicy -Scope Process Bypass -Force
+# 执行策略已经由启动参数 -ExecutionPolicy Bypass 管住了，这里只是兜底。
+# 之前它是裸调用，一旦 Security 模块加载失败（例如从 pwsh 7 里继承 PSModulePath
+# 再起 5.1），配合上面的 ErrorActionPreference='Stop' 会直接把整个训练器打挂。
+try { Set-ExecutionPolicy -Scope Process Bypass -Force -ErrorAction Stop } catch { }
 
 $TrainDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $NafxRoot = Split-Path -Parent $TrainDir

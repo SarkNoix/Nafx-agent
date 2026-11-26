@@ -139,6 +139,39 @@ function Invoke-WebRaw {
     }
 }
 
+function Get-DirectAnswerHints {
+    # 从百度搜索结果页里捞「直答卡片」的摘要。
+    # 为什么单独做这一步：Bing 在这台机器上的中文索引很差 ——
+    # 搜「2024 年诺贝尔文学奖得主是谁」，Bing 回的全是诺贝尔生平、2026 年盘点，
+    # 一条都不提韩江；百度同一句话，第一个卡片摘要就是
+    # 「2024年瑞典文学院授予韩国作家韩江的诺贝尔文学奖」。
+    # 模型拿不到这条，就只能凭印象编，或者干脆说「尚未公布」。
+    # 所以多挂一路源：Bing 给链接，百度给直答，两边互补。
+    param([string]$Query)
+    $hints = @()
+    if ([string]::IsNullOrWhiteSpace($Query)) { return $hints }
+    try {
+        $q = [Uri]::EscapeDataString($Query.Trim())
+        $page = Invoke-WebRaw "https://www.baidu.com/s?wd=$q&rn=10" -TimeoutSeconds 12
+        $html = [string]$page.Text
+        if ([string]::IsNullOrWhiteSpace($html)) { return $hints }
+        # 百度把结构化数据塞在页面注释里，卡片摘要字段就叫 abstract
+        $ms = [regex]::Matches($html, '"abstract":"((?:[^"\\]|\\.){8,400})"')
+        foreach ($m in $ms) {
+            $s = $m.Groups[1].Value
+            $s = $s -replace '\\n', ' ' -replace '\\t', ' ' -replace '\\"', '"' -replace '\\\\', '\'
+            $s = [System.Net.WebUtility]::HtmlDecode($s)
+            $s = ($s -replace '\s+', ' ').Trim()
+            if ($s.Length -lt 8) { continue }
+            if ($s -match '^\s*(https?://|\d+\s*$)' ) { continue }
+            if ($s.Length -gt 200) { $s = $s.Substring(0, 200) + '…' }
+            if ($hints -notcontains $s) { $hints += $s }
+            if ($hints.Count -ge 2) { break }
+        }
+    } catch { }
+    return $hints
+}
+
 function Invoke-WebSearch {
     param([string]$Query, [int]$Count = 0)
 
@@ -193,6 +226,9 @@ function Invoke-WebSearch {
     $q = [Uri]::EscapeDataString($q2)
     $url = "https://www.bing.com/search?q=$q&setlang=zh-CN&count=$Count"
 
+    # 顺带取百度的直答摘要（失败就算了，不影响 Bing 的结果）
+    $hints = @(Get-DirectAnswerHints $Query)
+
     try { $page = Invoke-WebRaw $url -TimeoutSeconds $script:WebSearchTimeout }
     catch {
         throw ("联网失败：" + $_.Exception.Message + "。可能是网络不通，或者搜索引擎暂时拒绝访问。")
@@ -228,13 +264,14 @@ function Invoke-WebSearch {
                 }
             }
             if ($results.Count -gt 0) {
-                return [pscustomobject]@{ Query = $Query; Results = $results; Note = '（HTML 结果没解析到，已用 Bing RSS 兜底）' }
+                return [pscustomobject]@{ Query = $Query; Results = $results; Hints = $hints; Note = '（HTML 结果没解析到，已用 Bing RSS 兜底）' }
             }
         } catch { }
 
         return [pscustomobject]@{
             Query   = $Query
             Results = @()
+            Hints   = $hints
             Note    = '没有解析到结果。可能是关键词太生僻，或搜索引擎返回了异常页面。可以换一种说法再搜，或改用 win_doc 查 Windows 命令。'
         }
     }
@@ -280,6 +317,7 @@ function Invoke-WebSearch {
     return [pscustomobject]@{
         Query   = $Query
         Results = $results
+        Hints   = $hints
         Note    = ''
     }
 }
@@ -440,7 +478,9 @@ function Format-WinDocResult {
 # 把结构化结果转成给模型看的纯文本
 function Format-SearchResult {    param($Result)
     if ($null -eq $Result) { return '错误：搜索没有返回结果' }
-    if ($Result.Results.Count -eq 0) {
+    $hints = @()
+    try { if ($Result.Hints) { $hints = @($Result.Hints) } } catch { }
+    if ($Result.Results.Count -eq 0 -and $hints.Count -eq 0) {
         return "搜索「$($Result.Query)」没有找到结果。$($Result.Note)"
     }
     # 结果要压紧。
@@ -449,6 +489,12 @@ function Format-SearchResult {    param($Result)
     # 后面只能把工具从 9 个砍到 5 个，任务就废了。
     # 这里压三处：摘要截 80 字、链接截 70 字（百度百科那种 %E5%B9%B4 编码串太长）。
     $sb = New-Object System.Text.StringBuilder
+    # 直答放最前面：模型先看到答案，就不会再自己瞎编一段
+    if ($hints.Count -gt 0) {
+        [void]$sb.AppendLine('网页直答（百度结果页的摘要卡片）：')
+        foreach ($h in $hints) { [void]$sb.AppendLine('· ' + $h) }
+        [void]$sb.AppendLine('')
+    }
     [void]$sb.AppendLine("搜索「$($Result.Query)」共 $($Result.Results.Count) 条：")
     $i = 0
     foreach ($r in $Result.Results) {
@@ -466,6 +512,8 @@ function Format-SearchResult {    param($Result)
         }
     }
     [void]$sb.AppendLine('要点：')
+    [void]$sb.AppendLine('- 上面「网页直答」里的内容就是答案，能答就直接答，别再自己编')
+    [void]$sb.AppendLine('- 直答和搜索结果对不上时，以搜索结果里更具体的为准；都拿不准就说搜到了但不一致')
     [void]$sb.AppendLine('- 摘要能回答就直接答，不必再抓网页')
     [void]$sb.AppendLine('- 摘要不够才用 web_fetch 打开一条；同一条别重复打开')
     [void]$sb.AppendLine('- 同一问题别重复搜，换说法结果也差不多')

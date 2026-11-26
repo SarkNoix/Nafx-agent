@@ -54,6 +54,47 @@ try {
     if (Test-Path $gitMod) { . $gitMod; $script:GitReady = $true }
 } catch { $script:GitReady = $false }
 
+function Get-ActionPathField {
+    # 4B 经常把路径塞错字段：该放 path 的写进 command/content，path 留空，
+    # 于是工具直接报「path 不能为空」。实测统计订单那题，它明明写了
+    # count_orders.ps1，却连着两步 run_ps1 都栽在空 path 上（脚本压根没写成）。
+    # 这里做个兜底：path 空的时候，从别的字段里认出扩展名对得上的第一个文件名。
+    param($Action, [string]$Ext = '')
+    if ($null -eq $Action) { return '' }
+    $p = [string]$Action.path
+    if (-not [string]::IsNullOrWhiteSpace($p)) { return $p }
+    try {
+        $pat = if ($Ext) { '([\w\-\.\\/]+\.' + $Ext + ')' } else { '([\w\-\.\\/]+\.(ps1|bat|js|jse|cmd))' }
+        foreach ($prop in $Action.PSObject.Properties) {
+            if ($prop.Name -in @('tool', 'n', 'ok', 'raw', 'sec', 'arg', 'obs', 'note')) { continue }
+            $v = [string]$prop.Value
+            if ([string]::IsNullOrWhiteSpace($v)) { continue }
+            $m = [regex]::Match($v, $pat)
+            if ($m.Success) { return $m.Groups[1].Value }
+        }
+    } catch { }
+    return ''
+}
+
+function Get-FalseClaimHint {
+    # 「说了已经生成文件」但磁盘上没有 —— 4B 很爱犯。
+    # 实测统计订单那题：第 5 步用 note 说「已生成 count_orders.ps1」，
+    # 实际什么都没写，后面 run_ps1 连报两次「path 不能为空」，
+    # 一直到收工 report.txt 都不存在。看见这种自说自话就当场点破。
+    param([string]$Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return '' }
+    if ($Text -notmatch '已|写好|写进|生成|创建|完成|保存|写出|建好|放到|存到') { return '' }
+    $miss = @()
+    foreach ($m in [regex]::Matches($Text, '[\w\-\.\\/]+\.(ps1|txt|md|json|jsonl|csv|bat|log)')) {
+        $rel = $m.Value -replace '/', '\'
+        $full = Join-Path $script:AiRoot $rel
+        if (-not (Test-Path -LiteralPath $full)) { $miss += $rel }
+    }
+    if ($miss.Count -eq 0) { return '' }
+    return ("`n（提醒：工作区里现在还没有 " + ($miss -join '、') + "。说「已生成/已完成」不算数，" +
+            "写文件要用 write_file（纯文本）或 write_script（PowerShell 脚本），写完再往下走。）")
+}
+
 function Set-AiRoot {
     param(
         [string]$Path,
@@ -1425,8 +1466,13 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                 # 为什么要有这个：一个「写脚本统计行数然后运行」的任务，
                 # 拆成 write_file + run_ps1 两步，4B 模型经常在中间绕圈（实测 210 秒 maxsteps）。
                 # 合并成一步，它就没机会迷路。
-                $full = Resolve-AiPath $Action.path
-                Assert-CanWrite -Full $full -RelPath ([string]$Action.path)
+                $sp = Get-ActionPathField $Action 'ps1'
+                if ([string]::IsNullOrWhiteSpace($sp)) {
+                    throw ('write_script 要脚本路径：把脚本名（如 count_orders.ps1）填进 path 字段。' +
+                           '现在 path 是空的，别的字段里也没认出 .ps1 文件名。')
+                }
+                $full = Resolve-AiPath $sp
+                Assert-CanWrite -Full $full -RelPath $sp
                 if ($full -notmatch '\.ps1$') { throw 'path 要以 .ps1 结尾' }
                 $content = [string]$Action.content
                 if ([string]::IsNullOrWhiteSpace($content)) { throw 'content 里填脚本内容' }
@@ -1783,26 +1829,32 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
             }
 
             'run_ps1' {
-                $full = Resolve-AiPath $Action.path
+                # path 可能被模型写进了 command/content（q4 常见），兜底认一下
+                $pArg = Get-ActionPathField $Action 'ps1'
+                if ([string]::IsNullOrWhiteSpace($pArg)) {
+                    throw ('run_ps1 要脚本路径：把脚本名（如 count_orders.ps1）填进 path 字段。' +
+                           '现在 path 是空的，command/content 里也没认出 .ps1 文件名。')
+                }
+                $full = Resolve-AiPath $pArg
                 # 模型有时把「工具名」当成脚本名传进来。
                 # 实测：建目录的任务里，它先 run_ps1 make_dir.ps1（不存在），
                 # 然后居然 write_file 写了个 make_dir.ps1 脚本去建目录，
                 # 绕了 4 步才做完一件 make_dir 一步就能完成的事。
                 # 这类混淆直接把正确工具告诉它，别让它自己猜。
-                $bn = [IO.Path]::GetFileNameWithoutExtension([string]$Action.path)
+                $bn = [IO.Path]::GetFileNameWithoutExtension([string]$pArg)
                 $looksLikeTool = @('make_dir','write_file','read_file','list_dir','delete_path','find_files',
                                    'append_file','replace_in_file','set_line','copy_path','move_path',
                                    'grep_file','read_lines','file_info','run_cmd') -contains $bn
                 if ($looksLikeTool) {
-                    throw ("$($Action.path) 这名字看着是工具名，不是你的脚本。" +
+                    throw ("$pArg 这名字看着是工具名，不是你的脚本。" +
                            "如果你要建目录，直接用 make_dir 工具（不用写脚本）；" +
                            "要写文件用 write_file；要列目录用 list_dir。" +
                            "只有真的是自己写的 .ps1 才用 run_ps1 跑。")
                 }
-                if (-not (Test-Path $full)) { throw "脚本不存在：$($Action.path)。要跑脚本得先用 write_file 创建它。" }
+                if (-not (Test-Path $full)) { throw "脚本不存在：$pArg。要跑脚本得先用 write_script 或 write_file 创建它。" }
                 # 只能跑 .ps1。模型有时会把数据文件当脚本传进来，把话说清楚它就懂了。
                 if ($full -notmatch '\.ps1$') {
-                    throw ("run_ps1 只能运行 .ps1 脚本，$($Action.path) 不是脚本。" +
+                    throw ("run_ps1 只能运行 .ps1 脚本，$pArg 不是脚本。" +
                            "要用脚本处理这个文件的话，先用 write_file 写一个 .ps1，再 run_ps1 跑那个脚本。")
                 }
                 # 跑之前先看脚本内容 —— write_script 那条路检查过了，
@@ -1821,18 +1873,20 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                     # 真正的删除拦截还有 delete_path 的确认兜着。
                 }
                 $extra = [string]$Action.command
-                # 脚本有 param() 但没传 command，跑出来会是空的 ——
-                # 模型会误以为「退出码 0 = 成功」，然后拿空结果编答案。
-                # 实测就是这么翻车的：calc.ps1 有 param($a,$b,$op)，
-                # 模型 run_ps1 没传参数，输出一片空白，它却在 finish 里写
-                # 「12 + 3 = 15，结果正确」—— 那个 15 是它自己算的，不是脚本算的。
+                # 脚本有 param() 但没传 command，跑出来可能是空的 ——
+                # 模型容易误以为「退出码 0 = 成功」，然后拿空结果编答案。
+                # 但也不能一刀切拒绝：很多脚本 param 带默认值（gen.ps1 的
+                # param($out='numbers.txt') 就该空跑）。实测因为这个拒绝，
+                # 模型连试三次都跑不起来，numbers.txt 一直没生成，最后判 failed。
+                # 所以改成：照跑，但把「参数全是默认值」写进观察里，让它自己判断。
+                $paramWarn = ''
                 if ([string]::IsNullOrWhiteSpace($extra)) {
                     $head = ''
                     try { $head = [IO.File]::ReadAllText($full, [Text.Encoding]::UTF8) } catch { }
                     if ($head -match 'param\s*\(') {
-                        throw ("这个脚本有 param() 要收参数，但你没传 command。" +
-                               "带参数运行要写 command，比如 command=""-a 12 -b 3 -op +""。" +
-                               "不传参数跑出来是空的 —— 看到空输出不代表成功。")
+                        $paramWarn = "（注意：这个脚本有 param()，这次没传参，参数全是默认值或 null。" +
+                                     "如果脚本需要参数，带上 command 重跑，比如 command=""-a 12 -b 3""；" +
+                                     "看到空输出不代表成功。）`n"
                     }
                 }
                 # 子进程固定用 UTF-8 输出（含错误流），否则中文会按 GBK 解成乱码
@@ -1844,6 +1898,7 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                 $r = Invoke-ChildScript -FilePath 'powershell.exe' -CommandLine $cmdLine -Label "run_ps1 $($Action.path)"
                 # 跑出来是空的也要提醒，别让模型把「没输出」当「做对了」
                 $rs = [string]$r
+                if ($paramWarn) { $rs = $paramWarn + $rs }
                 if ($rs.TrimEnd().EndsWith('--- 标准输出 ---')) {
                     $rs += "`n（脚本没输出任何东西。如果它本该打印结果，检查是不是没传参数、或者代码里没写输出。空输出不等于成功。）"
                 }
@@ -2078,7 +2133,14 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                             ($out1 -match '锟斤拷|锟')
                 if ($mojibake) {
                     $out2 = Invoke-ChildScript -FilePath 'cmd.exe' -CommandLine ('/c ' + $cmd) -Enc ([Text.Encoding]::GetEncoding(936)) -Label $lbl
-                    if ($out2 -and -not ($out2 -match '[\u00C0-\u00FF]{3,}|锟斤拷')) { return $out2 }
+                    if ($out2 -and -not ($out2 -match '[\u00C0-\u00FF]{3,}|锟斤拷')) { $out1 = $out2 }
+                }
+                # find /c 按 CRLF 数行：LF 结尾的文件会被数成 1 行。
+                # 实测「数一下 data/inv.txt 有多少行」→ find 报 1，实际 5 行，
+                # 模型信了这个数字，答案直接错。给个复核办法，别让它把错的照抄。
+                if ($cmd -match '(?i)\bfind(\.exe)?\s+(\S+\s+)*?/c' -or $cmd -match '(?i)\bfindstr\s+/n') {
+                    $out1 += "`n（find /c 只按 CRLF 数行：纯 LF 换行的文件会被数成 1 行。" +
+                             "数字看着不对就用 read_lines 或 run_ps 的 (Get-Content 文件).Count 复核一遍，别直接照抄。）"
                 }
                 return $out1
             }
@@ -2514,7 +2576,15 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                 if ([string]::IsNullOrWhiteSpace($u)) { throw 'url 不能为空，把网址填进 path，例如 https://example.com' }
 
                 $res = Invoke-WebFetch -Url $u.Trim()
-                return Trim-AiText (Format-FetchResult $res)
+                $out = Trim-AiText (Format-FetchResult $res)
+                # 抓不到时给可执行的下一步。
+                # 实测最气人的是「自己拼一个不存在的网址」：
+                # 搜索摘要里点得开，模型却按印象编了个路径 → 429 → 直接放弃并下结论。
+                if ($out -match '(?i)抓取失败|429|403|404|Too Many Requests|Forbidden|不接受|无法访问') {
+                    $out += "`n（这条没抓到。别自己拼网址：只打开 web_search 结果里出现过的链接；" +
+                            "这条打不开就换搜索结果里的另一条，或者换个说法重新搜一次。同一个网址别反复试。）"
+                }
+                return $out
             }
 
             'plan' {
@@ -2560,7 +2630,7 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                 $wEcho = $wTrim
                 if ($wEcho.Length -gt 140) { $wEcho = $wEcho.Substring(0, 140).TrimEnd() + '…（后略）' }
                 return ('（想法已记下。要点：' + $wEcho + "`n" +
-                        '按这个要点往下做，别再写一遍同样的推理。）')
+                        '按这个要点往下做，别再写一遍同样的推理。）' + (Get-FalseClaimHint $wTrim))
             }
 
             'rethink' {
@@ -2608,7 +2678,7 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                 }
                 if ($msg.Length -gt 300) { $msg = $msg.Substring(0, 300) + '…' }
                 # 真正把这句话写进会话流由 agent.ps1 负责（它才知道面板怎么读）
-                return ($msg + "`n（已告诉用户。继续说下一步，别停在这儿。）")
+                return ($msg + "`n（已告诉用户。继续说下一步，别停在这儿。）" + (Get-FalseClaimHint $msg))
             }
 
             'split_task' {

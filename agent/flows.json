@@ -135,7 +135,9 @@
         "jsonl 有多少条：run_cmd(find /c /v \"\" data\\x.jsonl)",
         "某字段求和：skill(sum_field -Path data\\x.jsonl -Field amount)",
         "或者直接查字段（自动给求和/平均/最值）：skill(json_query -Path data\\x.jsonl -Pattern amount)",
-        "算日期（几天后是几号、还有几天）：date_calc(21) 或 date_calc(2026-12-25) —— 别用 run_cmd 硬算"
+        "算日期（几天后是几号、还有几天）：date_calc(21) 或 date_calc(2026-12-25) —— 别用 run_cmd 硬算",
+    "按某字段分组计数（每个客户各有几笔）：run_ps1 写十来行就够 —— $g=@{}; Get-Content data\\orders.jsonl | % { $o=$_|ConvertFrom-Json; $g[$o.customer]++ }; $g.GetEnumerator() | % { \"$($_.Key): $($_.Value)\" } | Set-Content report.txt",
+    "按字段挑行（只要 status=paid 的行）：别手工抄 JSON，用 run_cmd(findstr /i \"paid\" data\\orders.jsonl) 之后原样落进文件；或者 run_ps1 的 Get-Content 过滤后 Set-Content，原行不变"
       ],
       "forbid": [
         "没跑工具就直接报数字",
