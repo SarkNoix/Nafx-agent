@@ -935,6 +935,11 @@ main{position:relative;z-index:1;flex:1;display:flex;min-height:0}
 [data-theme="glass"] .live-box{box-shadow:inset 0 1px 0 rgba(255,255,255,.4),var(--shadow)}
 .live-head{display:flex;align-items:center;gap:10px;padding:11px 15px;
   background:var(--panel2);border-bottom:1px solid var(--line)}
+/* 任务条上的推理档位：钉在最左边那格空位里（spinner 之前），一眼能看出这轮用了多大劲。
+   颜色跟滑块同一条色带；定宽 + 居中，几张卡竖着排能对齐成一列。 */
+.live-head .task-reason{flex:none;min-width:40px;text-align:center;font-size:11px;font-weight:600;
+  letter-spacing:.3px;padding:1px 6px;border:1px solid var(--line);border-radius:999px;
+  opacity:.9;white-space:nowrap}
 .live-head .tt{flex:1;font-size:13px;color:var(--fg);overflow:hidden;
   text-overflow:ellipsis;white-space:nowrap}
 .spinner{width:11px;height:11px;border:2px solid var(--line2);
@@ -1158,6 +1163,12 @@ main{position:relative;z-index:1;flex:1;display:flex;min-height:0}
 .reason-ticks span:first-child{text-align:left;margin-left:-4px}
 .reason-ticks span:last-child{text-align:right;margin-right:-4px}
 .reason-ticks span.on{opacity:1;font-weight:600}
+/* 「下一次回答生效」：只在任务正在跑、用户又动了滑块时亮一下。
+   黄字，2.6 秒后自己淡掉，不挡滑块、不占固定高度。 */
+.reason-next{margin-top:8px;padding:0 16px;font-size:11.5px;line-height:1.3;
+  color:#eab308;opacity:0;transform:translateY(-2px);pointer-events:none;
+  transition:opacity .22s ease,transform .22s ease}
+.reason-next.on{opacity:1;transform:translateY(0)}
 /* 星星只画在彩色填充区里：用 clip-path 裁到滑块左侧，档位变化只改右侧 inset */
 .reason-stars{position:absolute;left:12px;top:50%;height:26px;margin-top:-13px;width:calc(100% - 24px);
   border-radius:13px;overflow:hidden;pointer-events:none;z-index:3;
@@ -2100,7 +2111,14 @@ header button,.side-actions button{
   font-size:var(--fs-sm);line-height:1.68;color:var(--dim);
   white-space:pre-wrap;word-break:break-word;
 }
-.think-full{max-height:320px;overflow-y:auto}
+.think-full{max-height:320px;overflow-y:auto;contain:layout style}
+/* 思考块的展开/收起全靠 .open 一个类：
+   之前是用 inline 的 display 切换，面板每次重建（播报来了、步数变了）
+   都会重画一遍 DOM，inline 状态跟着没了 —— 用户就是"点开再关上，还显示思考"。
+   现在状态记在 window.__thinkClosed[步骤号] 里，重建后照原样恢复。 */
+.think-block .think-full{display:none}
+.think-block.open .think-full{display:block}
+.think-block.open .think-body{display:none}
 [data-theme="glass"] .think-block{background:rgba(20,6,32,.42);border-color:rgba(255,255,255,.22);
   border-left-color:rgba(255,255,255,.75)}
 [data-theme="glass"] .think-label{color:rgba(255,255,255,.95)}
@@ -4001,21 +4019,22 @@ header #btnModel,header #btnQueue,header #btnJobs,header #btnHist,header #btnSet
           <div class="reason-pop" id="reasonPop">
             <div class="reason-head"><span>推理力度<i class="reason-about-btn" id="reasonAboutBtn" title="各档位分别怎么想">关于</i></span><b id="reasonName">标准</b></div>
             <div class="reason-track" id="reasonTrack" tabindex="0" role="slider"
-                 aria-valuemin="0" aria-valuemax="4" aria-valuenow="2" aria-label="推理力度">
+                 aria-valuemin="0" aria-valuemax="3" aria-valuenow="2" aria-label="推理力度">
               <i class="reason-rail"></i>
               <i class="reason-fill" id="reasonFill"></i>
               <div class="reason-stars" id="reasonStars"></div>
               <div class="reason-fx" id="reasonFx"></div>
               <div class="reason-thumb" id="reasonThumb"></div>
             </div>
-            <div class="reason-ticks" id="reasonTicks"><span>关闭</span><span>弱</span><span>标准</span><span>强</span><span>MAX</span></div>
+            <div class="reason-ticks" id="reasonTicks"><span>关闭</span><span>弱</span><span>标准</span><span>强</span></div>
+            <div class="reason-next" id="reasonNext">下一次回答生效</div>
             <div class="reason-about" id="reasonAbout">
               <p class="ra-lead">这不是让模型“更用力”，而是决定它动手前愿意花多少内心草稿。档位越高，越会先排查、列计划、事后自检；代价是更慢，也更费 token。</p>
               <div class="ra-row"><i class="ra-lv lv0">关闭</i><span>不额外思考，直接给结果。适合一两个字、纯执行类指令。</span></div>
               <div class="ra-row"><i class="ra-lv lv1">弱</i><span>只抓主干，一遍做完。适合简单问答、格式改写、短文案。</span></div>
               <div class="ra-row"><i class="ra-lv lv2">标准</i><span>想清楚再动手，做完自检。日常默认档，绝大多数任务够用。</span></div>
-              <div class="ra-row"><i class="ra-lv lv3">强</i><span>先在 think 里列计划、逐步验证，走偏了会回头改做法。适合多步任务、改代码、排查问题。</span></div>
-              <div class="ra-row"><i class="ra-lv lv4">MAX</i><span>计划必须写全，不必为了省 token 压成一行：目标、3–6 步、可能失败的两处、备选做法。适合复杂工程和长链路排查；但写够了就该收尾，不许原地复读。</span></div>
+              <div class="ra-row"><i class="ra-lv lv3">强</i><span>先在 think 里列计划、逐步验证，走偏了会回头改做法。适合多步任务、改代码、排查问题。<b>现在是面板能拖到的最高档。</b></span></div>
+              <div class="ra-row"><i class="ra-lv lv4">MAX（已下线）</i><span>原来那档：不掐输出、计划必须写全。纯 CPU 机器上三次实测只有 19.8 / 33 / 33 分，全靠强制收尾结束，比「强」更慢也更差，所以从滑块里拿掉了（命令行 -Reasoning 4 仍可用）。</span></div>
               <p class="ra-how">它怎么想：先在 think 里过一遍 目标 → 约束 → 步骤 → 风险；每执行一步检查结果；同一个问题连续两次没进展就换做法；收尾前逐条核对你的原话，缺哪条补哪条。</p>
             </div>
           </div>
@@ -5228,27 +5247,23 @@ function stepHtml(s, thinkMode){
   var think = '';
   if (s.think && thinkMode !== false){
     var th = String(s.think);
-    if (thinkMode === true){
-      // 正在跑：全文铺开，不折叠，用户能实时看到推理过程。
-      think = '<div class="think-block live">' +
-        '<div class="think-head"><span class="think-ico">◌</span>' +
-        '<span class="think-label">思考</span>' +
-        '<span class="think-meta">' + th.length + ' 字' + (s.sec ? ' · ' + fmtTime(s.sec) : '') + '</span></div>' +
-        '<div class="think-body">' + esc(th) + '</div>' +
-        '</div>';
-    } else {
     var long = th.length > 200;
     var shown = long ? th.substring(0, 200) + '…' : th;
-    think = '<div class="think-block">' +
+    // 折叠状态按「第几步」记，面板重建（播报、步数变化）之后照样恢复。
+    var tkey = String(s.n || 0);
+    var userClosed = !!(window.__thinkClosed && window.__thinkClosed[tkey]);
+    // 跑着的时候默认摊开（要看它在想什么），但用户手动关过就别再自动弹开。
+    var open = (thinkMode === true) ? !userClosed : false;
+    think = '<div class="think-block' + (thinkMode === true ? ' live' : '') + (open ? ' open' : '') +
+      '" data-tk="' + esc(tkey) + '">' +
       '<div class="think-head"><span class="think-ico">◌</span>' +
-      '<span class="think-label">想法</span>' +
-      '<span class="think-meta">' + th.length + ' 字</span>' +
-      (long ? '<span class="think-more" onclick="toggleThink(this)">展开</span>' : '') +
+      '<span class="think-label">' + (thinkMode === true ? '思考' : '想法') + '</span>' +
+      '<span class="think-meta">' + th.length + ' 字' + (s.sec ? ' · ' + fmtTime(s.sec) : '') + '</span>' +
+      (long || open ? '<span class="think-more" onclick="toggleThink(this)">' + (open ? '收起' : '展开') + '</span>' : '') +
       '</div>' +
       '<div class="think-body">' + esc(shown) + '</div>' +
-      (long ? '<div class="think-full" style="display:none">' + esc(th) + '</div>' : '') +
+      '<div class="think-full">' + esc(th) + '</div>' +
       '</div>';
-    }
   }
 
   // ② 做了什么：显示人话短语（悬停 title 里有原始工具名），
@@ -5295,22 +5310,27 @@ function stepHtml(s, thinkMode){
 /* 跑着的思考块可能比可视区高：每次重绘后把滚动条压到底，
    不然新写的推理落在可视区外面，用户以为它没在想了。 */
 function scrollThink(){
-  var bs = document.querySelectorAll('.think-block.live .think-body');
+  // 展开的思考块里，真正在滚的是 .think-full（收起时才轮到 .think-body）。
+  var bs = document.querySelectorAll('.think-block.live.open .think-full, .think-block.live.open .think-body');
   for (var i=0;i<bs.length;i++){
     var el = bs[i];
     if (el.scrollHeight > el.clientHeight + 4) el.scrollTop = el.scrollHeight;
   }
 }
 
-function toggleThink(el){  var blk = el.closest('.think-block');
+/* 思考块的展开/收起。
+   状态写进 window.__thinkClosed[步骤号] —— 面板一旦重建（新播报、步数变化都会重建），
+   stepHtml 会照着这个表把 .open 还原回去，不会再"关上又自己弹开"。
+   只用加/去 class，不动 inline style：一次 reflow，不触发整块重排动画。 */
+if (!window.__thinkClosed) window.__thinkClosed = {};
+function toggleThink(el){
+  var blk = el && el.closest ? el.closest('.think-block') : null;
   if (!blk) return;
-  var full = blk.querySelector('.think-full');
-  var body = blk.querySelector('.think-body');
-  if (!full || !body) return;
-  var open = full.style.display === 'none';
-  full.style.display = open ? '' : 'none';
-  body.style.display = open ? 'none' : '';
+  var key = String(blk.getAttribute('data-tk') || '');
+  var open = !blk.classList.contains('open');
+  blk.classList.toggle('open', open);
   el.textContent = open ? '收起' : '展开';
+  if (key) window.__thinkClosed[key] = !open;
 }
 
 /* ============================================================
@@ -5534,7 +5554,7 @@ function liveBox(st){
   if (!active){
     var finPct = st.maxSteps ? Math.min(100, Math.round((st.step||0) / st.maxSteps * 100)) : 0;
     return '<div class="live-box done">' +
-      '<div class="live-head foldable" onclick="toggleLive(this)">' + icon +
+      '<div class="live-head foldable" onclick="toggleLive(this)">' + taskReasonTag(st) + icon +
       taskLabel(st.task) +
       '<span class="step-sec">' + (STATUS_TEXT[st.status]||st.status) + ' · ' +
       (st.step||0) + ' 步 · ' + fmtTime(st.elapsed) + '</span>' +
@@ -5555,7 +5575,7 @@ function liveBox(st){
   var pct = st.maxSteps ? Math.min(100, Math.round((st.step||0) / st.maxSteps * 100)) : 0;
 
   return '<div class="live-box">' +
-    '<div class="live-head">' + icon +
+    '<div class="live-head">' + taskReasonTag(st) + icon +
     taskLabel(st.task) +
     '<span class="step-sec">' + esc(st.phase||'') + ' · ' + (st.step||0) + '/' + (st.maxSteps||0) +
     ' · ' + fmtTime(st.elapsed) + '</span></div>' +
@@ -5620,7 +5640,27 @@ function updateLiveProgress(st){
     pi.setAttribute('data-p', String(pct));
   }
 
-  // ② 已完成步骤列表：只看条数，变了才重建（重建只在每步完成时发生一次）
+  // ② 计划块：agent 要到第 1~2 步才把 plan 写进 state，
+  // 而整块重建的签名只看「结构」，plan 来晚了就不会重画 ——
+  // 用户以前得手动刷新才看见清单。这里补一次插入，之后跟着 plan 变化更新。
+  if (st.plan){
+    var pl = String(st.plan);
+    var planEl = lb.querySelector('.sect');
+    if (!planEl){
+      planEl = document.createElement('div');
+      planEl.className = 'sect';
+      planEl.innerHTML = planHtml(pl);
+      planEl.setAttribute('data-plen', String(pl.length));
+      var stc0 = lb.querySelector('.steps');
+      if (stc0 && stc0.parentNode === lb) lb.insertBefore(planEl, stc0);
+      else lb.appendChild(planEl);
+    } else if (planEl.getAttribute('data-plen') !== String(pl.length)){
+      planEl.innerHTML = planHtml(pl);
+      planEl.setAttribute('data-plen', String(pl.length));
+    }
+  }
+
+  // ③ 已完成步骤列表：只看条数，变了才重建（重建只在每步完成时发生一次）
   var steps = st.steps || [];
   var sc = lb.querySelector('.steps');
   if (sc && sc.children.length !== steps.length){
@@ -5661,6 +5701,24 @@ function taskLabel(task){
            '<span class="tt">' + esc(m[1]) + '</span>';
   }
   return '<span class="tt">' + esc(s) + '</span>';
+}
+
+/* 任务条上的推理档位徽标：「- MAX」「- 标准」。
+   agent 把本轮用的档位写进 state.reasoning / state.reasoningName，
+   这里只读它 —— 不读滑块当前值，否则用户拖了滑块会看起来「这一轮用的新档位」，
+   其实正在跑的这一轮还是开跑时那个档位（改档位只对下一次生效）。 */
+function taskReasonTag(st){
+  if (!st || st.reasoning === undefined || st.reasoning === null) return '';
+  var n = Number(st.reasoning);
+  if (isNaN(n)) return '';
+  var name = '';
+  if (typeof REASON_NAMES !== 'undefined' && REASON_NAMES[n]) name = REASON_NAMES[n];
+  else name = String(st.reasoningName || '');
+  if (!name) return '';
+  var col = (typeof reasonColor === 'function') ? reasonColor(n / ((typeof REASON_MAX !== 'undefined' && REASON_MAX) ? REASON_MAX : 4)) : '';
+  var style = col ? ' style="color:' + col + ';border-color:' + col.replace('rgb(', 'rgba(').replace(')', ',.35)') + ';"' : '';
+  return '<span class="task-reason" title="推理力度：' + esc(name) + '（改档位只对下一次回答生效）"' + style + '>' +
+         esc(name) + '</span>';
 }
 
 /* ---------- 流式逐字输出 ----------
@@ -6773,14 +6831,20 @@ function bindMode(){
    布局属性每帧重算会触发 reflow，低端机上直接掉帧。 */
 var REASON_NAMES = ['关闭', '弱', '标准', '强', 'MAX'];
 var REASON_DESC = ['不额外思考，直接做', '只抓主干，一次做完', '想清楚再动手，做完自检', '先列计划，逐步验证', '不掐输出，计划必须写出来'];
+/* 面板能拖到的最高档。MAX(4) 在纯 CPU 机器上实测三次 19.8 / 33 / 33，
+   全是强制收尾，又慢又差 —— 从滑块里下线，agent 侧仍保留 4 供命令行使用。
+   所有和「档位→位置/颜色/星星」有关的换算都走 REASON_MAX，别再写死 4。 */
+var REASON_MAX = 3;
 var curReason = 2;
 try {
   var rsaved = localStorage.getItem('nafx-reason');
-  if (rsaved !== null && rsaved !== '') curReason = Math.max(0, Math.min(4, parseInt(rsaved, 10) || 0));
+  if (rsaved !== null && rsaved !== '') curReason = Math.max(0, Math.min(REASON_MAX, parseInt(rsaved, 10) || 0));
 } catch(_){}
 
 function reasonColor(p){
   // 蓝 #3b82f6 → 紫 #a855f7：滑块越靠右越紫
+  // p 夹到 0~1：老卡片里可能有 n=4（MAX 已下线），4/3 会算出越界的颜色。
+  p = Math.max(0, Math.min(1, p || 0));
   var a=[59,130,246], b=[168,85,247];
   var r=Math.round(a[0]+(b[0]-a[0])*p), g=Math.round(a[1]+(b[1]-a[1])*p), bl=Math.round(a[2]+(b[2]-a[2])*p);
   return 'rgb(' + r + ',' + g + ',' + bl + ')';
@@ -6798,7 +6862,7 @@ function layoutReason(){
   var nameEl = $('reasonName'), dot = $('reasonDot'), ticks = $('reasonTicks');
   if (!track || !thumb) return;
   var m = reasonMetrics(); if (!m) return;
-  var p = curReason / 4;
+  var p = curReason / REASON_MAX;
   // 轨道两端留 16px，滑块中心正好落在「关闭」和「MAX」的刻度上，
   // 不再出现推到最右还差半个滑块的情况。
   var cx = m.pad + m.span * p;
@@ -6830,7 +6894,7 @@ function layoutReason(){
 
 function reasonStarRate(){
   // 星星漂移速度跟着推理档位走：越强越快
-  return [0.45, 0.8, 1.25, 2.1, 3][curReason] || 1.25;
+  return [0.45, 0.8, 1.25, 2.1][curReason] || 1.25;
 }
 
 function reasonStars(){
@@ -6892,16 +6956,16 @@ function reasonParticles(){
   var fx = $('reasonFx'), track = $('reasonTrack'), thumb = $('reasonThumb');
   if (!fx || !track || !thumb) return;
   var m = reasonMetrics(); if (!m) return;
-  var p = curReason / 4;
+  var p = curReason / REASON_MAX;
   var cx = m.pad + m.span * p;
   var cy = track.clientHeight / 2;
   // 档位越高，喷得越多；关闭档不喷
-  var count = [0, 7, 10, 13, 17][curReason];
+  var count = [0, 8, 12, 17][curReason];
   if (!count) return;
   var c = curReason ? reasonColor(p) : '#8b93a5';
   var pg = c.replace('rgb(', 'rgba(').replace(')', ',.42)');
   // 飞行速度按档位走（px/s）：MAX 最快，弱最慢
-  var spd = [0, 70, 106, 150, 205][curReason] || 70;
+  var spd = [0, 72, 112, 165][curReason] || 72;
   for (var i=0;i<count;i++){
     var d = document.createElement('span');
     d.className = 'reason-particle';
@@ -6920,7 +6984,7 @@ function reasonParticles(){
     d.style.transform = 'translate3d(' + (x0 - sz/2).toFixed(1) + 'px,' + (y0 - sz/2).toFixed(1) + 'px,0) scale(.3)';
     fx.appendChild(d);
     // 飞行距离随档位拉长，MAX 最远，但不越过轨道左端
-    var base = [0, 62, 96, 130, 180][curReason] || 62;
+    var base = [0, 64, 104, 155][curReason] || 64;
     var room = Math.max(30, cx - m.pad + 8);
     var len = Math.min(base * (0.75 + Math.random() * 0.55), room);
     var drift = Math.random() * 18 - 9;
@@ -6937,7 +7001,7 @@ function reasonParticles(){
 }
 
 function setReason(v, burst){
-  v = Math.max(0, Math.min(4, v | 0));
+  v = Math.max(0, Math.min(REASON_MAX, v | 0));
   var prev = curReason;
   var changed = (v !== prev);
   curReason = v;
@@ -6947,7 +7011,18 @@ function setReason(v, burst){
   // 只有往右加力才喷粒子；反向拖回来（降档）不触发
   if (burst && changed && v > prev) reasonParticles();
   // 冲到 MAX：刮一阵风
-  if (burst && changed && v > prev && v === 4) reasonWind();
+  if (burst && changed && v > prev && v === REASON_MAX) reasonWind();
+  // 任务正在跑的时候改档位：这一轮已经按开跑时的档位在生成，
+  // 新档位只对下一次生效 —— 直接黄字说清楚，别让人以为这一轮立刻变了。
+  if (changed && window.__lastBusy) reasonNextHint();
+}
+
+/* 黄字「下一次回答生效」亮 2.6 秒 */
+function reasonNextHint(){
+  var el = $('reasonNext'); if (!el) return;
+  el.classList.add('on');
+  if (el._t) clearTimeout(el._t);
+  el._t = setTimeout(function(){ el.classList.remove('on'); }, 2600);
 }
 
 /* 风：从拇指一侧向左刮出的一束细长气流 */
@@ -7010,7 +7085,7 @@ function bindReason(){
     var rect = track.getBoundingClientRect();
     var m = reasonMetrics(); if (!m) return;
     var p = Math.max(0, Math.min(1, (clientX - rect.left - m.pad) / m.span));
-    setReason(Math.round(p * 4), true);
+    setReason(Math.round(p * REASON_MAX), true);
   }
   track.addEventListener('pointerdown', function(e){
     dragging = true;

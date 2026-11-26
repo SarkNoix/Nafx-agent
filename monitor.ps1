@@ -840,6 +840,11 @@ if ($script:agentMissStreak -ge 2 -and -not $hasAgent -and -not $hasResult -and 
         step      = [int]$main.step
         maxSteps  = [int]$main.maxSteps
         elapsed   = [double]$main.elapsed
+        # 推理档位：面板任务条左边那颗「关闭/弱/标准/强/MAX」小胶囊读的就是这两个。
+        # 这个 return 是手工拼字段的，之前漏了它 —— 面板拿到 undefined，
+        # 徽标一直渲染成空，看着就像"根本没有档位显示"。
+        reasoning = $(if ($main.PSObject.Properties.Name -contains 'reasoning' -and $null -ne $main.reasoning) { [int]$main.reasoning } else { -1 })
+        reasoningName = $(if ($main.PSObject.Properties.Name -contains 'reasoningName' -and $main.reasoningName) { [string]$main.reasoningName } else { '' })
         # 模式：local=本地 llama，api=外部接口。面板顶栏据此显示切换按钮。
         modelMode   = $script:CurMode
         modeLabel   = $(if ($script:CurMode -eq 'api') { [string]$Cfg.apiModel } else { [string]$Cfg.modelLabel })

@@ -48,5 +48,11 @@ workspace/data/*
 # API 密钥：本地文件，绝不能进仓库
 api-key.json
 
-cache/
+# 本地产出目录：只在本地，不提交也不推送
+/outputs/
+
+
+# 内部流程与凭据文档，永不入库
+/docs/推送交接包.md
+/docs/双远端推送教程.md
 

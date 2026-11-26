@@ -83,7 +83,10 @@ function Get-FalseClaimHint {
     # 一直到收工 report.txt 都不存在。看见这种自说自话就当场点破。
     param([string]$Text)
     if ([string]::IsNullOrWhiteSpace($Text)) { return '' }
-    if ($Text -notmatch '已|写好|写进|生成|创建|完成|保存|写出|建好|放到|存到') { return '' }
+    # 只在「明确说了已经做完」的句子里提醒。
+    # 之前只看「生成/创建」，结果 model 在 plan 里写「要生成 report.txt」也被
+    # 当成撒谎，观察里多一句废话，白白干扰它。所以要求出现完成态。
+    if ($Text -notmatch '已生成|已写好|已写|已经写|已创建|已经创建|已完成|已保存|已写入|写好了|建好了|已经生成|已放到|已存到') { return '' }
     $miss = @()
     foreach ($m in [regex]::Matches($Text, '[\w\-\.\\/]+\.(ps1|txt|md|json|jsonl|csv|bat|log)')) {
         $rel = $m.Value -replace '/', '\'
@@ -120,6 +123,54 @@ function Initialize-AiWorkspace {
 
 # 解析路径。allowAnyPath 打开后可以访问整个电脑，
 # 但系统关键位置仍然拦下——AI 管理电脑不等于让它把 Windows 删了。
+# 4B 写 .ps1 的高频死法：双引号里写 "\n" 当换行。
+# PowerShell 不认反斜杠转义，"\n" 就是两个普通字符 —— 表里全是字面 \n；
+# 更常见的是它写到一半漏了闭引号，直接 ParserError: 意外的标记 "in"。
+# 这里只在「原文解析不过」时才动手，避免把 "C:\new\file" 这种合法路径改坏。
+function Repair-Ps1NewlineEscapes([string]$Text) {
+    $sb = New-Object System.Text.StringBuilder
+    $inD = $false; $inS = $false; $n = $Text.Length
+    for ($i = 0; $i -lt $n; $i++) {
+        $c = $Text[$i]
+        if ($inD) {
+            if ($c -eq [char]'`') { [void]$sb.Append($c); if ($i + 1 -lt $n) { $i++; [void]$sb.Append($Text[$i]) }; continue }
+            if ($c -eq '"') { $inD = $false; [void]$sb.Append($c); continue }
+            if ($c -eq '\' -and $i + 1 -lt $n -and $Text[$i + 1] -eq 'n') {
+                [void]$sb.Append('`n'); $i++; continue
+            }
+            if ($c -eq '\' -and $i + 1 -lt $n -and $Text[$i + 1] -eq 't') {
+                [void]$sb.Append('`t'); $i++; continue
+            }
+            [void]$sb.Append($c); continue
+        }
+        if ($inS) {
+            if ($c -eq [char]"'") {
+                if ($i + 1 -lt $n -and $Text[$i + 1] -eq [char]"'") { [void]$sb.Append("''"); $i++; continue }
+                $inS = $false
+            }
+            [void]$sb.Append($c); continue
+        }
+        if ($c -eq '"') { $inD = $true; [void]$sb.Append($c); continue }
+        if ($c -eq [char]"'") { $inS = $true; [void]$sb.Append($c); continue }
+        [void]$sb.Append($c)
+    }
+    return $sb.ToString()
+}
+
+# 返回修好的文本；解析本来就过、或者修了也没用，都返回原样。
+function Repair-Ps1IfBroken([string]$Text) {
+    if ($Text -notmatch '\\[nt]') { return $Text }
+    $errs = $null
+    [System.Management.Automation.Language.Parser]::ParseInput($Text, [ref]$null, [ref]$errs) | Out-Null
+    if (-not $errs -or @($errs).Count -eq 0) { return $Text }
+    $cand = Repair-Ps1NewlineEscapes $Text
+    if ($cand -eq $Text) { return $Text }
+    $errs2 = $null
+    [System.Management.Automation.Language.Parser]::ParseInput($cand, [ref]$null, [ref]$errs2) | Out-Null
+    if (-not $errs2 -or @($errs2).Count -eq 0) { return $cand }
+    return $Text
+}
+
 function Resolve-AiPath {
     param([string]$RelPath)
     if ([string]::IsNullOrWhiteSpace($RelPath)) { throw 'path 不能为空' }
@@ -487,6 +538,27 @@ function Invoke-AiTool {
 
                 $content = [string]$Action.content
 
+                # ---- 多余的 \" 转义：写 JSONL 时最常见的翻车 ----
+                # 实测 pipe-filter-paid：模型给的 content 是 {\"id\":1,\"status\":\"paid\"}，
+                # 写进文件就真的带着反斜杠，读回来是 {\"id\":1...}，题库和用户都当它是坏格式。
+                # 判据卡死一点：整段里一个裸引号都没有、却有 \" —— 那就是转义多了，去掉一层；
+                # 有裸引号的正常 PowerShell/JSON 文本一律不动。
+                $deEscaped = $false
+                if ($content -match '\\"' -and $content -notmatch '(?<!\\)"') {
+                    $content = $content.Replace('\"', '"')
+                    $deEscaped = $true
+                }
+
+                # ---- .ps1 里写 "\n"：解析不过就自动换成 `n ----
+                # 只在解析失败时动手，正常脚本（含 C:\new 这种路径）一个字不改。
+                if ($full -match '\.ps1$') {
+                    $fixedPs = Repair-Ps1IfBroken $content
+                    if ($fixedPs -ne $content) {
+                        $content = $fixedPs
+                        $deEscaped = $true
+                    }
+                }
+
                 # ---- 拿空内容覆盖一个非空文件 = 纯数据丢失，直接拒 ----
                 #
                 # 实测：让它「把 locked\conflict.txt 挪到根目录」，
@@ -562,13 +634,14 @@ function Invoke-AiTool {
                 } catch [System.IO.IOException] {
                     throw "写不进去：$($_.Exception.Message)。文件可能正被其他程序打开。"
                 }
+                $escHint = $(if ($deEscaped) { ' （内容里的 \" 是多余转义，已自动去掉一层；下次按原样写引号即可）' } else { '' })
                 if ($existed) {
                     $moveHint = $(if ($usedForMove) {
                         ' **注意：如果你是想「移动/复制」这个文件，用错工具了** —— write_file 只会写内容，不会挪走源文件。挪文件要用 move_path。'
                     } else { '' })
-                    return "已覆盖 $(Get-RelDisplay $full)（$($content.Length) 字符）。**这是整个文件重写，原来的内容已经没了。** 本意是追加的话应该用 append_file。" + $moveHint + "改完了直接 finish。"
+                    return "已覆盖 $(Get-RelDisplay $full)（$($content.Length) 字符）。**这是整个文件重写，原来的内容已经没了。** 本意是追加的话应该用 append_file。" + $moveHint + "改完了直接 finish。" + $escHint
                 }
-                return "已写入 $(Get-RelDisplay $full)（$($content.Length) 字符）。写入成功，不用再读一遍验证，直接 finish。"
+                return "已写入 $(Get-RelDisplay $full)（$($content.Length) 字符）。写入成功，不用再读一遍验证，直接 finish。" + $escHint
             }
 
             'file_editor' {
@@ -1488,6 +1561,12 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                     $content = $content -replace '(?i)\bAppend-Content\b', 'Add-Content'
                     $autoFix += '（已自动修正 Append-Content → Add-Content）'
                 }
+                # 高频错：参数块写成 $param(...)，PowerShell 会报 Unexpected token '('。
+                # 这是纯粹的笔误（param 是关键字，不是变量），等价改名直接修掉。
+                if ($content -match '(?m)^\s*\$param\s*\(') {
+                    $content = [regex]::Replace($content, '(?m)^(\s*)\$param\s*\(', '$1param(')
+                    $autoFix += '（已自动修正 $param( → param(）'
+                }
                 # 高频错：双引号里写 "$today: ..."，PowerShell 把冒号当变量作用域，
                 # 报 "Variable reference is not valid. ':' was not followed by..."。
                 # 自动改成 "${today}: ..."；env/global 这类合法作用域不动。
@@ -1519,6 +1598,13 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                     $autoFix += '（已修正行尾三重反引号导致的未闭合字符串）'
                 }
 
+                # 先修「双引号里的 \n」，再查语法 —— 4B 十次有八次栽在这上面
+                $fixedPs2 = Repair-Ps1IfBroken $content
+                if ($fixedPs2 -ne $content) {
+                    $content = $fixedPs2
+                    $autoFix += '（已自动把双引号里的 \n 换成 `n）'
+                }
+
                 # 先做语法检查，别把坏脚本落盘再让它跑：
                 # 4B 模型写多行字符串时容易把 Markdown 的 ``` 当换行，
                 # 结果字符串没闭合。原实现只回一句 "char:13"，它看不出哪错，
@@ -1533,7 +1619,8 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                     $lines = @($content -split "`r?`n")
                     if ($ln -ge 1 -and $ln -le $lines.Count) { $codeLine = $lines[$ln - 1] }
                     throw ("脚本语法错误（第 $ln 行）：$($pe.Message)`n出错的行：$codeLine`n" +
-                           'PowerShell 字符串里换行用 “`n”（反引号 n），不要写 Markdown 的三重反引号；' +
+                           '改法：换行用 “`n”（反引号 n，写在双引号里），不要写 \n（那是 C 的写法，会打出字面反斜杠）；' +
+                           '如果错在拼表格，把 foreach 从字符串里拿出来 —— 先 $rows = foreach (...) { ... }，再 ($rows -join "`n")；' +
                            '多行文本改用 here-string（@ 引号 换行 内容 换行 引号 @）。改完再 write_script。')
                 }
                 # 一个 .ps1 只能有一个 param 块。模型常写两行 param，
@@ -1873,6 +1960,24 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                     # 真正的删除拦截还有 delete_path 的确认兜着。
                 }
                 $extra = [string]$Action.command
+                # command 里塞整条命令行的毛病（4B 高频）：
+                # 实测它写 run_ps1 count_orders.ps1，command 填的是
+                #   powershell -File count_orders.ps1 -InputFile "data\orders.jsonl" -OutputFile "report.txt"
+                # 拼进子进程就成了 `& 'count_orders.ps1' powershell -File count_orders.ps1 ...`
+                # → powershell 被当成第一个参数，退出码 0、没有任何输出，
+                # 脚本一次都没真跑，report.txt 一直是空的。
+                # 这里把外面包的 powershell / -File / 自己的脚本名剥掉，只留参数。
+                if ($extra) {
+                    $leaf = [IO.Path]::GetFileName($pArg)
+                    if ($leaf -and $extra -match '^\s*(powershell(\.exe)?|pwsh(\.exe)?)\b') {
+                        $extra = $extra -replace '(?i)^\s*(powershell(\.exe)?|pwsh(\.exe)?)\s*', ''
+                        $extra = $extra -replace '(?i)-NoProfile\s*', ''
+                        $extra = $extra -replace '(?i)-ExecutionPolicy\s+\S+\s*', ''
+                        $extra = $extra -replace '(?i)-File\s*', ''
+                        $extra = $extra -replace ('(?i)' + [regex]::Escape($leaf) + '\s*'), ''
+                        $extra = ($extra -replace '\s+', ' ').Trim()
+                    }
+                }
                 # 脚本有 param() 但没传 command，跑出来可能是空的 ——
                 # 模型容易误以为「退出码 0 = 成功」，然后拿空结果编答案。
                 # 但也不能一刀切拒绝：很多脚本 param 带默认值（gen.ps1 的

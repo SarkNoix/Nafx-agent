@@ -161,6 +161,16 @@ if ($script:IsApiMode) {
     }
     $script:ApiModelName = [string]$Cfg.apiModel
     if (-not $script:ApiModelName) { $script:ApiModelName = 'deepseek-chat' }
+
+    # 各家的 reasoning_effort 取值不统一：
+    #   智谱 GLM-5.3 这类「始终思考」的模型只认 low / high / max，
+    #   发 medium 直接 400（实测 {"code":"1210","message":"该模型始终思考…"}），
+    #   而框架又会把这个 400 当成「上下文超了」去砍历史，越砍越糟。
+    # 这里按 base 地址给一张映射表，认不出来就用 OpenAI 的三档。
+    $script:ApiEffortMap = @('', 'low', 'medium', 'high', 'high')
+    if ($Api -match 'bigmodel|zhipu') {
+        $script:ApiEffortMap = @('', 'low', 'high', 'high', 'max')
+    }
 } else {
     $Api = "http://$($Cfg.host):$($Cfg.port)"
     $script:ApiKey = ''
@@ -480,6 +490,15 @@ function Get-ReadableArgPiece {
     try { $obj = $Raw | ConvertFrom-Json } catch { $obj = $null }
 
     if (-not $obj) {
+        # 写类工具的参数里塞着整段代码，还没写完时逐字吐原文，
+        # 面板上就是 `{"name": "write_script", "arguments": {"path": ..., "content": "param(\n [Para…`，
+        # 用户看着像模型在胡说八道。这里只报一次「正在写 xx」，后面不再刷屏。
+        if ($Tool -in @('write_file', 'append_file', 'write_script')) {
+            if ($PrevLen -gt 0) { return '' }
+            $mp = [regex]::Match($Raw, '"path"\s*:\s*"([^"]{0,120})')
+            if ($mp.Success) { return ('写文件 ' + $mp.Groups[1].Value) }
+            return '写文件'
+        }
         # 其它工具的 JSON 还没写完：吐新增的原始分片（保持逐字效果）
         if ($PrevLen -ge 0 -and $PrevLen -lt $Raw.Length) { return $Raw.Substring($PrevLen) }
         return ''
@@ -560,12 +579,61 @@ function Get-ReadableArgPiece {
     return $line
 }
 
+# 工具描述瘦身：原始 schema 每个工具 200+ token，12 个就顶掉 2700 token，
+# 把 system + 历史的预算挤没了，运行时会一路「降档」砍到只剩 2 个工具，
+# 模型当场不会干活；而且每砍一次工具表，KV 前缀缓存全部作废，下一步整段重算。
+# 这里只保留「名字 + 一句描述 + 参数名/类型/必填 + 短说明」，
+# 语义够模型判断怎么调，又省下三分之二空间。
+function Compress-ToolSchema($s) {
+    $fn = $s.function
+    if (-not $fn -or -not $fn.name) { return $null }
+    $desc = [string]$fn.description
+    $first = ($desc -split '[。\n]')[0].Trim()
+    if ($first.Length -gt 56) { $first = $first.Substring(0, 56) }
+
+    $props = @{}
+    $req = @()
+    $pObj = $fn.parameters
+    if ($pObj) {
+        if ($pObj.required) { $req = @($pObj.required) }
+        $pProps = $pObj.properties
+        if ($pProps) {
+            foreach ($pp in $pProps.PSObject.Properties) {
+                $v = $pp.Value
+                $o = @{ type = [string]$v.type }
+                if ($v.enum) { $o.enum = @($v.enum) }
+                if ($v.items -and $v.items.type) { $o.items = @{ type = [string]$v.items.type } }
+                $pd = [string]$v.description
+                # 参数说明只留前 36 字：够说清「填什么」，长篇解释交给自己悟
+                if ($pd) {
+                    $pd = ($pd -split '[。\n]')[0].Trim()
+                    if ($pd.Length -gt 36) { $pd = $pd.Substring(0, 36) }
+                    if ($pd) { $o.description = $pd }
+                }
+                $props[$pp.Name] = $o
+            }
+        }
+    }
+    $prm = @{ type = 'object'; properties = $props }
+    if ($req.Count -gt 0) { $prm.required = $req }
+
+    return @{
+        type = 'function'
+        function = @{ name = [string]$fn.name; description = $first; parameters = $prm }
+    }
+}
+
 # 把 schema 按工具名拆开，路由时只发相关的几个
 $script:ToolSchemaMap = @{}
+$script:ToolSchemaRawMap = @{}
 try {
     foreach ($s in ($ToolsSchemaRaw | ConvertFrom-Json)) {
         $n = [string]$s.function.name
-        if ($n) { $script:ToolSchemaMap[$n] = (ConvertTo-Json -InputObject $s -Depth 10 -Compress) }
+        if (-not $n) { continue }
+        $full = ConvertTo-Json -InputObject $s -Depth 10 -Compress
+        $script:ToolSchemaRawMap[$n] = $full
+        $compact = Compress-ToolSchema $s
+        $script:ToolSchemaMap[$n] = if ($compact) { ConvertTo-Json -InputObject $compact -Depth 10 -Compress } else { $full }
     }
 } catch {
     # 这里失败是致命的：ToolSchemaMap 空掉之后，按 flow 筛出来的工具全变成 undefined，
@@ -1445,6 +1513,47 @@ function Format-PlanList {
     return $sb.ToString().TrimEnd()
 }
 
+# 模型偶尔把「要调的工具」当成话讲出来，播报里就是一整串
+#   {"name": "write_script", "arguments": {"path": "logcheck.ps1", "content": "param(\n ...
+# 用户看着像胡言乱语。这里把它压成一个纯文字标签：「【写文件】logcheck.ps1」。
+function Format-NoteText([string]$Text) {
+    if ([string]::IsNullOrWhiteSpace($Text)) { return $Text }
+    if ($Text -notmatch '"name"\s*:\s*"' -or $Text -notmatch '"arguments"') { return $Text }
+    $mN = [regex]::Match($Text, '"name"\s*:\s*"([A-Za-z_][A-Za-z0-9_]*)"')
+    if (-not $mN.Success) { return $Text }
+    $tool = $mN.Groups[1].Value
+    $mP = [regex]::Match($Text, '"path"\s*:\s*"([^"]{1,120})"')
+    $path = if ($mP.Success) { $mP.Groups[1].Value } else { '' }
+    $label = switch -Regex ($tool) {
+        '^write_script$|^write_file$|^append_file$' { '写文件' }
+        '^run_ps1$|^run_cmd$'                      { '跑命令' }
+        '^list_dir$'                               { '看目录' }
+        '^read_file$|^read_lines$|^grep_file$'     { '读文件' }
+        '^think$'                                  { '思考' }
+        '^plan$'                                   { '排步骤' }
+        '^finish$'                                 { '收尾' }
+        default                                    { '调用 ' + $tool }
+    }
+    if ($path) { return ('【' + $label + '】' + $path) }
+    return ('【' + $label + '】')
+}
+
+# 绕圈/只读/重复被强制收尾时，答案别拿原始观察拼。
+# 以前的写法是 ($obs -split "`n" -join '；')，面板上就是一坨
+# 「已覆盖 logcheck.ps1（1203 字符）。这是整个文件重写…；【框架刚替你跑了一遍…】；（注意：这个脚本…」
+# 用户完全看不懂。这里只挑出错的那一两行，前面补一句人话。
+function Get-StuckAnswer([string]$Obs, [string]$What) {
+    $lines = @(($Obs -split "`n") | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    $err = @($lines | Where-Object { $_ -match '错误|异常|Exception|退出码|Cannot|无法|不存在|not recognized|failed|Failed' } |
+             Select-Object -First 2)
+    if ($err.Count -eq 0) { $err = @($lines | Select-Object -First 2) }
+    $body = ($err -join '。')
+    if ($body.Length -gt 200) { $body = $body.Substring(0, 200) + '…' }
+    $lead = if ($What) { "卡在 $What 上" } else { '卡住了' }
+    if (-not $body) { return "$lead，没能做完。" }
+    return "$lead：$body"
+}
+
 function Set-PlanStepDone {
     param($Plan)
     if (-not $Plan) { return $Plan }
@@ -1583,6 +1692,11 @@ function Invoke-Model {
     # 停 —— 真正的天花板不该交给模型自觉。这里改成有限的大额度，MAX 只是
     # 「比别的档宽松」，不是「永不收口」。
     $maxTok = if ($MaxTokens -gt 0) { $MaxTokens } else { [int]$Cfg.maxTokens }
+    # 接口模式：很多新模型是「始终思考」的（GLM-5.3 / o 系），
+    # 思考 token 也算在 max_tokens 里。600 这种本地额度会被思考吃光，
+    # 表现就是 content 全空、finish_reason=length —— 看起来像模型不会干活。
+    # 接口不需要为速度省 token，给一个下限。
+    if ($script:IsApiMode -and $maxTok -lt 1200) { $maxTok = 1200 }
     if ($Reasoning -eq 4 -and -not $script:IsApiMode) { $maxTok = 1500 }
     # 请求超时跟着输出额度走。
     # 本地 3~3.5 tok/s：600 token ≈ 180 秒（240 够），1500 token ≈ 450 秒（240 不够）。
@@ -1603,7 +1717,7 @@ function Invoke-Model {
                 # 接口模式把滑块翻译成服务端的 reasoning_effort：0 不发（等于关闭），
                 # 3 和 4 都发 high —— 多数服务端只认 low/medium/high 三档。
                 $(if ($script:IsApiMode -and $Reasoning -ge 1) {
-                    ',"reasoning_effort":"' + (@('', 'low', 'medium', 'high', 'high')[$Reasoning]) + '"'
+                    ',"reasoning_effort":"' + ([string]$script:ApiEffortMap[$Reasoning]) + '"'
                   } else { '' }) +
                 ',"tools":' + $ToolsJson +
                 ',"tool_choice":' + $choice +
@@ -2003,6 +2117,102 @@ function Invoke-Model {
 }
 
 # 模型服务活着吗？3 秒就能判断出来，不用等 180 秒超时。
+# 紧急扩上下文（MAX 档最容易触发）：
+# MAX 档会想很久、写很长，历史很快把 n_ctx 顶满，llama 直接 400。
+# 光靠「砍历史 + 抬校准系数」在 MAX 下经常救不回来，所以这里允许
+# 按可用内存重开一个更大的 -c（每次任务最多一次，最多 +2 档）。
+function Expand-ServerContext {
+    if ($script:IsApiMode) { return $false }
+    try {
+        $cfgNow = Get-Content $cfgPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $cur = [int]$script:RealCtx
+        $os = Get-CimInstance Win32_OperatingSystem
+        $freeMB = [int]($os.FreePhysicalMemory / 1KB)
+        # f16 KV 大约 0.15 MB / token（4B 模型、36 层、8 KV 头）
+        $kvPerTok = 0.15
+        $maxByMem = [int][Math]::Floor((($freeMB + ($cur * $kvPerTok)) - 600) / $kvPerTok)
+        $target = [Math]::Min($cur + 2048, $maxByMem)
+        $target = [int]([Math]::Floor($target / 512) * 512)   # 按 512 对齐
+        if ($target -lt ($cur + 512)) {
+            Write-Log ('  [紧急扩上下文] 算下来最多到 ' + $target + '（当前 ' + $cur + '，可用 ' + $freeMB + ' MB），不扩')
+            return $false
+        }
+        $mode = if ($cfgNow.llamaMode) { [string]$cfgNow.llamaMode } else { 'cpu' }
+        $llamaDir = if ($mode -eq 'gpu') {
+            if ($cfgNow.llamaGpuDir) { [string]$cfgNow.llamaGpuDir } else { 'llama-gpu' }
+        } else {
+            if ($cfgNow.llamaCpuDir) { [string]$cfgNow.llamaCpuDir } else { 'llama' }
+        }
+        $exe = Join-Path $Root ($llamaDir.Trim('\') + '\llama-server.exe')
+        if (-not (Test-Path $exe)) { $exe = Join-Path $Root 'llama\llama-server.exe' }
+        $model = [string]$cfgNow.model
+        if (-not [IO.Path]::IsPathRooted($model)) { $model = Join-Path $Root $model }
+        $threads = if ([int]$cfgNow.threads -gt 0) { [int]$cfgNow.threads } else { 4 }
+        $host2 = if ($cfgNow.host) { [string]$cfgNow.host } else { '127.0.0.1' }
+        $port2 = if ($cfgNow.port) { [int]$cfgNow.port } else { 8080 }
+        $loadMode2 = if ($cfgNow.loadMode) { [string]$cfgNow.loadMode } else { 'mmap' }
+        $cargs = @('-m', $model, '--host', $host2, '--port', [string]$port2, '-c', [string]$target,
+                   '-t', [string]$threads, '-tb', [string]$threads, '-np', [string]([int]$cfgNow.parallel),
+                   '--cache-prompt', '--cache-reuse', '256', '--slot-save-path', (Join-Path $Root 'cache\slots'),
+                   '--load-mode', $loadMode2, '--prio', '0', '--timeout', '600', '-fa', 'off',
+                   '--jinja', '--reasoning', 'off', '--repeat-penalty', '1.1', '--repeat-last-n', '256')
+
+        Write-Log ('  [紧急扩上下文] ' + $cur + ' → ' + $target + '（可用内存 ' + $freeMB + ' MB），重启模型服务')
+        Get-Process llama-server -ErrorAction SilentlyContinue | Stop-Process -Force
+        Start-Sleep -Seconds 3
+        $cfgNow.context = $target
+        [IO.File]::WriteAllText($cfgPath, ($cfgNow | ConvertTo-Json -Depth 12), (New-Object Text.UTF8Encoding($false)))
+        $logDir2 = Join-Path $Root 'logs'
+        Start-Process -FilePath $exe -ArgumentList $cargs -WorkingDirectory $Root -WindowStyle Hidden -PassThru `
+            -RedirectStandardOutput (Join-Path $logDir2 'server.out.log') `
+            -RedirectStandardError (Join-Path $logDir2 'server.err.log') | Out-Null
+        $ok2 = $false
+        for ($i = 0; $i -lt 45; $i++) {
+            Start-Sleep -Seconds 2
+            try {
+                if ((Invoke-WebRequest -Uri ('http://' + $host2 + ':' + $port2 + '/health') -UseBasicParsing -TimeoutSec 3).StatusCode -eq 200) { $ok2 = $true; break }
+            } catch { }
+        }
+        if (-not $ok2) {
+            Write-Log '  [紧急扩上下文] 新配置起不来，回退原上下文'
+            Get-Process llama-server -ErrorAction SilentlyContinue | Stop-Process -Force
+            $cfgNow.context = $cur
+            [IO.File]::WriteAllText($cfgPath, ($cfgNow | ConvertTo-Json -Depth 12), (New-Object Text.UTF8Encoding($false)))
+            return $false
+        }
+        try {
+            $p2 = (Invoke-WebRequest -Uri ('http://' + $host2 + ':' + $port2 + '/props') -UseBasicParsing -TimeoutSec 5).Content | ConvertFrom-Json
+            $rc = [int]$p2.default_generation_settings.n_ctx
+            if ($rc -gt 0) { $script:RealCtx = $rc }
+        } catch { $script:RealCtx = $target }
+        Write-Log ('  [紧急扩上下文] 已生效，实际 n_ctx = ' + $script:RealCtx)
+        return $true
+    } catch {
+        Write-Log ('  [紧急扩上下文] 失败：' + $_.Exception.Message)
+        return $false
+    }
+}
+
+# 工作区实况快照：把「现在磁盘上到底有什么」摊给模型看。
+# 它老是说「已经写好了」，光跟它讲道理没用 —— 摆出文件清单，
+# 它才能发现自己确实没写，而不是换个说法再声称一遍。
+function Get-WsSnapshot([int]$Max = 12) {
+    try {
+        $root = if ($script:AiRoot) { [string]$script:AiRoot } else { (Get-Location).Path }
+        if (-not (Test-Path $root)) { return '（工作区不存在）' }
+        $items = @(Get-ChildItem -LiteralPath $root -Force -ErrorAction SilentlyContinue |
+                   Where-Object { $_.Name -notmatch '^(\.|logs?$)' } |
+                   Sort-Object LastWriteTime -Descending | Select-Object -First $Max)
+        if ($items.Count -eq 0) { return '（空目录）' }
+        $parts = @()
+        foreach ($it in $items) {
+            if ($it.PSIsContainer) { $parts += ($it.Name + '/') }
+            else { $parts += ($it.Name + ' ' + [int]$it.Length + 'B') }
+        }
+        return ($parts -join '、')
+    } catch { return '（读不到目录）' }
+}
+
 function Test-ModelAlive {
     param([int]$TimeoutSec = 3)
     # 接口模式没有 /health 这个端点（那是 llama-server 专有的），
@@ -2283,11 +2493,40 @@ function Close-WithResult {
         [string]$FailAnswer,      # 没有结果时给用户的说明
         [int]$StepCount
     )
-    # 从 steps 末尾往前找最后一条非空观察
+    # 从 steps 末尾往前找最后一条「真实的」观察。
+    # 跳过框架自己的驳回/跳过文案 —— 否则步数用尽时，答案会是
+    # 「（已跳过重写）这个文件刚在第 15 步写过…」，用户看了只会更困惑。
     $lastObs = ''
     for ($ci = $State.steps.Count - 1; $ci -ge 0; $ci--) {
+        if ([bool]$State.steps[$ci].dup) { continue }
         $cob = [string]$State.steps[$ci].obs
+        if ($cob -match '^\s*（已跳过重写）|^\s*（没写文件）|^\s*（文件核对）|^\s*（没归类）') { continue }
         if ($cob.Trim()) { $lastObs = $cob; break }
+    }
+
+    # 步数用尽：别拿最后一条工具回执当答案交出去。
+    # 实测 lv4：18 步全花在反复改写同一个脚本，最后面板上蹦出一句
+    # 「已跳过重写…」—— 用户根本不知道发生了什么。
+    # 这种情况如实说没做完，再附一句最后的报错。
+    if ($Reason -like '跑满*') {
+        $errLine = @(($lastObs -split "`n") | ForEach-Object { $_.Trim() } |
+                     Where-Object { $_ -match '错误|Exception|退出码|不存在|Cannot find|不是内部' } |
+                     Select-Object -First 1)
+        $State.phase = ''
+        $State.elapsed = $clock.Elapsed.TotalSeconds
+        $State.status = $FailStatus
+        $extra = ''
+        if ($errLine.Count -gt 0) {
+            $el = [string]$errLine[0]
+            if ($el.Length -gt 120) { $el = $el.Substring(0, 120) + '…' }
+            $extra = ' 最后一次的输出：' + $el
+        }
+        $State.answer = $FailAnswer + $extra
+        $State.summary = '出错了：' + $FailAnswer
+        Write-Log ("  " + $Reason + "，如实说明没做完")
+        Write-State $State
+        Write-Closing -State $State -Status $FailStatus -Summary $State.summary -StepCount $StepCount
+        return
     }
 
     # 收尾了，「正在想 · 140 字」这种实时进度必须清掉，
@@ -2921,6 +3160,19 @@ $script:webNudge = 0
 # finish 时「答案啰嗦」的打回次数。只给 1 次（问一句答一段是 4B 的老毛病，
 # 实测 85 字的答复去回答「几行」这种问题，光字数就扣掉 1/3 分）。
 $script:lenNudge = 0
+# finish 时「用 find /c 数行数、但数字和文件真实行数对不上」的打回次数。只给 1 次。
+# find 只认 CRLF：纯 LF 的文件会被数成 1 行（实测 expr-report-number 答 1，实际 5）。
+$script:countNudge = 0
+# finish 时「任务说了要验证、答复里却没有验证结果」的打回次数。只给 1 次。
+# 实测 proj-calc-verify：脚本写完跑了，答复只写「写好了 calc.ps1」，没给 15 —— 白扣分。
+$script:verifyNudge = 0
+# 模型回 400（输入超 n_ctx）的自救次数。抬校准 + 砍历史后重试，最多 2 次。
+$script:Ctx400Retry = 0
+$script:CtxExpanded = 0
+# 这个任务里已经降档过一次工具表没有（降档会作废 KV 缓存，只做一次）。
+$script:ToolsTrimmedOnce = $false
+# 语言漂移（中文任务答成俄语）的打回次数。最多 2 次。
+$script:LangNudge = 0
 $planList    = @()
 $lastToolKey = ''
 $repeatCount = 0
@@ -3228,10 +3480,13 @@ $target = [Math]::Min($targetByBudget, [Math]::Max($targetByShare, 1400))
             }
             $digest = Get-TextSummary -Text ($parts -join ' / ') -MaxLen 220
             if ($digest) {
-                $head[0] = @{
-                    role = 'system'
-                    content = ([string]$head[0].content) + "`n`n## 早期对话摘要（已压缩）`n`n- " + $digest + "`n（只是索引；需要细节时回读 session.jsonl 或工作区文件）"
-                }
+                # 摘要必须作为一条普通 user 消息插在头部之后，不能拼进 system。
+                # 拼进 system 的话，每裁一次历史 system 就变一次 ——
+                # llama 的 KV 缓存是按前缀匹配的，system 一变整段作废，
+                # 下一步要重算 3000+ token。实测 local-setline：
+                # 等首字 270~303 秒、缓存只命中 2136，一步就耗掉 5 分钟。
+                $head += @{ role = 'user'; content = (
+                    "【早期对话摘要，仅作背景，不要重复它】`n" + $digest) }
             }
         }
 
@@ -3255,7 +3510,10 @@ $target = [Math]::Min($targetByBudget, [Math]::Max($targetByShare, 1400))
     #   改成 -gt 2：留两个工具（含 finish）就允许砍，砍不出 200 tok 才放弃。
     $roomForTools = $ctxLimit - $histTok - $mt0
     $overflowTok = $toolsTokNow - $roomForTools
-    if ($overflowTok -gt 150 -and @($script:ActiveFlowTools).Count -gt 2) {
+    # 工具表一变，llama 的 KV 缓存前缀就整段作废（实测重算 3000 token ≈ 4 分钟），
+    # 而每步历史都在长，小超就砍会导致「这步砍、下步又想砍」，一步一变、步步重算。
+    # 所以：同一个任务里只允许降档一次，而且必须超得够多（>400 tok）才动。
+    if ($overflowTok -gt 400 -and -not $script:ToolsTrimmedOnce -and @($script:ActiveFlowTools).Count -gt 8) {
         $before = @($script:ActiveFlowTools).Count
         $trimmed = Trim-ToolsToBudget -Names $script:ActiveFlowTools -Budget $roomForTools
         if (@($trimmed).Count -lt $before) {
@@ -3264,6 +3522,7 @@ $target = [Math]::Min($targetByBudget, [Math]::Max($targetByShare, 1400))
             if ($gainTok -ge 200) {
                 $script:ActiveFlowTools = $trimmed
                 $toolsJson = $trimJson
+                $script:ToolsTrimmedOnce = $true
                 Write-Log ("  [省上下文] 历史 $histTok + 工具 $toolsTokNow 要超 $ctxLimit，" +
                            "工具 $before → " + @($trimmed).Count + " 个（腾出 $([int]$gainTok) tok）")
             } else {
@@ -3271,7 +3530,7 @@ $target = [Math]::Min($targetByBudget, [Math]::Max($targetByShare, 1400))
             }
         }
     } elseif ($overflowTok -gt 0) {
-        Write-Log ("  [省上下文] 超 $([int]$overflowTok) tok 但工具已到下限（≤2 个）不砍，带着跑")
+        Write-Log ("  [省上下文] 超 $([int]$overflowTok) tok 但工具已到下限（$(@($script:ActiveFlowTools).Count) 个，不再降档）不砍，带着跑")
     }
 
     # ---- 精简/裁剪都做完了，现在才写真实用量 ----
@@ -3337,6 +3596,29 @@ $target = [Math]::Min($targetByBudget, [Math]::Max($targetByShare, 1400))
             $hbHandle = $hbPs.BeginInvoke()
         } catch { $hbRunspace = $null }
 
+        # ---- 发出去之前，按真实上下文硬卡一次 ----
+        # 前面的「精简 system / 裁历史 / 砍工具」都是按估算做的，而估算偏低
+        # （实测估 4761、实发 5594），所以到这一步还会溢出 n_ctx，llama 回 400。
+        # 这里把整份请求序列化后按校准系数放大，超了就从中间丢消息，
+        # 保证发出去的那份一定装得下。丢的是最早的中间段，system 和第一条任务保留。
+        $hardCap = [int]($script:RealCtx - $mt0 - 80)
+        $bias2 = [Math]::Max(1.0, [double]$script:TokBias)
+        for ($guard = 0; $guard -lt 8; $guard++) {
+            try {
+                $probe = Get-CtxTokens ((ConvertTo-Json -InputObject $history -Depth 12 -Compress) + $toolsJson)
+            } catch { break }
+            if (($probe * $bias2) -le $hardCap -or $history.Count -le 3) { break }
+            # 至少要丢一条（dropAt 从 3 起），并且丢完之后不能让历史以 tool 消息开头 ——
+            # 之前 dropAt 从 2 起，index 2 只要不是 tool 就一条都不丢，
+            # 于是同一份超长请求循环 8 次、估的值一模一样（日志里「剩 6 条」重复 8 行），
+            # 最后还是发出去撞 400。这里改成真的从第 3 条开始切。
+            $dropAt = 3
+            while ($dropAt -lt $history.Count -and [string]$history[$dropAt].role -eq 'tool') { $dropAt++ }
+            if ($dropAt -ge $history.Count) { break }
+            $history = @($history[0], $history[1]) + @($history[$dropAt..($history.Count - 1)])
+            Write-Log ('  [硬约束] 请求估 ' + [int]$probe + ' tok × ' + [math]::Round($bias2, 2) + ' 超上限 ' + $hardCap + '，丢一条中期消息（剩 ' + $history.Count + ' 条）')
+        }
+
         $res = Invoke-Model -Messages $history -ToolsJson $toolsJson -ForceTool:($noToolCount -gt 0) -MaxTokens $mt0 `
             -SaveRequest:$(if ($step -eq 1) { $script:PrefixFile } else { '' })
 
@@ -3346,6 +3628,28 @@ $target = [Math]::Min($targetByBudget, [Math]::Max($targetByShare, 1400))
 
     } catch {
         Write-Host ''
+        # ---- llama 回 400：多半是输入超了 n_ctx ----
+        # 实测 pipe-count-by-customer：估算 4700 实际发到 6094，llama 直接 400，
+        # 框架「重试一次」发的还是同一份超长请求，第二次仍 400，于是一整题被判
+        # 「模型调用失败，用已有结果收尾」—— 明明只差 100 多 token。
+        # 这里不再原样重试：抬高校准系数 + 把历史砍到最近 6 条，再走下一步。
+        if ($_.Exception.Message -match '\(400\)' -and -not $script:CtxExpanded -and $script:Ctx400Retry -eq 0) {
+            $script:CtxExpanded = 1
+            if (Expand-ServerContext) {
+                $script:TokBias = 1.0
+                Write-Log '  [超上下文400] 已紧急扩上下文，缓存重置，原样重发这一步'
+                continue
+            }
+        }
+        if ($_.Exception.Message -match '\(400\)' -and $script:Ctx400Retry -lt 2) {
+            $script:Ctx400Retry = [int]$script:Ctx400Retry + 1
+            $script:TokBias = [Math]::Min(3.0, [double]$script:TokBias * 1.25)
+            $tailIdx = [Math]::Max(2, $history.Count - 6)
+            while ($tailIdx -gt 2 -and [string]$history[$tailIdx].role -eq 'tool') { $tailIdx-- }
+            $history = @($history[0], $history[1]) + @($history[$tailIdx..($history.Count - 1)])
+            Write-Log ('  [超上下文400] 历史砍到 ' + $history.Count + ' 条，校准系数抬到 ' + [math]::Round($script:TokBias, 2) + '，重试这一步')
+            continue
+        }
         # 请求超时也要分辨是真慢还是服务挂了。挂了就报卡死，别报个含糊的"超时"。
         if (-not (Test-ModelAlive -TimeoutSec 5)) {
             Close-AsStuck -State $state -Reason '调用模型时服务失去响应。' -StepCount ($step - 1)
@@ -3366,6 +3670,27 @@ $target = [Math]::Min($targetByBudget, [Math]::Max($targetByShare, 1400))
     $rate = if ($res.seconds -gt 0) { $res.tokens / $res.seconds } else { 0 }
     Write-Host ("`r  [{0}] {1:N1}s · {2} tok · {3:N1} tok/s  " -f $step, $res.seconds, $res.tokens, $rate) -ForegroundColor DarkGray
 
+    # ---------- 语言漂移防护：说着说着串成俄语 ----------
+    # 4B 在中英混排的长上下文里偶尔会整段切成西里尔字母（实测用户看到「开始说俄语」）。
+    # 判据放得很保守：俄文字母 ≥ 12 个、且中文字符不到俄文的 1/3，才算漂移 ——
+    # 正常的中文答复里偶尔出现一个外来词不会触发。
+    # 触发后只做一件事：往历史里压一条「用中文重说」，下一步它会自己转回来；
+    # 不打断、不判失败，免得为了一个语言抖动把已经做好的活废掉。
+    if ($script:LangNudge -lt 2) {
+        $rawOut = [string]$res.content
+        if ($rawOut) {
+            $cyr = ([regex]::Matches($rawOut, '[\u0400-\u04FF]')).Count
+            $han = ([regex]::Matches($rawOut, '[\u4e00-\u9fa5]')).Count
+            if ($cyr -ge 12 -and $han -lt ($cyr / 3)) {
+                $script:LangNudge = [int]$script:LangNudge + 1
+                Write-Log ('  [语言漂移] 这一步输出里俄文字母 ' + $cyr + ' 个、中文 ' + $han + ' 个，提醒它用中文')
+                $history += @{ role = 'user'; content = (
+                    '注意：你刚才那段输出串成俄语了，用户看不懂。用简体中文重说一遍，' +
+                    '原来要做的动作照旧（该调工具就调工具，参数不用改）；答复也用中文。') }
+            }
+        }
+    }
+
     # ---------- 被 token 上限截断 ----------
     # 实测量能题：写 day_log.ps1 时 160 秒生成到 600 token 上限，
     # 工具调用 JSON 断在字符串中间 → 解析失败 → path 变成空 → 再瞎试两步就挂了。
@@ -3376,6 +3701,105 @@ $target = [Math]::Min($targetByBudget, [Math]::Max($targetByShare, 1400))
             '注意：上一条回复被「单步 token 上限」截断了，内容只写了一半（工具参数可能是残的）。' +
             '长内容别一次写完：先用 write_file 写前 20~30 行，再用 append_file 每次补 20~30 行，' +
             '分几次补完，最后读一下确认结尾完整。') }
+    }
+
+    # ---------- 围栏写文件：```powershell[logcheck.ps1] ----------
+    # 写长脚本时，把整段代码塞进工具调用的 JSON 参数里要转义换行，
+    # 4B 经常写到一半就崩（引号、换行、600 token 上限）。
+    # 所以允许它直接用代码围栏，框架就地落盘，这一步按「写文件」算。
+    $fenceOut = @()
+    $fenceHit = 0
+    $fenceFail = 0
+    $fencePaths = @()
+    $fenceToolName = ''
+    if ([string]$res.content) {
+        # 围栏头写法尽量宽容，别指望它会按规范写：
+        #   ① ```powershell[logcheck.ps1]      ← 标准
+        #   ② ```powershell logcheck.ps1        ← 空格代替方括号
+        #   ③ ```powershell                      ← 路径写在第一行注释里
+        $fenceRx = [regex]'(?s)```([A-Za-z0-9_+\-]*)[ \t]*(?:\[([^\]\r\n]{1,160})\]|([^\s`]{1,160}\.[A-Za-z0-9]{1,6}))?[ \t]*\r?\n(.*?)```'
+        foreach ($f in $fenceRx.Matches([string]$res.content)) {
+            if ($fenceHit -ge 4) { break }
+            $lang = $f.Groups[1].Value.ToLower()
+            $rel  = if ($f.Groups[2].Success) { $f.Groups[2].Value.Trim() }
+                    elseif ($f.Groups[3].Success) { $f.Groups[3].Value.Trim() }
+                    else { '' }
+            $body = $f.Groups[4].Value
+            # ③ 路径写在代码第一行注释里（# logcheck.ps1 / // x.py / REM x.bat）
+            if (-not $rel) {
+                $mHead = [regex]::Match($body, '^\s*(?:#|//|REM|rem)\s*([^\s:<>\|]{1,160}\.[A-Za-z0-9]{1,6})\s*\r?\n')
+                if ($mHead.Success) {
+                    $rel = $mHead.Groups[1].Value.Trim('*', ' ')
+                    $body = $body.Substring($mHead.Length)
+                }
+            }
+            if (-not $rel) { continue }
+            if ($rel -notmatch '\.') {
+                if ($lang -in @('powershell', 'ps1', 'pwsh')) { $rel += '.ps1' }
+                elseif ($lang -in @('python', 'py')) { $rel += '.py' }
+                elseif ($lang -in @('javascript', 'js')) { $rel += '.js' }
+            }
+            $fTool = if ($rel -match '\.ps1$') { 'write_script' } else { 'write_file' }
+            try {
+                $act = [pscustomobject]@{ tool = $fTool; path = $rel; content = $body }
+                $fo = [string](Invoke-AiTool -Action $act)
+                $fenceHit++
+                $fencePaths += $rel
+                if (-not $fenceToolName) { $fenceToolName = $fTool }
+                $fenceOut += ('[' + $rel + '] ' + $fo.Trim())
+                Write-Log ('  [围栏写文件] ' + $rel + '（' + $body.Length + ' 字，' + $fTool + '）')
+            } catch {
+                $fenceFail++
+                $fencePaths += $rel
+                if (-not $fenceToolName) { $fenceToolName = $fTool }
+                $fenceOut += ('[' + $rel + '] 写入失败：' + $_.Exception.Message)
+                Write-Log ('  [围栏写文件失败] ' + $rel + '：' + $_.Exception.Message)
+            }
+        }
+    }
+    # 围栏没写完整（模型被单步上限截断，结尾的 ``` 根本没出来）：
+    # 也先把已经吐出来的部分落盘，然后让它接着补 —— 总比整段丢掉强。
+    if ($fenceHit -eq 0 -and [string]$res.content) {
+        $mOpen = [regex]::Match([string]$res.content, '(?s)```([A-Za-z0-9_+\-]*)[ \t]*(?:\[([^\]\r\n]{1,160})\])?[ \t]*\r?\n(.+)$')
+        if ($mOpen.Success -and $mOpen.Groups[3].Value.Trim().Length -gt 40) {
+            $halfLang = $mOpen.Groups[1].Value.ToLower()
+            $halfRel = if ($mOpen.Groups[2].Success) { $mOpen.Groups[2].Value.Trim() } else { '' }
+            $halfBody = $mOpen.Groups[3].Value
+            if (-not $halfRel) {
+                $mH = [regex]::Match($halfBody, '^\s*(?:#|//|REM|rem)\s*([^\s:<>\|]{1,160}\.[A-Za-z0-9]{1,6})\s*\r?\n')
+                if ($mH.Success) { $halfRel = $mH.Groups[1].Value.Trim('*', ' '); $halfBody = $halfBody.Substring($mH.Length) }
+            }
+            if ($halfRel) {
+                $halfTool = if ($halfRel -match '\.ps1$') { 'write_script' } else { 'write_file' }
+                try {
+                    $act2 = [pscustomobject]@{ tool = $halfTool; path = $halfRel; content = $halfBody }
+                    $fo2 = [string](Invoke-AiTool -Action $act2)
+                    Write-Log ('  [围栏写文件·半截] ' + $halfRel + '（' + $halfBody.Length + ' 字，被截断）')
+                    $history += @{ role = 'user'; content = (
+                        '这次输出撞到单步上限，围栏没写完。已经把写出来的前半段落盘到 ' + $halfRel + '（' + $fo2.Trim() + '）。' +
+                        '下一步直接用 append_file 从这个文件末尾接着补剩下的行，不要重写整个文件；补完再 run_ps1 跑一遍。') }
+                    continue
+                } catch {
+                    Write-Log ('  [围栏写文件·半截失败] ' + $halfRel + '：' + $_.Exception.Message)
+                }
+            }
+        }
+    }
+
+    if ($fenceHit -gt 0) {
+        # 围栏写文件也要在步骤表里留痕：面板看得见，判分工具的 tool_used 也认得出
+        $fTools = @()
+        $state.steps += @{ n = $step; think = ''; tool = $fenceToolName; arg = ('围栏：' + ($fencePaths -join ', '))
+                           ok = $($fenceFail -eq 0); note = ($fenceOut[0]); raw = ''; obs = ($fenceOut -join "`n")
+                           sec = $res.seconds; tok = $res.tokens; fp2 = ''; diff = '' }
+        $ignoredNote = ''
+        if ($res.calls -and @($res.calls).Count -gt 0) {
+            $ignoredNote = '（本轮另外那个工具调用先不执行，下一轮再说）'
+        }
+        $history += @{ role = 'user'; content = (
+            '围栏写法已生效，文件当场写好了' + $ignoredNote + '：' + ($fenceOut -join '；') +
+            '。下一步：要验证就跑 run_ps1，然后把还没写的产物继续写完。') }
+        continue
     }
 
     # ---------- 没有工具调用 ----------
@@ -3732,6 +4156,26 @@ Add-SessionNote -Text $bcSay -Kind 'say'
             $answer = $script:PendingSpeech.Trim()
         }
         $answer = Repair-AnswerTail $answer
+        Write-Log ("  [答复] " + $answer.Trim().Length + " 字")
+
+        # ---- 收尾前查：任务要求「自测并确认某个结果」，答复里有没有这个结果 ----
+        # 只看题面里明写的「确认输出 15 / 确认结果是 15」这种，没提到数字的不查，避免误伤。
+        if ($script:verifyNudge -lt 1) {
+            $vm = [regex]::Match($TaskText, '(?:确认|验证|检查)(?:一下)?(?:输出|结果|打印)?\s*(?:是|为)?\s*([0-9]+(?:\.[0-9]+)?)')
+            if ($vm.Success) {
+                $wantNum = $vm.Groups[1].Value
+                $hasNum = @([regex]::Matches($answer, '[0-9]+(?:\.[0-9]+)?') | ForEach-Object { $_.Value }) -contains $wantNum
+                if (-not $hasNum) {
+                    $script:verifyNudge = 1
+                    Write-Log ("  [缺验证结果] 题目要确认 $wantNum，答复里没写")
+                    $history += @{ role = 'user'; content = (
+                        "题目要求跑完确认结果是 $wantNum，你这句答复里没给出这个结果。" +
+                        "如果已经跑过，把实际输出写进答复（例如「跑过，输出 $wantNum」）；" +
+                        "如果还没跑，先 run_ps1 跑一遍再说结论。别再重写脚本，只补这一句，然后 finish。") }
+                    continue
+                }
+            }
+        }
 
         # ---- 收尾前查：答案是不是啰嗦 ----
         # 只在「一句话就能答完的小活」上拦：任务本身短、只问一个点、没要求文档。
@@ -3744,10 +4188,14 @@ Add-SessionNote -Text $bcSay -Kind 'say'
         # 打回去之后模型反而不会答了，连着两次空转、最后被截断，答得更差。
         # 所以现在要求三件事同时成立：任务短（≤34 字）、只问一件事（没有「然后/再/分别」）、
         # 明确是一句话类的要求。
-        $oneShotAsk = ($TaskText.Trim().Length -le 34) -and
+        $oneShotAsk = (($TaskText.Trim().Length -le 34) -and
                       (-not ($TaskText -match '然后|，再|；再|分别|同时|两个|以及|并且')) -and
-                      ($TaskText -match '告诉我|一句话|写一句话|几行|多少|是谁|是什么|叫什么|哪个')
-        if ($oneShotAsk -and $script:lenNudge -lt 1 -and $answer.Trim().Length -gt 60) {
+                      ($TaskText -match '告诉我|一句话|写一句话|几行|多少|是谁|是什么|叫什么|哪个')) -or
+                      # 极短的任务（十几个字）本身就是一行活：「创建 a.txt 写入 hello」
+                      # 实测答案写了 63 字，白扣长度分
+                      ($TaskText.Trim().Length -le 20 -and
+                       -not ($TaskText -match '报告|总结|说明|列|详细|分析'))
+        if ($oneShotAsk -and $script:lenNudge -lt 1 -and $answer.Trim().Length -gt 40) {
             $script:lenNudge = 1
             Write-Log ("  [太啰嗦] 答案 " + $answer.Trim().Length + " 字，题目只要一句结论，打回让它压缩")
             $history += @{ role = 'user'; content = (
@@ -3828,10 +4276,12 @@ Add-SessionNote -Text $bcSay -Kind 'say'
         if ($wantFiles.Count -gt 0 -and -not $wroteSomething -and $script:fileNudge -lt 2) {
             $script:fileNudge = [int]$script:fileNudge + 1
             Write-Log ("  [没写文件] 任务点了 " + ($wantFiles -join ',') + "，但没有任何写文件的动作，打回重来")
+            $snap = Get-WsSnapshot
             $history += @{ role = 'user'; content = (
-                "任务要的是文件：" + ($wantFiles -join '、') + "。你到现在一个文件都没写，" +
-                "光在 answer 里说「内容为...」不算做完——那文件根本不存在。" +
-                "现在用 write_file 真的把它写出来，写完再 finish。") }
+                "任务要的是文件：" + ($wantFiles -join '、') + "。你到现在一个写文件的动作都没有。" +
+                "磁盘上现在实际只有：" + $snap + " —— 里面没有 " + ($wantFiles -join '、') + "。" +
+                "所以「已经写好了」这句不成立，别再这么说。" +
+                "下一步：长脚本用「```powershell[文件名]」围栏写（框架会落盘），短的用 write_file；写完再 finish。") }
             continue
         }
 
@@ -3850,6 +4300,7 @@ Add-SessionNote -Text $bcSay -Kind 'say'
             }
             $missingFiles = @()
             $misplaced = @()
+            $misPairs = @()
             foreach ($nf in $named) {
                 # 输入文件不查：任务里是「读 data/orders.jsonl」「从 a.txt 里…」这种，
                 # 它是素材，不是要交付的产物；查它只会逼模型去造一个假的输入文件。
@@ -3873,9 +4324,24 @@ Add-SessionNote -Text $bcSay -Kind 'say'
                     $shown = $hit.FullName
                     if ($shown.Length -gt $Workspace.Length) { $shown = $shown.Substring($Workspace.Length).TrimStart('\') }
                     $misplaced += ($nf + '（实际在 ' + $shown + '）')
+                    $misPairs += @{ want = $rel; from = $hit.FullName }
                 } else {
                     $missingFiles += $nf
                 }
+            }
+            # 两次打回还不动手 → 框架替它挪。任务要的就是「根目录的 paid.jsonl」，
+            # 内容已经写对了，只是位置错；替它挪过去等于把半成品收尾，不算改它的答案。
+            if ($misPairs.Count -gt 0 -and $script:missNudge -ge 1) {
+                foreach ($mp in $misPairs) {
+                    $to = Join-Path $Workspace $mp.want
+                    $toDir = Split-Path $to -Parent
+                    try {
+                        if ($toDir -and -not (Test-Path $toDir)) { New-Item -ItemType Directory -Force -Path $toDir | Out-Null }
+                        Move-Item -LiteralPath $mp.from -Destination $to -Force
+                        Write-Log ('  [自动挪位] ' + $mp.from + ' → ' + $mp.want)
+                    } catch { Write-Log ('  [自动挪位失败] ' + $_.Exception.Message) }
+                }
+                $misplaced = @()
             }
             if ($missingFiles.Count -gt 0 -or $misplaced.Count -gt 0) {
                 $script:missNudge = [int]$script:missNudge + 1
@@ -3883,12 +4349,55 @@ Add-SessionNote -Text $bcSay -Kind 'say'
                 if ($missingFiles.Count -gt 0) { $bits += ('还不存在：' + ($missingFiles -join '、')) }
                 if ($misplaced.Count -gt 0) { $bits += ('位置不对：' + ($misplaced -join '、')) }
                 Write-Log ('  [文件核对] ' + ($bits -join '；'))
+                $snap2 = Get-WsSnapshot
                 $history += @{ role = 'user'; content = (
                     '【文件核对】任务点名的文件还有问题 —— ' + ($bits -join '；') + '。' +
-                    '按任务说的路径真的把它做出来：路径逐字照抄，别自己加 data\ 之类的前缀；' +
-                    '写错位置的可以用 copy_path 挪到正确位置，挪完读一下确认。做完再 finish。' +
-                    '如果这个东西本来就该由别的脚本生成，就把那个脚本跑起来。') }
+                    '磁盘上现在实际只有：' + $snap2 + '。' +
+                    '位置不对的，**直接用 move_path 挪过去**：path 填它现在的位置（如 data\paid.jsonl），' +
+                    'command 填任务要的路径（如 paid.jsonl）。别重写内容、别建新目录、别再用 write_file 写一遍。' +
+                    '还不存在的，按任务说的路径真的做出来（路径逐字照抄，别自己加 data\ 前缀）。' +
+                    '如果这个东西本来就该由某个脚本生成，就把那个脚本跑起来。做完再 finish。') }
                 continue
+            }
+        }
+
+        # ---- 收尾前查：用 find /c 数出来的行数，和文件真实行数对得上吗 ----
+        # find /c 只按 CRLF 分行：纯 LF 换行的文件（git 写出来的、脚本用
+        # Set-Content 生成的）会被数成「1 行」。实测「数一下 data/inv.txt 有多少行」
+        # 明明有 5 行，find 报 1，模型照抄就成了错答案。
+        # 这里在收尾时按真实换行重算一遍，对不上就打回让它自己复核，
+        # 不直接把数字塞给它 —— 它得自己跑一次 read_file 才算数。
+        if ($script:countNudge -lt 1) {
+            $fc = @($state.steps | Where-Object {
+                [string]$_.tool -eq 'run_cmd' -and [string]$_.arg -match '(?i)find(\.exe)?\s'
+            }) | Select-Object -Last 1
+            if ($fc) {
+                $fm = [regex]::Match([string]$fc.arg, '([\w\-\.\\/]+\.(txt|csv|jsonl|json|md|log))')
+                if ($fm.Success) {
+                    $frel = $fm.Value -replace '/', '\'
+                    $fpath = Join-Path $Workspace $frel
+                    if (Test-Path -LiteralPath $fpath -PathType Leaf) {
+                        $realCount = 0
+                        try {
+                            $lines = [IO.File]::ReadAllLines($fpath)
+                            $realCount = @($lines).Count
+                            while ($realCount -gt 0 -and [string]$lines[$realCount - 1] -eq '') { $realCount-- }
+                        } catch { }
+                        if ($realCount -gt 0) {
+                            $saidNums = @([regex]::Matches($answer, '\d+') | ForEach-Object { [int]$_.Value })
+                            if ($saidNums.Count -gt 0 -and -not ($saidNums -contains $realCount)) {
+                                $script:countNudge = 1
+                                Write-Log ("  [行数不对] find /c 给出 " + ($saidNums -join ',') +
+                                           "，$frel 真实 $realCount 行，打回复核")
+                                $history += @{ role = 'user'; content = (
+                                    "你用 find /c 数的是 $frel，那个命令只按 CRLF 分行，" +
+                                    "纯 LF 的文件会被数成 1 行。这个文件真实的换行数是 $realCount。" +
+                                    "先用 read_file 打开 $frel 自己看一眼确认，再按真实数字 finish。") }
+                                continue
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -3960,7 +4469,7 @@ Add-SessionNote -Text $bcSay -Kind 'say'
         $msg = [string]$act.message
         if ([string]::IsNullOrWhiteSpace($msg)) { $msg = [string]$act.content }
         if ([string]::IsNullOrWhiteSpace($msg)) { $msg = [string]$act.text }
-        $msg = $msg.Trim()
+        $msg = Format-NoteText ($msg.Trim())
         if ($msg.Length -lt 2) {
             $obs = '（没写要说什么。把要对用户讲的进度写进 content）'
         } else {
@@ -3995,7 +4504,7 @@ Add-SessionNote -Text $bcSay -Kind 'say'
         continue
     }
     if ($toolName -eq 'say') {
-        $what = [string]$act.message
+        $what = Format-NoteText ([string]$act.message)
         if (-not $what) { $what = [string]$res.content }
         if ([string]::IsNullOrWhiteSpace($what)) { $what = '（模型没写问题，你想怎么办？）' }
 
@@ -4307,9 +4816,40 @@ Add-SessionNote -Text $bcSay -Kind 'say'
         if ($diffPath) { $diffSnap = Get-PanelFileText $diffPath }
     }
 
+    # ---- 同一文件刚写过就别重写 ----
+    # 实测 lv0：第 3 步写完 logcheck.ps1（911 tok），第 9 步又整段重写一遍（915 tok），
+    # 前后内容几乎一样 —— 一次生成就要 4 分钟，纯浪费，还会把 KV 缓存挤爆。
+    $dupWriteObs = ''
+    if ($toolName -in @('write_file', 'write_script')) {
+        $rp = [string]$act.path
+        $rlen = ([string]$act.content).Length
+        if ($rp -and $rlen -gt 0 -and $script:LastWriteLog) {
+            $prev = @($script:LastWriteLog | Where-Object { $_.path -eq $rp -and ($step - [int]$_.step) -le 3 })
+            if ($prev.Count -gt 0) {
+                $plen = [int]$prev[-1].len
+                $tol = [Math]::Max(40, [int]($plen * 0.15))
+                if ([Math]::Abs($rlen - $plen) -le $tol) {
+                    $dupWriteObs = ('（已跳过重写）这个文件刚在第 ' + $prev[-1].step + ' 步写过（' + $plen + ' 字），' +
+                                    '这次内容长度几乎一样，重写没有意义。要改就用 replace_in_file / multi_edit 只改那几行；' +
+                                    '要验证就跑 run_ps1；已经写完就直接往下走。')
+                    Write-Log ('  [重复写] 跳过重写 ' + $rp + '（上次 ' + $plen + ' 字 / 这次 ' + $rlen + ' 字）')
+                }
+            }
+        }
+    }
+
     try {
-        $obs = [string](Invoke-AiTool -Action $act)
-        if (-not $obs) { $obs = '（没有输出）' }
+        if ($dupWriteObs) {
+            $ok = $false
+            $obs = $dupWriteObs
+        } else {
+            $obs = [string](Invoke-AiTool -Action $act)
+            if (-not $obs) { $obs = '（没有输出）' }
+            if ($toolName -in @('write_file', 'write_script')) {
+                if (-not $script:LastWriteLog) { $script:LastWriteLog = @() }
+                $script:LastWriteLog += @{ path = [string]$act.path; len = ([string]$act.content).Length; step = $step }
+            }
+        }
     } catch {
         $ok = $false
         $obs = Format-ToolError -Tool $toolName -Arg ([string]$act.path) -Message $_.Exception.Message
@@ -4343,7 +4883,7 @@ Add-SessionNote -Text $bcSay -Kind 'say'
 
     $state.steps += @{ n = $step; think = $think; tool = $toolName; arg = $stepArg; ok = $ok
                        note = (($obs -split "`n")[0]); raw = $res.raw_calls; obs = $obs; sec = $res.seconds; tok = $res.tokens
-                       fp2 = [string]$act.command; diff = $stepDiff }
+                       fp2 = [string]$act.command; diff = $stepDiff; dup = [bool]$dupWriteObs }
 
     if ($ok -and $planList.Count -gt 0) { $planList = Set-PlanStepDone -Plan $planList }
 
@@ -4497,9 +5037,12 @@ Add-SessionNote -Text $bcSay -Kind 'say'
     # 这里按「写类工具 + 同一路径」单独计一次数，不看 command、不区分是
     # write_script 还是 write_file —— 反正都是在反复覆盖同一个文件。
     $writeTools = @('write_file', 'write_script', 'append_file', 'replace_in_file', 'multi_edit', 'set_line')
-    if ($toolName -in $writeTools -and $stepArg) {
+    # 被「重复写拦截」挡下来的那次不算写 —— 文件根本没动，账不能记在模型头上。
+    # 之前正是把这个跳过的也算进去，lv4 的「4 次写」里有 2 次其实是我拦的，
+    # 结果第 4 次就触发了强制收尾，19.8 分结束。
+    if ($toolName -in $writeTools -and $stepArg -and -not $dupWriteObs) {
         $prevWrites = @($state.steps | Select-Object -Last 8 | Where-Object {
-            ([string]$_.tool -in $writeTools) -and ([string]$_.arg -eq $stepArg)
+            ([string]$_.tool -in $writeTools) -and ([string]$_.arg -eq $stepArg) -and (-not [bool]$_.dup)
         })
         $writeCount = $prevWrites.Count
         # 最后一次写脚本如果已经跑通了（write_script 自带执行，ok=true），
@@ -4518,7 +5061,25 @@ Add-SessionNote -Text $bcSay -Kind 'say'
             $finished = $true
             break
         } elseif ($writeCount -ge 2) {
-            $history += @{ role = 'user'; content = ("你已经改过 $stepArg " + $writeCount + " 次了，每次结果都一样。别再用同样的写法重试 —— 先看清上次输出的错误在哪，或者直接 finish 说明卡在哪。") }
+            # 第 3 次写同一个文件：不再只是嘴上提醒。
+            # 4B 的典型死法是盲改 —— 它看不到脚本的真实报错，就换个写法再整段重写。
+            # 这里直接替它把刚落盘的脚本跑一遍，把输出塞进观察里，逼它对着报错改。
+            $ranOk = @($state.steps | Select-Object -Last 8 | Where-Object {
+                ([string]$_.tool -eq 'run_ps1') -and ([string]$_.arg -eq $stepArg) -and ([bool]$_.ok)
+            }).Count -gt 0
+            if (-not $ranOk -and $ok -and $stepArg -match '\.ps1$') {
+                try {
+                    Write-Log ("  [强制试跑] " + $stepArg + "（第 " + ($writeCount + 1) + " 次写之后）")
+                    $forceAct = [pscustomobject]@{ tool = 'run_ps1'; path = $stepArg; command = ''; content = '' }
+                    $runOut = [string](Invoke-AiTool -Action $forceAct)
+                    if ($runOut.Length -gt 1500) { $runOut = $runOut.Substring(0, 1500) + '…' }
+                    $obs = $obs + "`n`n【框架刚替你跑了一遍 $stepArg】`n" + $runOut +
+                           "`n上面就是真实报错。照它改那几行（replace_in_file），别再整段重写。"
+                } catch {
+                    Write-Log ("  [强制试跑失败] " + $_.Exception.Message)
+                }
+            }
+            $history += @{ role = 'user'; content = ("你已经改过 $stepArg " + $writeCount + " 次了。别再整段重写 —— 用 replace_in_file 只改报错那几行；改完立刻 run_ps1 看输出。") }
             Write-Log ("  [绕圈] $stepArg 第 " + ($writeCount + 1) + " 次写，已提醒")
         }
     }
@@ -4530,7 +5091,7 @@ Add-SessionNote -Text $bcSay -Kind 'say'
     $sameToolCount = 0
     if ($toolName -notin $metaTools) {
         $recentSame = @($state.steps | Select-Object -Last 6 | Where-Object {
-            ([string]$_.tool -eq $toolName) -and (([string]$_.arg + '|' + [string]$_.fp2) -eq $stepFp)
+            ([string]$_.tool -eq $toolName) -and (([string]$_.arg + '|' + [string]$_.fp2) -eq $stepFp) -and (-not [bool]$_.dup)
         })
         # steps 里已经包含当前这一步，减掉它才是「之前重复过几次」
         $sameToolCount = [Math]::Max(0, $recentSame.Count - 1)
@@ -4554,9 +5115,8 @@ Add-SessionNote -Text $bcSay -Kind 'say'
             } catch { }
             Write-Log '  [自愈] 同一动作第 3 次，先要求换方法，不直接收尾'
         } else {
-            $finalObs = ($obs -split "`n" | Where-Object { $_.Trim() } | Select-Object -First 8) -join '；'
             $state.status = 'done'
-            $state.answer = if ($finalObs) { $finalObs } else { '没能完成这个任务' }
+            $state.answer = Get-StuckAnswer $obs $stepArg
             $state.elapsed = $clock.Elapsed.TotalSeconds
             $state.summary = $state.answer
             Write-State $state
@@ -4582,9 +5142,8 @@ Add-SessionNote -Text $bcSay -Kind 'say'
         $allRead = $true
         foreach ($st0 in $lastFive) { if ($readOnlyTools -notcontains [string]$st0.tool) { $allRead = $false; break } }
         if ($allRead) {
-            $finalObs2 = ($obs -split "`n" | Where-Object { $_.Trim() } | Select-Object -First 8) -join '；'
             $state.status = 'done'
-            $state.answer = if ($finalObs2) { $finalObs2 } else { '没能完成这个任务' }
+            $state.answer = Get-StuckAnswer $obs $stepArg
             $state.elapsed = $clock.Elapsed.TotalSeconds
             $state.summary = $state.answer
             Write-State $state
@@ -4611,9 +5170,8 @@ Add-SessionNote -Text $bcSay -Kind 'say'
 
         # 提示了还不收，就用已经拿到的结果替它收尾——再耗下去只是白烧步数
         if ($repeatCount -ge 3) {
-            $finalObs = ($obs -split "`n" | Where-Object { $_.Trim() } | Select-Object -First 6) -join '；'
             $state.status = 'done'
-            $state.answer = "查到的结果：$finalObs"
+            $state.answer = Get-StuckAnswer $obs $stepArg
             $state.elapsed = $clock.Elapsed.TotalSeconds
             $state.summary = $state.answer
             Write-State $state

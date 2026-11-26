@@ -18,8 +18,10 @@ param(
     [switch]$KeepTuning,         # 不备份/不还原提示词
     [string]$BankPath = '',
     [switch]$DryRun,             # 只打印题目和评分规则，不真的跑
-    [string]$TaskId = ''         # 只跑指定题号（逗号分隔），方便改完一题定点回归
+    [string]$TaskId = '',        # 只跑指定题号（逗号分隔），方便改完一题定点回归
+    [int]$Reasoning = -1         # 强制推理档位 0..4（-1 = 不指定，沿用 agent 默认）
 )
+$script:ForceReasoning = $Reasoning
 
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
@@ -260,7 +262,11 @@ function Invoke-AgentOnce {
     $env:NAFX_ROOM = ''   # 留给将来；目前 agent 用 config 里的 workspace
     $sw = [Diagnostics.Stopwatch]::StartNew()
     try {
-        $out = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $AgentDir 'agent.ps1') -Task $TaskText -MaxSteps $MaxSteps 2>&1
+        # 推理档位：只有外层显式指定了（-Reasoning 0..4）才往下传，
+        # 默认 -1 表示沿用 agent 自己的默认档，保证老用法完全不变。
+        $agentArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $AgentDir 'agent.ps1'), '-Task', $TaskText, '-MaxSteps', "$MaxSteps")
+        if ($script:ForceReasoning -ge 0) { $agentArgs += @('-Reasoning', "$script:ForceReasoning") }
+        $out = & powershell.exe @agentArgs 2>&1
     } catch {
         $out = @("agent 启动失败：$($_.Exception.Message)")
     }
@@ -309,6 +315,11 @@ function Invoke-Check {
     if ($state -and $state.steps) { $steps = @($state.steps) }
     $answer = ''
     if ($state) { $answer = [string]$state.answer + ' ' + [string]$state.summary }
+    # 只算 answer：summary 是面板上的过程摘要，跟「答复多长」不是一回事。
+    # 实测「创建 done.txt 写入 ok」答复本身 31 字（完全达标），
+    # 拼上 summary 变成 63 字，白扣长度分。
+    $answerOnly = ''
+    if ($state) { $answerOnly = [string]$state.answer }
     $status = if ($state) { [string]$state.status } else { 'nostate' }
 
     switch ($rule) {
@@ -336,6 +347,17 @@ function Invoke-Check {
             $re = [string]$Check[2]
             $okv = [regex]::IsMatch($c, $re)
             return @{ ok = $okv; why = "内容里没有匹配 /$re/" }
+        }
+        'file_not_matches' {
+            # 反过来：内容里不许出现某个正则。
+            # 例：paid.jsonl 里不许有 id=2 那条（unpaid），但模型可能写成 "id": 2，
+            # 用正则把空格差异吃掉，判分才稳。
+            $p = Join-Path $Room ([string]$Check[1])
+            if (-not (Test-Path $p)) { return @{ ok = $false; why = "文件 $($Check[1]) 不存在" } }
+            $c = [IO.File]::ReadAllText($p)
+            $re = [string]$Check[2]
+            $okv = -not [regex]::IsMatch($c, $re)
+            return @{ ok = $okv; why = "内容里出现了不该有的 /$re/" }
         }
         'glob_exists' {
             # 项目题不规定文件名/目录名，按文件名模式找，避免把“自主”判成“必须叫 xxx”。
@@ -473,8 +495,12 @@ function Invoke-Check {
         'answer_len' {
             $mn = [int]$Check[1]
             $mx = [int]$Check[2]
-            $l = $answer.Trim().Length
-            return @{ ok = ($l -ge $mn -and $l -le $mx); why = "答复长度 $l，要求 $mn~$mx" }
+            # 上限看「答复本身」—— 这是用户真正读到的字数；
+            # 下限看「答复 + 摘要」—— 摘要里也承载了结论（实测 net-search-basic
+            # 答复就俩字「韩江」，全靠摘要补足内容，按下限卡答复本身会误杀）。
+            $l = $answerOnly.Trim().Length
+            $lo = $answer.Trim().Length
+            return @{ ok = ($lo -ge $mn -and $l -le $mx); why = "答复长度 $l（含摘要 $lo），要求 $mn~$mx" }
         }
         'steps_le' {
             $n = [int]$Check[1]
@@ -482,8 +508,35 @@ function Invoke-Check {
             return @{ ok = ($real -le $n); why = "用了 $real 步，超过 $n 步" }
         }
         'no_hallucinated_number' {
-            # 写进文件的内容里，数字必须在任务的观察里出现过
+            # 写进文件的内容里，数字必须在任务的观察里出现过 —— 或者能从观察里的数字
+            # 简单算出来。实测「sales.csv 三行金额 10/25/65，总和写 100」被判成
+            # 凭空编数字：100 确实没在观察里出现过，但它是三行之和。
+            # 所以允许：单个数字原样出现、同一份观察里所有数字之和、两两之和。
             $pool = ($steps | ForEach-Object { [string]$_.obs }) -join ' '
+            # 把观察里出现过的全部数字攒起来，算「任意几个加起来」的和。
+            # 只算「同一份观察里所有数字之和」不够：这题的观察里还有「共 4 行 / 41 字符」，
+            # 全加起来是 145，而正确答案 100 是其中 10+25+65 三个 —— 组合和才盖得住。
+            $allNums = @($steps | ForEach-Object {
+                [regex]::Matches([string]$_.obs, '\d+') | ForEach-Object { [long]$_.Value }
+            } | Select-Object -Unique)
+            if ($allNums.Count -le 14) {
+                $n = $allNums.Count
+                for ($mask = 0; $mask -lt (1 -shl $n); $mask++) {
+                    $sum = 0L; $cnt = 0
+                    for ($b = 0; $b -lt $n; $b++) {
+                        if ($mask -band (1 -shl $b)) { $sum += $allNums[$b]; $cnt++ }
+                    }
+                    if ($cnt -ge 2) { $pool += " $sum" }
+                }
+            } else {
+                foreach ($ob in $steps) {
+                    $nums = @([regex]::Matches([string]$ob.obs, '\d+') | ForEach-Object { [long]$_.Value })
+                    if ($nums.Count -gt 1) {
+                        $sum = 0; foreach ($x in $nums) { $sum += $x }
+                        $pool += " $sum"
+                    }
+                }
+            }
             $bad = @()
             foreach ($s in $steps) {
                 if ($s.tool -notin @('write_file', 'append_file')) { continue }
@@ -677,18 +730,23 @@ Say ''
 Say '  Nafx · 自动化训练器' 'Cyan'
 Rule '═' 'DarkCyan'
 Say ("  题库    {0}" -f $BankPath) 'DarkGray'
-Say ("  模型    {0}" -f ([IO.Path]::GetFileName($ModelPath) + ' · ' + $Cfg.modelLabel)) 'DarkGray'
+Say ("  模型    {0}" -f $(if ($Cfg.modelMode -eq 'api') { "接口 · $($Cfg.apiModel)" } else { ([IO.Path]::GetFileName($ModelPath) + ' · ' + $Cfg.modelLabel) })) 'DarkGray'
 Say ("  目标    {0} 分 / 最多 {1} 轮" -f $Target, $Rounds) 'DarkGray'
 Say ("  提示词  {0}" -f $PromptPath) 'DarkGray'
 Say ("  你的工作区（不参与训练）  {0}" -f $script:RealWorkspace) 'DarkGray'
 Say ("  训练沙箱                {0}" -f $script:SandboxPath) 'DarkGray'
 Rule '─'
 
-if (-not (Test-ModelService)) {
-    Say "  模型服务没起来（$Api）。先双击 Nafx.bat 或运行 launcher.ps1。" 'Red'
-    exit 1
+if ($Cfg.modelMode -eq 'api') {
+    # 接口模式不需要本地 llama-server，别去探 8080，直接开跑
+    Say ("  接口模式  {0}" -f $Cfg.apiBase) 'Green'
+} else {
+    if (-not (Test-ModelService)) {
+        Say "  模型服务没起来（$Api）。先双击 Nafx.bat 或运行 launcher.ps1。" 'Red'
+        exit 1
+    }
+    Say '  模型服务 在线' 'Green'
 }
-Say '  模型服务 在线' 'Green'
 
 $allTasks = @(Get-Bank)
 if ($Category) { $allTasks = @($allTasks | Where-Object { $_.category -eq $Category }) }

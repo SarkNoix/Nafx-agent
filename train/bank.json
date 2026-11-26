@@ -1411,17 +1411,17 @@
         {
           "w": 20,
           "spec": [
-            "file_contains",
+            "file_matches",
             "paid.jsonl",
-            "\"id\":1"
+            "\"id\"\\s*:\\s*1"
           ]
         },
         {
           "w": 20,
           "spec": [
-            "file_contains",
+            "file_matches",
             "paid.jsonl",
-            "\"id\":3"
+            "\"id\"\\s*:\\s*3"
           ]
         },
         {
@@ -1434,9 +1434,9 @@
         {
           "w": 10,
           "spec": [
-            "file_not_contains",
+            "file_not_matches",
             "paid.jsonl",
-            "\"id\":2"
+            "\"id\"\\s*:\\s*2"
           ]
         }
       ],
@@ -2069,6 +2069,123 @@
           ]
         }
       ]
+    },
+    {
+      "id": "probe-logtool",
+      "category": "项目",
+      "weight": 3,
+      "task": "data 目录里是上周的几份日志。写 logcheck.ps1，用 -Path 指定目录，只扫 .log 文件（别的扩展名不算），统计每个文件的行数、ERROR 条数，并给出总行数、ERROR 总数、ERROR 最多的那个文件。脚本跑起来要把结果写成 report.md：一张表列出每个文件的行数和 ERROR 数，表下再写三行汇总。写完必须真跑一次 -Path data，确认 report.md 里的数字对。脚本超过 20 行就分两次写：先写主干，再 append_file 补剩下的。",
+      "maxSteps": 16,
+      "mode": "work",
+      "setup": {
+        "files": [
+          {
+            "path": "data/app.log",
+            "content": "2026-11-20 09:00:01 INFO  app started\n2026-11-20 09:00:05 ERROR failed to open config.json\n2026-11-20 09:00:09 WARN retrying open config.json\n2026-11-20 09:00:15 ERROR config.json not found\n2026-11-20 09:00:20 INFO  fallback to defaults\n2026-11-20 09:00:31 INFO  ready"
+          },
+          {
+            "path": "data/README.md",
+            "content": "旧说明：本目录放日志。\n"
+          },
+          {
+            "path": "data/db.log",
+            "content": "2026-11-20 10:00:01 ERROR connection refused 127.0.0.1:5432\n2026-11-20 10:00:04 ERROR connection refused 127.0.0.1:5432\n2026-11-20 10:00:07 ERROR give up after 3 tries\n2026-11-20 10:00:08 WARN falling back to cache\n2026-11-20 10:00:12 INFO  cache hit 82%"
+          },
+          {
+            "path": "data/web.log",
+            "content": "2026-11-20 11:00:01 INFO  listening on 8080\n2026-11-20 11:00:05 WARN slow request /api/report 3.2s\n2026-11-20 11:00:09 WARN slow request /api/report 4.8s\n2026-11-20 11:00:14 INFO  health ok"
+          },
+          {
+            "path": "data/notes.txt",
+            "content": "这个文件是干扰项，不该被统计。\n里面写了很多 ERROR 和 WARN 字样。\n"
+          }
+        ],
+        "dirs": []
+      },
+      "checks": [
+        {
+          "w": 8,
+          "spec": [
+            "file_exists",
+            "logcheck.ps1"
+          ]
+        },
+        {
+          "w": 8,
+          "spec": [
+            "file_contains",
+            "logcheck.ps1",
+            "param"
+          ]
+        },
+        {
+          "w": 5,
+          "spec": [
+            "file_contains",
+            "logcheck.ps1",
+            "-Path"
+          ]
+        },
+        {
+          "w": 12,
+          "spec": [
+            "last_run_ok"
+          ]
+        },
+        {
+          "w": 15,
+          "spec": [
+            "file_exists",
+            "report.md"
+          ]
+        },
+        {
+          "w": 12,
+          "spec": [
+            "file_matches",
+            "report.md",
+            "15"
+          ]
+        },
+        {
+          "w": 12,
+          "spec": [
+            "file_matches",
+            "report.md",
+            "5"
+          ]
+        },
+        {
+          "w": 12,
+          "spec": [
+            "file_matches",
+            "report.md",
+            "db\\.log"
+          ]
+        },
+        {
+          "w": 8,
+          "spec": [
+            "tool_used",
+            "write_script,run_ps1"
+          ]
+        },
+        {
+          "w": 4,
+          "spec": [
+            "status_is",
+            "done"
+          ]
+        },
+        {
+          "w": 10,
+          "spec": [
+            "answer_match",
+            "15|5|db"
+          ]
+        }
+      ],
+      "forbid": []
     }
   ]
 }
