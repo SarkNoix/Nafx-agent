@@ -10,6 +10,7 @@ $script:AiRoot = if ($PSScriptRoot) {
 }
 $script:MaxOutput = 3000      # 返回给模型的最长观察字符数
 $script:RunTimeout = 30       # 运行 bat/ps1 的超时秒数
+$script:SysInfoCache = $null  # sys_info 的 60 秒缓存（CIM 查询很慢）
 $script:AiAllowAnyPath = $false   # 允许任意绝对路径（默认关，只许 workspace）
 $script:AiAllowDesktop = $false   # 额外允许桌面（自主模式打开）
 # 本文件所在目录（find 手册用）
@@ -441,6 +442,154 @@ function Get-RelDisplay {
     return $FullPath
 }
 
+function Get-SizeText {
+    # 全仓唯一的大小显示出口。
+    # 以前 find_files / file_info / zip_list / download_file / list_dir 各写了一份，
+    # 其中 list_dir 那份把 31 字节的文件显示成 "0 KB"，模型看到 0 会以为文件是空的。
+    param([double]$Bytes)
+    if ($Bytes -lt 1024) { return ([int]$Bytes).ToString() + ' B' }
+    if ($Bytes -lt 1MB) { return ([math]::Round($Bytes/1KB,1)).ToString() + ' KB' }
+    if ($Bytes -lt 1GB) { return ([math]::Round($Bytes/1MB,1)).ToString() + ' MB' }
+    return ([math]::Round($Bytes/1GB,2)).ToString() + ' GB'
+}
+
+function Read-AiFileTextSafe {
+    # 统一读取入口：先按 UTF-8 严格解码，失败再按 GBK（936）。
+    # 原来直接用 [IO.File]::ReadAllText，GBK 存的日志/CSV 读进来全是
+    # "锘? 娴嬭瘯" 这种乱码，模型照着乱码改，越改越错。
+    param([string]$FullPath)
+    $bytes = [IO.File]::ReadAllBytes($FullPath)
+    if ($bytes.Length -eq 0) { return '' }
+    $strict = New-Object System.Text.UTF8Encoding($false, $true)
+    $text = $null
+    try { $text = $strict.GetString($bytes) }
+    catch { $text = [Text.Encoding]::GetEncoding(936).GetString($bytes) }
+    # 去 BOM：严格解码会把 UTF-8 BOM 变成 U+FEFF 留在开头
+    if ($text.Length -gt 0 -and $text[0] -eq [char]0xFEFF) { $text = $text.Substring(1) }
+    return $text
+}
+
+function Read-AiFileLinesSafe {
+    # 按行读，编码走 Read-AiFileTextSafe。
+    # 末尾的换行不产生一个空行（ReadAllLines 也是这个行为），保持和原来一致。
+    param([string]$FullPath)
+    $text = Read-AiFileTextSafe $FullPath
+    if ([string]::IsNullOrEmpty($text)) { return @() }
+    $text = $text.TrimEnd("`r", "`n")
+    if ([string]::IsNullOrEmpty($text)) { return @() }
+    return @($text -split "`r?`n")
+}
+
+function Remove-OldBackup {
+    # 每次覆盖/删除都留一份备份，救得回来，但会一直堆。
+    # 只保留最近 200 份，超出的按时间删掉最旧的。
+    param([int]$Keep = 200)
+    try {
+        $bkDir = Join-Path $script:AiRoot '.backup'
+        if (-not (Test-Path -LiteralPath $bkDir)) { return }
+        $items = @(Get-ChildItem -LiteralPath $bkDir -File -ErrorAction SilentlyContinue |
+                   Sort-Object LastWriteTime -Descending)
+        if ($items.Count -le $Keep) { return }
+        $items[$Keep..($items.Count - 1)] | ForEach-Object {
+            Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue
+        }
+    } catch { }
+}
+
+function Split-CsvLine {
+    # 按逗号切一行 CSV，但引号里的逗号不算分隔符。
+    # 原来 csv_preview 直接 -split ','，遇到 "甲,某某" 这种带逗号的字段
+    # 就会把列数算多，模型照这个列数去写解析脚本，后面全错。
+    param([string]$Line)
+    $out = New-Object System.Collections.ArrayList
+    $sb = New-Object System.Text.StringBuilder
+    $inQ = $false
+    for ($i = 0; $i -lt $Line.Length; $i++) {
+        $c = $Line[$i]
+        if ($inQ) {
+            if ($c -eq '"') {
+                if ($i + 1 -lt $Line.Length -and $Line[$i + 1] -eq '"') { [void]$sb.Append('"'); $i++ }
+                else { $inQ = $false }
+            } else { [void]$sb.Append($c) }
+        } else {
+            if ($c -eq '"') { $inQ = $true }
+            elseif ($c -eq ',') { [void]$out.Add($sb.ToString()); [void]$sb.Clear() | Out-Null }
+            else { [void]$sb.Append($c) }
+        }
+    }
+    [void]$out.Add($sb.ToString())
+    return @($out)
+}
+
+function New-EncodedCommandLine {
+    # 把一段 PowerShell 代码用 -EncodedCommand 传给子进程（base64 编码，UTF-16）。
+    # 原来的写法是 -Command "……" 再手工把引号转义成 \"，
+    # 命令里只要出现一个引号、一个反斜杠路径、一个 & 符号就可能拼坏：
+    # 实测 run_ps 里写 Write-Output "a""b" 时，子进程收到的字符串已经被截断，
+    # 报的是「字符串缺少终止符」，模型看不出真实原因，只会一遍遍重试。
+    # base64 之后整段代码原样送达，编码问题也一并解决。
+    param([string]$ScriptText)
+    $b64 = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($ScriptText))
+    return '-NoProfile -ExecutionPolicy Bypass -EncodedCommand ' + $b64
+}
+
+function Split-ArgLine {
+    # 把一行参数拆成数组，但引号里的空格不算分隔。
+    # 原来 write_script 用 -split '\s+'：command="-entry "今天 开会"" 会被拆成
+    # -entry / "今天 / 开会" 三段，脚本收到的参数根本对不上，
+    # 输出里全是 Null，模型却以为脚本已经跑通了。
+    param([string]$Line)
+    $out = New-Object System.Collections.ArrayList
+    if ([string]::IsNullOrWhiteSpace($Line)) { return @() }
+    $sb = New-Object System.Text.StringBuilder
+    $inQ = $false
+    foreach ($c in $Line.ToCharArray()) {
+        if ($c -eq '"') { $inQ = -not $inQ; continue }
+        if (-not $inQ -and ($c -eq ' ' -or $c -eq "`t")) {
+            if ($sb.Length -gt 0) { [void]$out.Add($sb.ToString()); [void]$sb.Clear() | Out-Null }
+            continue
+        }
+        [void]$sb.Append($c)
+    }
+    if ($sb.Length -gt 0) { [void]$out.Add($sb.ToString()) }
+    return @($out)
+}
+
+function Clear-ChildNoise {
+    # 子进程的 stderr 里混着 CLIXML 封装的进度条。
+    # 实测第一次跑 run_ps / run_ps1 时，PowerShell 会往 stderr 写一条
+    # 「正在准备首次使用模块」的 progress 记录（包在 #< CLIXML ... </Objs> 里），
+    # 而 Invoke-ChildScript 的规则是「stderr 非空就算失败」，
+    # 于是退出码 0、输出也正确的一次调用被标成「错误：」，
+    # 模型看到错误就重跑，同一件事耗掉好几个回合。
+    # 这里只丢掉「不含 Error 记录」的 CLIXML 噪声，真错误原样保留。
+    param([string]$Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return '' }
+    if ($Text -notmatch '#< CLIXML') { return $Text }
+    # 含真错误：把 CLIXML 里的错误文本抽出来，去掉 XML 外壳和 _xHHHH_ 转义。
+    # 原始形态长这样：<S S="Error">Get-Item : 找不到路径“...”_x000D__x000A_</S>
+    # 不解的话模型看到的是一串 XML + 转义符，既费 token 又看不懂到底错在哪。
+    if ($Text -match 'S="Error"') {
+        $ms = [regex]::Matches($Text, '(?s)<S S="Error">(.*?)</S>')
+        if ($ms.Count -gt 0) {
+            $decoded = New-Object System.Collections.ArrayList
+            foreach ($m in $ms) {
+                $seg = $m.Groups[1].Value
+                $seg = [regex]::Replace($seg, '_x([0-9A-Fa-f]{4})_', {
+                    param($mm)
+                    try { return [string][char][Convert]::ToInt32($mm.Groups[1].Value, 16) } catch { return '' }
+                })
+                $seg = $seg.Trim()
+                if ($seg) { [void]$decoded.Add($seg) }
+            }
+            if ($decoded.Count -gt 0) { return ($decoded -join "`n") }
+        }
+        return $Text
+    }
+    $plain = [regex]::Replace($Text, '(?s)#< CLIXML.*?</Objs>', '').Trim()
+    return $plain
+}
+
 function Trim-AiText {
     param([string]$Text)
     if ([string]::IsNullOrEmpty($Text)) { return '' }
@@ -586,6 +735,7 @@ function Invoke-AiTool {
                         if (-not (Test-Path $bkDir)) { New-Item -ItemType Directory -Force -Path $bkDir | Out-Null }
                         $bkName = (Split-Path $full -Leaf) + '.' + (Get-Date -Format 'yyyyMMdd_HHmmss')
                         Copy-Item -LiteralPath $full -Destination (Join-Path $bkDir $bkName) -Force -ErrorAction SilentlyContinue
+                        Remove-OldBackup
                     } catch { }
                 }
                 # 不要把命令报错当成结果写进文件
@@ -662,8 +812,12 @@ function Invoke-AiTool {
                 # 统一走 Get-AiFileEncoding：对 .ps1 会保留 BOM，
                 # 否则往脚本里追加一行就把它的 BOM 丢了，下次运行中文全乱
                 $enc = Get-AiFileEncoding $full
-                $old = [IO.File]::ReadAllText($full, [Text.Encoding]::UTF8)
-                [IO.File]::WriteAllText($full, $old + "`r`n" + $content, $enc)
+                $old = Read-AiFileTextSafe $full
+                # 原文件已经以换行结尾时不能再补一个，否则每追加一次就多一个空行。
+                # 写 JSONL/CSV 时这会直接变成脏数据（一条空记录），
+                # 而模型看到「已追加」完全不会怀疑。
+                $sep = if ($old.Length -eq 0 -or $old.EndsWith("`n")) { '' } else { "`r`n" }
+                [IO.File]::WriteAllText($full, $old + $sep + $content, $enc)
                 return "已追加到 $(Get-RelDisplay $full)"
             }
 
@@ -680,7 +834,7 @@ function Invoke-AiTool {
                     throw 'command 里要填行号，比如 4'
                 }
                 $newText = [string]$Action.content
-                $lines = @([IO.File]::ReadAllLines($full))
+                $lines = @(Read-AiFileLinesSafe $full)
                 if ($n -gt $lines.Count + 1) {
                     throw "文件现在只有 $($lines.Count) 行，不能直接写到第 $n 行。要追加就写第 $($lines.Count + 1) 行。"
                 }
@@ -765,8 +919,7 @@ function Invoke-AiTool {
                 } else {
                     [void]$sb.AppendLine("找到 $($files.Count) 个匹配 $pat 的文件：")
                     foreach ($x in ($files | Select-Object -First 30)) {
-                        $sz = if ($x.Length -ge 1MB) { [math]::Round($x.Length/1MB,1).ToString() + ' MB' } elseif ($x.Length -ge 1KB) { [math]::Round($x.Length/1KB,1).ToString() + ' KB' } else { $x.Length.ToString() + ' B' }
-                        [void]$sb.AppendLine(("  " + (Get-RelDisplay $x.FullName) + "  " + $sz))
+                        [void]$sb.AppendLine(("  " + (Get-RelDisplay $x.FullName) + "  " + (Get-SizeText $x.Length)))
                     }
                     if ($files.Count -gt 30) { [void]$sb.AppendLine("  ...还有 $($files.Count - 30) 个") }
                 }
@@ -781,9 +934,9 @@ function Invoke-AiTool {
                 if ($it.PSIsContainer) {
                     $fs = @(Get-ChildItem -LiteralPath $full -File -Recurse -ErrorAction SilentlyContinue)
                     $sum = ($fs | Measure-Object Length -Sum).Sum
-                    return "$($Action.path) 是目录：$($fs.Count) 个文件，共 $([math]::Round($sum/1KB,1)) KB"
+                    return "$($Action.path) 是目录：$($fs.Count) 个文件，共 $(Get-SizeText $sum)"
                 }
-                $sz = if ($it.Length -ge 1MB) { [math]::Round($it.Length/1MB,1).ToString() + ' MB' } elseif ($it.Length -ge 1KB) { [math]::Round($it.Length/1KB,1).ToString() + ' KB' } else { $it.Length.ToString() + ' B' }
+                $sz = Get-SizeText $it.Length
                 $ro = if ($it.IsReadOnly) { '，只读' } else { '' }
                 $type = Get-FileTypeInfo $full
                 return "$($Action.path)：$sz，改于 $($it.LastWriteTime.ToString('yyyy-MM-dd HH:mm'))$ro`n类型：$($type.Kind)`n编辑：$($type.Edit)`n运行：$($type.Run)"
@@ -861,10 +1014,14 @@ function Invoke-AiTool {
                 $ctx = 0
                 $tryN = 0
                 if ([int]::TryParse([string]$Action.content, [ref]$tryN) -and $tryN -gt 0) { $ctx = [Math]::Min($tryN, 5) }
-                $all = @([IO.File]::ReadAllLines($full))
+                $all = @(Read-AiFileLinesSafe $full)
                 $hitIdx = @()
                 for ($i = 0; $i -lt $all.Count; $i++) {
-                    if ($all[$i] -like "*$kw*") { $hitIdx += $i }
+                    # 用 IndexOf 按字面找，不走 -like。
+                    # -like 会把关键词里的 [ ] * ? 当成通配符：
+                    # 找 "arr[0]" 时永远匹配不上，模型就以为文件里没有这行，
+                    # 接着一遍遍换关键词重搜。
+                    if ($all[$i].IndexOf($kw, [StringComparison]::OrdinalIgnoreCase) -ge 0) { $hitIdx += $i }
                 }
                 if ($hitIdx.Count -eq 0) { return "文件里没有 $kw（共 $($all.Count) 行）" }
                 $sb = New-Object System.Text.StringBuilder
@@ -914,7 +1071,7 @@ function Invoke-AiTool {
                 $cnt = 40
                 $tryCnt = 0
                 if ([int]::TryParse([string]$Action.content, [ref]$tryCnt) -and $tryCnt -gt 0) { $cnt = [Math]::Min($tryCnt, 200) }
-                $all = @([IO.File]::ReadAllLines($full))
+                $all = @(Read-AiFileLinesSafe $full)
                 if ($from -gt $all.Count) { throw "文件只有 $($all.Count) 行，第 $from 行不存在" }
                 $to = [Math]::Min($all.Count, $from + $cnt - 1)
                 $sb = New-Object System.Text.StringBuilder
@@ -934,6 +1091,12 @@ function Invoke-AiTool {
                 $what = [string]$Action.command
                 if ([string]::IsNullOrWhiteSpace($what)) { $what = 'all' }
                 $what = $what.Trim().ToLowerInvariant()
+                # 一次 CIM 查询在这台机器上要 ~300ms，模型同一轮里常连着问两三次。
+                # 60 秒内同样的查询直接给缓存，硬件又不会在一分钟内变。
+                if ($script:SysInfoCache -and $script:SysInfoCache.What -eq $what -and
+                    ((Get-Date) - $script:SysInfoCache.At).TotalSeconds -lt 60) {
+                    return $script:SysInfoCache.Text
+                }
                 $sb = New-Object System.Text.StringBuilder
                 if ($what -in @('all','cpu')) {
                     $cpu = Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue
@@ -958,7 +1121,9 @@ function Invoke-AiTool {
                     }
                 }
                 if ($sb.Length -eq 0) { return "不认识 $what，能填 cpu / mem / disk / all" }
-                return $sb.ToString().TrimEnd()
+                $res = $sb.ToString().TrimEnd()
+                $script:SysInfoCache = @{ What = $what; At = (Get-Date); Text = $res }
+                return $res
             }
 
             'clipboard' {
@@ -1283,8 +1448,7 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                     foreach ($e in $items) {
                         if ($shown -ge 40) { break }
                         $shown++
-                        $sz = if ($e.Length -ge 1MB) { [math]::Round($e.Length/1MB,1).ToString() + ' MB' } elseif ($e.Length -ge 1KB) { [math]::Round($e.Length/1KB,1).ToString() + ' KB' } else { $e.Length.ToString() + ' B' }
-                        [void]$sb.AppendLine(("  " + $sz.PadLeft(9) + "  " + $e.FullName))
+                        [void]$sb.AppendLine(("  " + (Get-SizeText $e.Length).PadLeft(9) + "  " + $e.FullName))
                     }
                     if ($items.Count -gt 40) { [void]$sb.AppendLine("  ...还有 $($items.Count - 40) 项") }
                     return $sb.ToString()
@@ -1299,8 +1463,8 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                 $b = Resolve-AiPath $bRel
                 if (-not (Test-Path $a)) { throw "不存在：$($Action.path)" }
                 if (-not (Test-Path $b)) { throw "不存在：$bRel" }
-                $la = @([IO.File]::ReadAllLines($a))
-                $lb = @([IO.File]::ReadAllLines($b))
+                $la = @(Read-AiFileLinesSafe $a)
+                $lb = @(Read-AiFileLinesSafe $b)
                 if ($la.Count -eq $lb.Count) {
                     $same = $true
                     for ($i = 0; $i -lt $la.Count; $i++) { if ($la[$i] -cne $lb[$i]) { $same = $false; break } }
@@ -1357,7 +1521,8 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                 if ([int]::TryParse([string]$Action.command, [ref]$tryN) -and $tryN -gt 0) { $n = [Math]::Min($tryN, 50) }
                 $rows = @(Get-Content -LiteralPath $full -Encoding UTF8 -TotalCount ($n + 1))
                 if ($rows.Count -eq 0) { return "文件是空的" }
-                $cols = @($rows[0] -split ',')
+                $cols = @(Split-CsvLine ([string]$rows[0]))
+                $cols = @($cols | ForEach-Object { $_.Trim() })
                 $sb = New-Object System.Text.StringBuilder
                 [void]$sb.AppendLine("$(Get-RelDisplay $full) 共 $($cols.Count) 列：")
                 [void]$sb.AppendLine(("  列名  " + ($cols -join ' | ')))
@@ -1383,7 +1548,7 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                 if ([int]::TryParse($q, [ref]$off)) {
                     $target = $now.AddDays($off)
                     $dir = if ($off -gt 0) { "$off 天后" } elseif ($off -lt 0) { "$([Math]::Abs($off)) 天前" } else { '今天' }
-                    return ("$dir 是 " + $target.ToString('yyyy年M月d日') + " " + $target.ToString('dddd'))
+                    return ($dir + " " + $target.ToString('yyyy年M月d日') + " " + $target.ToString('dddd'))
                 }
                 $dt = [datetime]::MinValue
                 if ([datetime]::TryParse($q, [ref]$dt)) {
@@ -1412,7 +1577,7 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                 $ProgressPreference = 'SilentlyContinue'
                 Invoke-WebRequest -Uri $url -OutFile $dst -UseBasicParsing -TimeoutSec 120
                 $sz = (Get-Item -LiteralPath $dst).Length
-                $szTxt = if ($sz -ge 1MB) { [math]::Round($sz/1MB,1).ToString() + ' MB' } elseif ($sz -ge 1KB) { [math]::Round($sz/1KB,1).ToString() + ' KB' } else { $sz.ToString() + ' B' }
+                $szTxt = Get-SizeText $sz
                 return "已下载到 $(Get-RelDisplay $dst)（$szTxt）"
             }
 
@@ -1618,10 +1783,20 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                     $codeLine = ''
                     $lines = @($content -split "`r?`n")
                     if ($ln -ge 1 -and $ln -le $lines.Count) { $codeLine = $lines[$ln - 1] }
-                    throw ("脚本语法错误（第 $ln 行）：$($pe.Message)`n出错的行：$codeLine`n" +
-                           '改法：换行用 “`n”（反引号 n，写在双引号里），不要写 \n（那是 C 的写法，会打出字面反斜杠）；' +
-                           '如果错在拼表格，把 foreach 从字符串里拿出来 —— 先 $rows = foreach (...) { ... }，再 ($rows -join "`n")；' +
-                           '多行文本改用 here-string（@ 引号 换行 内容 换行 引号 @）。改完再 write_script。')
+                    # 语法错了也落盘。
+                    # 原来这里直接 throw，文件根本不写 —— 模型看到「语法错误」，
+                    # 只能整段重写一遍 1000+ token 的脚本，接口上一路被截断，
+                    # 最后 0 分收场（ledger 那道题就是这么死的）。
+                    # 先把内容写下去，再告诉它错在哪一行，下一步用 file_editor 改那几行就行。
+                    try {
+                        $dir0 = Split-Path -Parent $full
+                        if ($dir0 -and -not (Test-Path -LiteralPath $dir0)) { New-Item -ItemType Directory -Path $dir0 -Force | Out-Null }
+                        [IO.File]::WriteAllText($full, $content, (New-Object Text.UTF8Encoding($true)))
+                        $writtenTip = '已写入 ' + (Get-RelDisplay $full) + '（内容保留了，不用重写整个文件）。'
+                    } catch { $writtenTip = '' }
+                    throw ("脚本语法错误（第 $ln 行）：$($pe.Message)`n出错的行：$codeLine`n" + $writtenTip +
+                           "`n改法：用 file_editor 只改这一行/这几行；别整段重写。" +
+                           '换行要写 “`n”（反引号 n，放在双引号里），不是 \n；多行文本用 here-string。')
                 }
                 # 一个 .ps1 只能有一个 param 块。模型常写两行 param，
                 # 第二行会被当成命令执行，报 "param 不是 cmdlet"。
@@ -1647,7 +1822,7 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                             '下一步用 run_ps1 带真实参数跑，例如 command="-Entry "今天开会"" 或 command="-a 12 -b 3"。')
                 }
                 $argList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $full)
-                if (-not [string]::IsNullOrWhiteSpace($runArgs)) { $argList += ($runArgs -split '\s+') }
+                if (-not [string]::IsNullOrWhiteSpace($runArgs)) { $argList += @(Split-ArgLine $runArgs) }
                 $sw = [Diagnostics.Stopwatch]::StartNew()
                 # 必须先把当前目录切到 workspace 再跑。
                 # 子进程继承父进程的 cwd，不切的话脚本里的相对路径全找不到
@@ -1791,7 +1966,7 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                 if (-not (Test-Path $full)) { throw "文件不存在：$($Action.path)" }
                 $edits = @($Action.edits)
                 if ($edits.Count -eq 0) { throw 'edits 不能为空，至少给一组 find/replace' }
-                $text = [IO.File]::ReadAllText($full)
+                $text = Read-AiFileTextSafe $full
                 $done = 0
                 $miss = New-Object System.Collections.ArrayList
                 foreach ($ed in $edits) {
@@ -1825,7 +2000,7 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                 if (-not (Test-Path $full)) { throw "文件不存在：$($Action.path)" }
                 $find = [string]$Action.find
                 if ([string]::IsNullOrEmpty($find)) { throw 'find 不能为空' }
-                $text = [IO.File]::ReadAllText($full)
+                $text = Read-AiFileTextSafe $full
                 $idx = $text.IndexOf($find, [StringComparison]::Ordinal)
                 if ($idx -lt 0) { throw "文件里没有找到：$find" }
                 $newText = $text.Substring(0, $idx) + [string]$Action.replace + $text.Substring($idx + $find.Length)
@@ -1846,7 +2021,6 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                 $fsz = 0
                 try { $fsz = (Get-Item -LiteralPath $full).Length } catch { }
                 if ($fsz -gt 524288) {
-                    $fmb = [math]::Round($fsz / 1KB)
                     # 只读前 8 行就够示意了。
                     # 注意别用 ReadBlock 的返回值 —— 那是「读了多少个字符」的数字，
                     # 不是内容（第一版就把它当内容返回了，模型看到的开头是 "800"）。
@@ -1859,15 +2033,20 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                     } catch { } finally { $sr.Close() }
                     $headStr = ($headLines -join "`n")
                     if ($headStr.Length -gt 550) { $headStr = $headStr.Substring(0,550) }
-                    $linesNote = "$fmb KB"
+                    $linesNote = Get-SizeText $fsz
                     return ("（这是个 $linesNote 的大文件，只给你看开头 8 行）`n--- 开头 ---`n" + $headStr +
                             "`n`n大文件别硬读：找关键词用 grep_file，看行数用 run_cmd find /c /v `"`"，" +
                             "要处理就用 write_script 写脚本，别整个读进来。")
                 }
-                $text = [IO.File]::ReadAllText($full)
-                # 顺带给出统计，模型不用自己数
-                $nonEmpty = @($text -split "`r?`n" | Where-Object { $_.Trim() -ne '' }).Count
-                $stat = "（共 $nonEmpty 行非空内容，$($text.Length) 字符）"
+                $text = Read-AiFileTextSafe $full
+                # 顺带给出统计，模型不用自己数。
+                # 原来写的是「共 N 行非空内容」，但只统计了非空行，
+                # 模型拿这个数字去 set_line/read_lines 时就对不上真实行号。
+                $totalLines = 0
+                if (-not [string]::IsNullOrEmpty($text)) {
+                    $totalLines = @($text.TrimEnd("`r", "`n") -split "`r?`n").Count
+                }
+                $stat = "（共 $totalLines 行，$($text.Length) 字符）"
 
                 # 大文件不全塞给模型：超过 800 字符只给开头，剩下的教它怎么看
                 $limit = 550
@@ -1898,7 +2077,7 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                 $dirCount  = @($items | Where-Object { $_.PSIsContainer }).Count
                 $lines = $items | ForEach-Object {
                     if ($_.PSIsContainer) { "[目录] $($_.Name)/" }
-                    else { "[文件] $($_.Name)  $([math]::Round($_.Length/1KB,1)) KB" }
+                    else { "[文件] $($_.Name)  $(Get-SizeText $_.Length)" }
                 }
                 # 直接把统计结论写出来：4B 自己数容易错，也容易反复查
                 $summary = "`n`n（共 $fileCount 个文件、$dirCount 个目录）"
@@ -1911,8 +2090,28 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                 if (-not (Test-Path $full)) { throw "路径不存在：$($Action.path)" }
                 $rootFull = [IO.Path]::GetFullPath($script:AiRoot).TrimEnd('\')
                 if ($full -eq $rootFull) { throw '不允许删除 workspace 根目录' }
+                # 删除前先在 .backup 里留一份，删错了还能捞回来。
+                # 大的目录不复制（可能上 GB），只删不备份，并在结果里说明。
+                $bkNote = ''
+                try {
+                    $itm = Get-Item -LiteralPath $full
+                    $sizeSum = if ($itm.PSIsContainer) {
+                        (Get-ChildItem -LiteralPath $full -File -Recurse -ErrorAction SilentlyContinue |
+                         Measure-Object Length -Sum).Sum
+                    } else { $itm.Length }
+                    if ($sizeSum -lt 200MB) {
+                        $bkDir = Join-Path $script:AiRoot '.backup'
+                        if (-not (Test-Path -LiteralPath $bkDir)) { New-Item -ItemType Directory -Force -Path $bkDir | Out-Null }
+                        $bkName = $itm.Name + '.' + (Get-Date -Format 'yyyyMMdd_HHmmss') + '.del'
+                        Copy-Item -LiteralPath $full -Destination (Join-Path $bkDir $bkName) -Recurse -Force -ErrorAction Stop
+                        Remove-OldBackup
+                        $bkNote = '（已备份到 .backup\' + $bkName + '）'
+                    } else {
+                        $bkNote = '（体积 ' + (Get-SizeText $sizeSum) + '，超过 200MB 不备份）'
+                    }
+                } catch { }
                 Remove-Item -LiteralPath $full -Recurse -Force
-                return "已删除 $(Get-RelDisplay $full)"
+                return "已删除 $(Get-RelDisplay $full)$bkNote"
             }
 
             'run_ps1' {
@@ -1997,9 +2196,10 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                 # 子进程固定用 UTF-8 输出（含错误流），否则中文会按 GBK 解成乱码
                 $inner = '[Console]::OutputEncoding=[Text.Encoding]::UTF8; ' +
                          '$OutputEncoding=[Text.Encoding]::UTF8; ' +
+                         '$ProgressPreference=''SilentlyContinue''; ' +
                          '& ''' + $full + ''''
                 if (-not [string]::IsNullOrWhiteSpace($extra)) { $inner += " $extra" }
-                $cmdLine = '-NoProfile -ExecutionPolicy Bypass -Command "' + $inner + '"'
+                $cmdLine = New-EncodedCommandLine $inner
                 $r = Invoke-ChildScript -FilePath 'powershell.exe' -CommandLine $cmdLine -Label "run_ps1 $($Action.path)"
                 # 跑出来是空的也要提醒，别让模型把「没输出」当「做对了」
                 $rs = [string]$r
@@ -2272,9 +2472,10 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                 # 多行命令包成一行跑（分号连接），并强制 UTF-8 输出
                 $inner = '[Console]::OutputEncoding=[Text.Encoding]::UTF8; ' +
                          '$OutputEncoding=[Text.Encoding]::UTF8; ' +
+                         '$ProgressPreference=''SilentlyContinue''; ' +
                          '$ErrorActionPreference=''Continue''; ' +
                          $cmd
-                $cmdLine = '-NoProfile -ExecutionPolicy Bypass -Command "' + ($inner -replace '"','\"') + '"'
+                $cmdLine = New-EncodedCommandLine $inner
                 $lbl = 'run_ps ' + $cmd.Substring(0, [Math]::Min(40, $cmd.Length))
                 return Invoke-ChildScript -FilePath 'powershell.exe' -CommandLine $cmdLine `
                     -Enc ([Text.Encoding]::UTF8) -Label $lbl
@@ -2868,6 +3069,7 @@ function Invoke-ChildScript {
     $err = ''
     try { $out = $outTask.Result } catch { }
     try { $err = $errTask.Result } catch { }
+    $err = Clear-ChildNoise $err
     $exitCode = $p.ExitCode
 
     # PowerShell 的非终止错误不会改退出码，这里靠特征识别，避免“出错还当成功”
