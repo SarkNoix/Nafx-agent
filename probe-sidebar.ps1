@@ -129,67 +129,71 @@ Start-Sleep -Seconds 3
 # ------------------------------------------------------------
 $probe = @'
 (function(){
-  var out = { steps: [] };
-  var b = document.querySelector('.side-block');
-  if (!b) return JSON.stringify({ err: 'no side-block' });
-  var h = b.querySelector('h3');
-  var kid = null;
-  for (var j = 0; j < b.children.length; j++){ if (b.children[j].tagName.toLowerCase() !== 'h3'){ kid = b.children[j]; break; } }
+  var out = { found: {}, sizes: [] };
 
-  function snap(tag){
-    var cs = kid ? getComputedStyle(kid) : null;
-    return {
-      step: tag,
-      closed: b.classList.contains('closed'),
-      blockH: b.offsetHeight,
-      kidH: kid ? kid.offsetHeight : -1,
-      inlineMaxH: kid ? (kid.style.maxHeight || '(none)') : '',
-      cssMaxH: cs ? cs.maxHeight : '',
-      opacity: cs ? cs.opacity : '',
-      titleVisible: h ? h.offsetHeight > 0 : false
-    };
+  // 1. 建一个临时气泡，塞进各种 markdown，看渲染结果
+  var host = document.createElement('div');
+  host.className = 'msg assistant';
+  host.id = '__probe_host';
+  host.style.cssText = 'position:fixed;left:-9999px;top:0;width:700px';
+  var wrap = document.createElement('div'); wrap.className = 'wrap';
+  var bub = document.createElement('div'); bub.className = 'bubble';
+  wrap.appendChild(bub); host.appendChild(wrap);
+  document.body.appendChild(host);
+
+  // 用页面自己的渲染函数（如果找得到）
+  var md = null;
+  var names = ['fmtMsg'];
+  for (var i = 0; i < names.length; i++){
+    try { if (typeof window[names[i]] === 'function') { md = window[names[i]]; out.found.fn = names[i]; break; } } catch(e){}
   }
 
-  out.steps.push(snap('初始'));
+  var sample = "## 大标题\n### 三级标题\n正文一行普通文字。\n\n- 列表项一\n- 列表项二\n\n**加粗** 和 `代码`";
 
-  // 如果当前是展开的，先收起，再展开
-  if (!b.classList.contains('closed')){
-    h.click();
-    out.steps.push(snap('点了收起（立即）'));
+  if (md){
+    try { bub.innerHTML = md(sample); } catch(e){ out.found.err = String(e); bub.textContent = sample; }
+  } else {
+    bub.textContent = sample;
   }
 
-  // 等 400ms 让过渡结束
-  return new Promise(function(resolve){
-    setTimeout(function(){
-      out.steps.push(snap('400ms 后'));
-      // 再点一次展开
-      h.click();
-      out.steps.push(snap('点了展开（立即）'));
-      setTimeout(function(){
-        out.steps.push(snap('又 400ms 后'));
-        resolve(JSON.stringify(out));
-      }, 400);
-    }, 400);
-  });
+  // 2. 量每种元素的字号
+  var probe = [['h2','2级标题'],['h3','3级标题'],['h4','4级标题'],['h5','5级标题'],
+               ['.md-h','md-h'],['p','正文'],['li','列表'],['strong','加粗'],['code','行内代码']];
+  for (var j = 0; j < probe.length; j++){
+    var el = bub.querySelector(probe[j][0]);
+    if (!el) { out.sizes.push({ it: probe[j][1], sel: probe[j][0], size: '(无此元素)' }); continue; }
+    var cs = getComputedStyle(el);
+    out.sizes.push({
+      it: probe[j][1],
+      sel: probe[j][0],
+      size: cs.fontSize,
+      weight: cs.fontWeight,
+      color: cs.color
+    });
+  }
+
+  // 3. 气泡本身字号
+  var bcs = getComputedStyle(bub);
+  out.bubbleFont = bcs.fontSize;
+
+  host.remove();
+  return JSON.stringify(out);
 })()
 '@
 
 $res = Eval-Js -Expr $probe
 Write-Host ''
-Write-Host '  ============ 折叠/展开实测 ============' -ForegroundColor Cyan
+Write-Host '  ============ 消息渲染实测 ============' -ForegroundColor Cyan
 if (-not $res -or -not $res.result -or -not $res.result.result.value) {
     Write-Host '  没拿到结果' -ForegroundColor Red
-    if ($res) { Write-Host ('  raw: ' + ($res | ConvertTo-Json -Depth 4 -Compress)) -ForegroundColor DarkGray }
+    if ($res) { Write-Host ('  raw: ' + (($res | ConvertTo-Json -Depth 5 -Compress)).Substring(0,[Math]::Min(300,($res | ConvertTo-Json -Depth 5 -Compress).Length))) -ForegroundColor DarkGray }
 } else {
     $data = $res.result.result.value | ConvertFrom-Json
-    foreach ($s in $data.steps) {
-        $mark = if ($s.closed) { '[收起]' } else { '[展开]' }
-        Write-Host ('  ' + $mark + ' ' + $s.step) -ForegroundColor White
-        Write-Host ('      卡片高=' + $s.blockH + '  子元素高=' + $s.kidH + '  行内maxH=' + $s.inlineMaxH) -ForegroundColor DarkGray
-        Write-Host ('      CSS maxH=' + $s.cssMaxH + '  opacity=' + $s.opacity + '  标题在=' + $s.titleVisible) -ForegroundColor DarkGray
-        if (-not $s.closed -and [int]$s.kidH -le 0) {
-            Write-Host '      >>> 展开状态但内容高度为 0！' -ForegroundColor Red
-        }
+    Write-Host ('  找到渲染函数: ' + $(if ($data.found.fn) { $data.found.fn } else { '(没找到，用纯文本测)' })) -ForegroundColor Yellow
+    Write-Host ('  气泡基础字号: ' + $data.bubbleFont) -ForegroundColor Yellow
+    Write-Host ''
+    foreach ($s in $data.sizes) {
+        Write-Host ('  ' + $s.it.PadRight(10) + $s.sel.PadRight(10) + $s.size.PadRight(9) + 'w=' + $s.weight) -ForegroundColor $(if ($s.size -match '无此元素') { 'DarkGray' } else { 'White' })
     }
 }
 Write-Host ''Write-Host '  ============ 完 ============' -ForegroundColor Cyan

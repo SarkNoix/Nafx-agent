@@ -137,6 +137,8 @@
         "或者直接查字段（自动给求和/平均/最值）：skill(json_query -Path data\\x.jsonl -Pattern amount)",
         "算日期（几天后是几号、还有几天）：date_calc(21) 或 date_calc(2026-12-25) —— 别用 run_cmd 硬算",
     "按某字段分组计数（每个客户各有几笔）：run_ps1 写十来行就够 —— $g=@{}; Get-Content data\\orders.jsonl | % { $o=$_|ConvertFrom-Json; $g[$o.customer]++ }; $g.GetEnumerator() | % { \"$($_.Key): $($_.Value)\" } | Set-Content report.txt",
+    "分组计数更短的一条（直接出「名字: 数量」）：Get-Content data\\orders.jsonl | % { ($_ | ConvertFrom-Json).customer } | Group-Object | % { \"$($_.Name): $($_.Count)\" } | Set-Content report.txt",
+    "逐行解析 jsonl 要先按行切：foreach ($ln in (Get-Content data\\x.jsonl)) { $o = $ln | ConvertFrom-Json; ... } —— 把整份文件一次性 ConvertFrom-Json 会报 Invalid JSON primitive",
     "按字段挑行（只要 status=paid 的行）：别手工抄 JSON，用 run_cmd(findstr /i \"paid\" data\\orders.jsonl) 之后原样落进文件；或者 run_ps1 的 Get-Content 过滤后 Set-Content，原行不变"
       ],
       "forbid": [
@@ -310,6 +312,9 @@
         "set_line",
         "diff_files",
         "write_file",
+        "write_script",
+        "run_ps1",
+        "run_cmd",
         "note",
         "finish",
         "file_editor",
@@ -359,14 +364,20 @@
         },
         {
           "n": 4,
-          "do": "finish 说明改了什么",
-          "need": "答案里说清改了哪处"
+          "do": "改的是能跑的脚本（.ps1/.bat），改完必须真跑一遍：run_ps1 看输出和退出码",
+          "need": "命令真的跑过，输出正常、没有报错"
+        },
+        {
+          "n": 5,
+          "do": "finish 说明改了什么，并把跑出来的结果带上一句",
+          "need": "答案里说清改了哪处、跑出来是什么"
         }
       ],
       "cheatsheet": [
         "局部替换：replace_in_file(path=\"a.txt\", find=\"old\", replace=\"new\")",
         "确认原文：read_file(path=\"a.txt\")",
         "末尾追加：append_file(path=\"a.txt\", content=\"...\")",
+        "脚本改完先跑再看：run_ps1(path=\"broken.ps1\") —— 报错行号就在输出里，照着改，改完再跑一次",
         "很多文件一起替换：skill(replace_text -Path data -Find 旧词 -Replace 新词)"
       ],
       "forbid": [

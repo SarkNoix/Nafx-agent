@@ -1699,7 +1699,7 @@ function Invoke-Model {
     # 于是「参数解析失败 → 空转 → failed」—— 看着像模型烂，其实是额度给小了。
     # 接口不需要为速度省 token，按档位给足。
     if ($script:IsApiMode -and $maxTok -ge 200) {
-        $apiFloor = if ($Reasoning -ge 4) { 8000 } elseif ($Reasoning -ge 3) { 6000 } else { 4000 }
+        $apiFloor = 1200
         if ($maxTok -lt $apiFloor) { $maxTok = $apiFloor }
     }
     if ($Reasoning -eq 4 -and -not $script:IsApiMode) { $maxTok = 1500 }
@@ -2923,7 +2923,7 @@ if ($reasonBody) {
     if ($script:IsApiMode) {
         $reasonBody = $reasonBody.Replace('这台机器上下文只有六千', ('这台机器上下文有 ' + [int]([double]$Cfg.apiContext / 1000) + 'K'))
         if ($Reasoning -ge 4) {
-            $reasonBody = $reasonBody.Replace('单步输出上限 1500 token，够写 4~5 块', '单步输出上限 8000 token，够一次写完一个完整脚本')
+            $reasonBody = $reasonBody.Replace('单步输出上限 1500 token，够写 4~5 块', '单步输出上限 1200 token，够写 4~5 块；写完就调 finish 或继续下一步，别硬撑到被截断')
         }
     }
     $sysFull = $sysFull + "`n`n## 推理力度：$($ReasoningNames[$Reasoning])`n`n" + $reasonBody
@@ -3186,6 +3186,7 @@ $script:CtxExpanded = 0
 $script:ToolsTrimmedOnce = $false
 # 语言漂移（中文任务答成俄语）的打回次数。最多 2 次。
 $script:LangNudge = 0
+$script:TokBoost = 1   # 接口模式：连续被截断时放大下一步输出额度
 $planList    = @()
 $lastToolKey = ''
 $repeatCount = 0
@@ -3283,8 +3284,12 @@ for ($step = 1; $step -le $MaxSteps; $step++) {
         # 接口模式按档位给足额度：思考 token 也算在里面，
         # 1200 写一段 multi_edit 就撞上限，后半截参数被切掉 → 空转 → failed。
         if ($script:IsApiMode) {
-            $apiFloor0 = if ($Reasoning -ge 4) { 8000 } elseif ($Reasoning -ge 3) { 6000 } else { 4000 }
+            $apiFloor0 = 1200
             if ($mt0 -lt $apiFloor0) { $mt0 = $apiFloor0 }
+            # 上一步被截断过就翻倍给额度（最多 4800）。
+            # 固定值试过了：1200 写长脚本必被切；3000/8000 又让它长篇乱写。
+            # 跟着「刚才切没切」走，才既有空间又不惯着。
+            if ($script:TokBoost -gt 1) { $mt0 = [Math]::Min(4800, [int]($mt0 * $script:TokBoost)) }
         }
     }
 
@@ -3643,8 +3648,8 @@ $target = [Math]::Min($targetByBudget, [Math]::Max($targetByShare, 1400))
 
         # 接口模式撞到单步上限：不是模型笨，是额度给小了。
         # 同一条请求（历史一字不改）直接翻倍重发一次，别让它拿着半截参数去瞎试。
-        if ($res.truncated -and $script:IsApiMode) {
-            $mt2 = [Math]::Min(8000, [Math]::Max($mt0 * 2, 4000))
+        if ($res.truncated -and $script:IsApiMode -and $mt0 -ge 200) {
+            $mt2 = [Math]::Min(2400, [Math]::Max([int]($mt0 * 1.5), 1500))
             if ($mt2 -gt $mt0) {
                 Write-Log ("  [补额度] 撞到 {0} token 上限，按 {1} 重发这一步" -f $mt0, $mt2)
                 $res = Invoke-Model -Messages $history -ToolsJson $toolsJson -ForceTool:($noToolCount -gt 0) -MaxTokens $mt2
@@ -3726,11 +3731,16 @@ $target = [Math]::Min($targetByBudget, [Math]::Max($targetByShare, 1400))
     # 模型自己看不出「我只写了一半」，所以必须由框架告诉它，并给可执行的分块写法。
     if ($res.truncated) {
         Write-Log '  [被截断] 这次生成撞到单步 token 上限，内容可能只写了一半'
+        if ($script:IsApiMode) {
+            $script:TokBoost = [Math]::Min(4, [Math]::Max(2, $script:TokBoost * 2))
+            Write-Log ("  [加额度] 下一步输出额度放大 {0} 倍（最多 4800）" -f $script:TokBoost)
+        }
         $history += @{ role = 'user'; content = (
             '注意：上一条回复被「单步 token 上限」截断了，内容只写了一半（工具参数可能是残的）。' +
             '长内容别一次写完：先用 write_file 写前 20~30 行，再用 append_file 每次补 20~30 行，' +
             '分几次补完，最后读一下确认结尾完整。') }
     }
+    elseif ($script:IsApiMode) { $script:TokBoost = 1 }
 
     # ---------- 围栏写文件：```powershell[logcheck.ps1] ----------
     # 写长脚本时，把整段代码塞进工具调用的 JSON 参数里要转义换行，
@@ -3891,6 +3901,23 @@ $target = [Math]::Min($targetByBudget, [Math]::Max($targetByShare, 1400))
                 if (([string]$state.steps[$si].obs).Trim()) { $hasObs = $true; break }
             }
             if ($hasObs) {
+                # 模型只说话不动手，但活其实早干完了 —— 这不是失败。
+                # 实测脏数据账本题：脚本、data.json、两个报表、自测都跑过了，
+                # 最后它把结论写成一段话、没调 finish，框架判「模型只说话不动手」，
+                # 于是 90.9 分里那 10 分（答复没匹配 SELFTEST）白丢，状态还是 failed。
+                # 用户要的本来就是这段话，直接收下。
+                $sayTxt = ([string]$res.content).Trim()
+                if ($sayTxt.Length -ge 80 -and -not $res.truncated -and $state.steps.Count -ge 3) {
+                    $state.status = 'done'
+                    $state.answer = $sayTxt
+                    $state.summary = '做完了（结论写在回复里，模型没调 finish，框架直接收下）'
+                    $state.elapsed = $clock.Elapsed.TotalSeconds
+                    Write-State $state
+                    Write-Log '  [收下答复] 模型用文字给了结论，直接按完成收尾'
+                    Write-Closing -State $state -Status 'done' -Summary $state.summary -StepCount $step
+                    $finished = $true
+                    break
+                }
                 Close-WithResult -State $state -Reason "连续 $noToolCount 次不调工具" `
                     -FailStatus 'failed' -FailAnswer '出错了：模型只说话不动手。' -StepCount $step
                 $finished = $true
