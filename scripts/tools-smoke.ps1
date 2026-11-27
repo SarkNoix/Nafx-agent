@@ -88,6 +88,13 @@ T 'read_lines_big'  @{ tool='read_lines'; path='big.log'; command='69995'; conte
 T 'grep_big'        @{ tool='grep_file'; path='big.log'; command='line 6999 '; content='1' }
 T 'file_info_dir'   @{ tool='file_info'; path='.' }
 
+# ---------- 目录内搜内容 / 二进制 / 误把目录当文件 ----------
+T 'grep_dir'        @{ tool='grep_file'; path='.'; command='L2'; content='1'; find='*.txt' }
+T 'read_as_dir'     @{ tool='read_file'; path='sub' }
+$png = Join-Path $tmp 'x.png'
+[IO.File]::WriteAllBytes($png, [byte[]](0x89,0x50,0x4E,0x47,0x0D,0x0A,0x1A,0x0A,0x00,0x01,0x02))
+T 'read_png'        @{ tool='read_file'; path='x.png' }
+
 # ---------- 断言 ----------
 $fail = @()
 function Need([string]$name, [string]$cond, [string]$desc) {
@@ -120,6 +127,10 @@ Need 'read_lines_big' '-match ''大文件流式读取'''                    '大
 Need 'grep_big'       '-match ''找到 1 处''                          '流式 grep 命中数要对'
 Need 'grep_big'       '-match ''> 69999: line 69999'''              '流式 grep 要标对行号'
 Need 'file_info_dir'  '-match ''个文件''                             '目录体积统计要能跑完'
+Need 'grep_dir'       '-match ''a.txt''                             '目录模式能跨文件搜'
+Need 'grep_dir'       '-match ''> ''                                '目录模式要标行号'
+Need 'read_as_dir'    '-match ''是目录，不是文件''                   '把目录当文件读要给明确提示'
+Need 'read_png'       '-match ''PNG 图片''                          '二进制文件不该当文本读'
 
 $linesAfter = (Get-Content -LiteralPath (Join-Path $tmp 'a.txt')).Count
 if ($linesAfter -ne 6) { $fail += "[append_file] 结尾换行导致多空行：应为 6 行，实际 $linesAfter" }

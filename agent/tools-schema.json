@@ -722,7 +722,7 @@
     "type": "function",
     "function": {
       "name": "find_files",
-      "description": "按文件名或通配符找文件（如 *.txt）。找\"哪些文件叫这个名\"用它。",
+      "description": "按文件名或通配符找文件（如 *.txt），递归整个目录。找\"哪些文件叫这个名\"用它；要找内容里的字，用 grep_file 把 path 指向目录。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -813,7 +813,7 @@
     "type": "function",
     "function": {
       "name": "grep_file",
-      "description": "在文件里搜关键词，只返回匹配的行。找\"某段文字在哪\"用它，别整个读进来。",
+      "description": "在文件里搜关键词，只返回匹配的行。path 给目录时跨文件递归搜（可配 find=\"*.ps1\" 缩扩展名），按「文件 → 行号」列出。找\"某段文字在哪\"用它，别整个读进来。",
       "parameters": {
         "type": "object",
         "properties": {

@@ -530,7 +530,7 @@ function New-EncodedCommandLine {
     # base64 之后整段代码原样送达，编码问题也一并解决。
     param([string]$ScriptText)
     $b64 = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($ScriptText))
-    return '-NoProfile -ExecutionPolicy Bypass -EncodedCommand ' + $b64
+    return '-NoProfile -NoLogo -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ' + $b64
 }
 
 function Split-ArgLine {
@@ -681,6 +681,148 @@ function Trim-AiText {
     return $Text.Substring(0, $headLen) +
            "`n...[中间省略 $omitted 字符，共 $($Text.Length) 字符；末尾保留]...`n" +
            $Text.Substring($Text.Length - $tailLen)
+}
+
+# ----------------------------------------------
+#  通用快路径：几个高频操作不再走 cmdlet 造对象
+# ----------------------------------------------
+
+function Get-AiFilesFast {
+    # 找文件不再用 Get-ChildItem -Recurse。
+    # 实测同一个 1122 文件的仓库：Get-ChildItem 304ms，.NET 枚举 10ms —— 差 30 倍。
+    # Get-ChildItem 会为每个文件造 FileInfo 对象、走 Provider 管道；
+    # 这里只要「路径 + 名字匹配」，用栈自己走，单个目录没权限也不中断。
+    param([string]$RootPath, [string]$Pattern = '*', [string[]]$SkipDir = @('.git', 'node_modules', '__pycache__'))
+
+    $opts = [System.Management.Automation.WildcardOptions]::IgnoreCase
+    $wc = New-Object System.Management.Automation.WildcardPattern($Pattern, $opts)
+    $list = New-Object System.Collections.ArrayList
+    $stack = New-Object System.Collections.Stack
+    $stack.Push($RootPath)
+    while ($stack.Count -gt 0) {
+        $d = [string]$stack.Pop()
+        try {
+            foreach ($f in [IO.Directory]::EnumerateFiles($d)) {
+                if ($wc.IsMatch([IO.Path]::GetFileName($f))) { [void]$list.Add($f) }
+            }
+        } catch { }
+        try {
+            foreach ($s in [IO.Directory]::EnumerateDirectories($d)) {
+                $leaf = [IO.Path]::GetFileName($s)
+                if ($SkipDir -contains $leaf) { continue }
+                $stack.Push($s)
+            }
+        } catch { }
+    }
+    return $list
+}
+
+function Test-AiFileBinary {
+    # 只读前 4KB 看有没有 0x00。有就是二进制（图片/exe/zip），
+    # 硬读出来是一屏乱码，模型会当成文件内容去理解。
+    param([string]$FullPath)
+    try {
+        $fs = [IO.File]::OpenRead($FullPath)
+        try {
+            $buf = New-Object byte[] 4096
+            $n = $fs.Read($buf, 0, 4096)
+            for ($i = 0; $i -lt $n; $i++) { if ($buf[$i] -eq 0) { return $true } }
+        } finally { $fs.Close() }
+    } catch { }
+    return $false
+}
+
+function Write-AiFileAtomic {
+    # 先写同目录的临时文件，再一次性换过去。
+    # 原来直接 WriteAllText 覆盖：写到一半断电/被杀，原文件就变成半截，
+    # 而且模型拿到的还是「写入成功」。
+    param([string]$FullPath, [string]$Content, $Enc)
+    $dir = Split-Path $FullPath -Parent
+    $tmp = Join-Path $dir ('.~' + [IO.Path]::GetFileName($FullPath) + '.' + [Guid]::NewGuid().ToString('N').Substring(0, 6) + '.tmp')
+    [IO.File]::WriteAllText($tmp, $Content, $Enc)
+    if ([IO.File]::Exists($FullPath)) {
+        try {
+            [IO.File]::Replace($tmp, $FullPath, $null)
+            return
+        } catch {
+            # Replace 要求同卷、非只读；失败就退回「拷过去再删临时」
+            Copy-Item -LiteralPath $tmp -Destination $FullPath -Force
+            Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+            return
+        }
+    }
+    [IO.File]::Move($tmp, $FullPath)
+}
+
+function Search-AiDirContent {
+    # 在一个目录里按内容搜（跨文件）。模型经常要「这个工程哪里用了这个函数」，
+    # 以前只能 read_file 一个个看，或者让它自己写脚本绕。
+    # 限制：单文件 >2MB 跳过、二进制跳过、最多 40 处命中和 30 个文件。
+    param([string]$Root, [string]$Keyword, [int]$Ctx = 0, [string]$Pattern = '*')
+
+    $kwLen = $Keyword.Length
+    $files = @(Get-AiFilesFast -RootPath $Root -Pattern $Pattern)
+    $sb = New-Object System.Text.StringBuilder
+    $hits = 0
+    $hitFiles = 0
+    $skipped = 0
+    $scanned = 0
+    foreach ($fp in $files) {
+        if ($hits -ge 40) { break }
+        if ($scanned -ge 800) { break }
+        $len = 0
+        try { $len = (New-Object IO.FileInfo $fp).Length } catch { continue }
+        if ($len -eq 0 -or $len -gt 2MB) { $skipped++; continue }
+        if (Test-AiFileBinary $fp) { $skipped++; continue }
+        $scanned++
+        $rel = Get-RelDisplay $fp
+        $lineNo = 0
+        $fileHits = 0
+        $pending = 0
+        $before = New-Object System.Collections.ArrayList
+        try {
+            $sr = New-Object IO.StreamReader($fp, [Text.Encoding]::UTF8, $true)
+            try {
+                while ($null -ne ($line = $sr.ReadLine())) {
+                    $lineNo++
+                    if ($line.Length -ge $kwLen -and $line.IndexOf($Keyword, [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                        $hits++
+                        $fileHits++
+                        if ($fileHits -eq 1) {
+                            $hitFiles++
+                            [void]$sb.AppendLine('')
+                            [void]$sb.AppendLine($rel)
+                        }
+                        foreach ($b in $before) { [void]$sb.AppendLine("    $($b.N): $($b.T)") }
+                        $clip = if ($line.Length -gt 120) { $line.Substring(0, 120) + '…' } else { $line }
+                        [void]$sb.AppendLine("  > $($lineNo): $clip")
+                        $pending = $Ctx
+                        $before.Clear()
+                        if ($hits -ge 40) { break }
+                        continue
+                    }
+                    if ($pending -gt 0) {
+                        $clip2 = if ($line.Length -gt 120) { $line.Substring(0, 120) + '…' } else { $line }
+                        [void]$sb.AppendLine("    $($lineNo): $clip2")
+                        $pending--
+                        continue
+                    }
+                    if ($Ctx -gt 0) {
+                        $clip3 = if ($line.Length -gt 120) { $line.Substring(0, 120) + '…' } else { $line }
+                        [void]$before.Add(@{ N = $lineNo; T = $clip3 })
+                        if ($before.Count -gt $Ctx) { $before.RemoveAt(0) }
+                    }
+                    if ($lineNo -gt 40000) { break }   # 单文件行数硬上限，防某个巨型 jsonl 卡死
+                }
+            } finally { $sr.Close() }
+        } catch { continue }
+    }
+    if ($hits -eq 0) {
+        return ("在 " + (Get-RelDisplay $Root) + " 里没找到 " + $Keyword + "（扫了 $scanned 个文本文件" +
+                $(if ($skipped -gt 0) { "，跳过 $skipped 个二进制/超大文件" } else { '' }) + "）")
+    }
+    $head = "在 " + (Get-RelDisplay $Root) + " 里找到 $hits 处 $Keyword，分布在 $hitFiles 个文件（扫了 $scanned 个文本文件）"
+    return $head + "`n" + $sb.ToString().TrimEnd() + "`n`n（要看整段就用 read_lines 打开对应文件）"
 }
 
 # 统一决定写文件用什么编码，所有写操作都必须走这里：
@@ -848,12 +990,13 @@ function Invoke-AiTool {
                 }
                 $enc = Get-AiFileEncoding $full
                 try {
-                    [IO.File]::WriteAllText($full, $content, $enc)
+                    # 原子写：先落临时文件再换过去。写一半被打断时，原文件还是完整的。
+                    Write-AiFileAtomic $full $content $enc
                 } catch [System.UnauthorizedAccessException] {
                     # 只读文件：自动去掉只读再试一次
                     try { (Get-Item -LiteralPath $full).IsReadOnly = $false } catch { }
                     try {
-                        [IO.File]::WriteAllText($full, $content, $enc)
+                        Write-AiFileAtomic $full $content $enc
                         return "已写入 $(Get-RelDisplay $full)（$($content.Length) 字符，原文件是只读的，已自动解除）"
                     } catch {
                         throw "写不进去：$($_.Exception.Message)。文件可能是只读的，或被别的程序占用着。"
@@ -969,7 +1112,9 @@ function Invoke-AiTool {
                 # 模型有时把通配符写成 "txt"（不带 *.），补上
                 if ($pat -notmatch '[\*\?]' -and $pat -match '^[A-Za-z0-9]+$') { $pat = '*.' + $pat }
 
-                $files = @(Get-ChildItem -LiteralPath $dir -Filter $pat -File -Recurse -ErrorAction SilentlyContinue)
+                # 走 .NET 枚举（同仓库实测 304ms → 10ms）。
+                # 只有真要显示的那 30 个文件才去读 size，别给一千多个文件都造对象。
+                $files = @(Get-AiFilesFast -RootPath $dir -Pattern $pat)
                 if ($files.Count -eq 0) {
                     if ($pat -ne '*') {
                         return ("没找到匹配 $pat 的文件。想看全部的话，把 pattern 留空（或传 `"*`"）。")
@@ -981,8 +1126,8 @@ function Invoke-AiTool {
                 $sb = New-Object System.Text.StringBuilder
                 if ($pat -eq '*') {
                     [void]$sb.AppendLine("目录里共 $($files.Count) 个文件，按扩展名：")
-                    $groups = @($files | Group-Object { 
-                        $e = [IO.Path]::GetExtension($_.Name).ToLower()
+                    $groups = @($files | Group-Object {
+                        $e = [IO.Path]::GetExtension([IO.Path]::GetFileName($_)).ToLower()
                         # 备份文件 like a.txt.bak.20261116_041737 会被 GetExtension 当成
                         # 扩展名（.20261116_041737），看着像一堆莫名其妙的分组。
                         # 正常扩展名就 2-6 个字符，超了算「其他」。
@@ -995,8 +1140,13 @@ function Invoke-AiTool {
                     [void]$sb.AppendLine('要看某一类的文件名，传 pattern（例如 "*.txt"）。')
                 } else {
                     [void]$sb.AppendLine("找到 $($files.Count) 个匹配 $pat 的文件：")
-                    foreach ($x in ($files | Select-Object -First 30)) {
-                        [void]$sb.AppendLine(("  " + (Get-RelDisplay $x.FullName) + "  " + (Get-SizeText $x.Length)))
+                    $shown = 0
+                    foreach ($fp in $files) {
+                        if ($shown -ge 30) { break }
+                        $shown++
+                        $sz = 0
+                        try { $sz = (New-Object IO.FileInfo $fp).Length } catch { }
+                        [void]$sb.AppendLine(("  " + (Get-RelDisplay $fp) + "  " + (Get-SizeText $sz)))
                     }
                     if ($files.Count -gt 30) { [void]$sb.AppendLine("  ...还有 $($files.Count - 30) 个") }
                 }
@@ -1100,14 +1250,25 @@ function Invoke-AiTool {
 
             'grep_file' {
                 # 在文件里搜关键词，返回行号和上下文。比 read_file 整个读省 token
+                # path 给目录时也认：跨文件递归搜，输出「文件 → 行号」。以前这里直接报
+                # 「搜目录用 skill」，但 skill 未必装着，模型就只能自己写脚本绕。
                 $full = Resolve-AiPath $Action.path
                 if (-not (Test-Path $full)) { throw "文件不存在：$($Action.path)" }
-                if (Test-Path $full -PathType Container) { throw "$($Action.path) 是目录。搜目录用 skill(search_text)" }
                 $kw = [string]$Action.command
                 if ([string]::IsNullOrWhiteSpace($kw)) { throw 'command 里要填要找的关键词' }
                 $ctx = 0
                 $tryN = 0
                 if ([int]::TryParse([string]$Action.content, [ref]$tryN) -and $tryN -gt 0) { $ctx = [Math]::Min($tryN, 5) }
+                if (Test-Path $full -PathType Container) {
+                    # 目录模式：可选用 find/filter/pattern 缩扩展名，默认所有文本文件
+                    $extPat = [string]$Action.find
+                    if ([string]::IsNullOrWhiteSpace($extPat)) { $extPat = [string]$Action.filter }
+                    if ([string]::IsNullOrWhiteSpace($extPat)) { $extPat = [string]$Action.pattern }
+                    if ([string]::IsNullOrWhiteSpace($extPat)) { $extPat = '*' }
+                    $extPat = $extPat.Trim()
+                    if ($extPat -notmatch '[\*\?]' -and $extPat -match '^[A-Za-z0-9]+$') { $extPat = '*.' + $extPat }
+                    return (Search-AiDirContent -Root $full -Keyword $kw -Ctx $ctx -Pattern $extPat)
+                }
                 # 边读边匹配，不再先 ReadAllLines 整文件读入。
                 # 8000 行的 600KB 日志原来要建 8000 个字符串，
                 # 100MB 的日志直接吃掉 200MB+ 内存；现在内存只跟上下文行数有关。
@@ -2163,6 +2324,12 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
             'read_file' {
                 $full = Resolve-AiPath $Action.path
                 if (-not (Test-Path $full)) { throw "文件不存在：$($Action.path)" }
+                # 目录当文件读：底层会抛 Access denied，模型看不出原因，
+                # 直接说清该用哪个工具。
+                if (Test-Path -LiteralPath $full -PathType Container) {
+                    throw ("$($Action.path) 是目录，不是文件。" +
+                           "看目录里有什么用 list_dir；按名字找用 find_files；按内容找用 grep_file（path 直接给目录）。")
+                }
                 # 先看大小再读。
                 # 原来直接 ReadAllText —— 一个 1GB 的日志文件进来，
                 # PowerShell 会先把整个文件读进内存（而且默认按 GBK 解，还要再放大一倍），
@@ -2194,6 +2361,24 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                     return ("（这是个 $linesNote 的大文件，共 $total 行，只给你看开头 8 行）`n--- 开头 ---`n" + $headStr +
                             "`n`n大文件别硬读：找关键词用 grep_file，分段看用 read_lines（command=起始行, content=行数），" +
                             "要处理就用 write_script 写脚本，别整个读进来。")
+                }
+                # 二进制文件（图片/exe/压缩包）硬读只会得到一屏乱码，
+                # 模型还会把这堆乱码当内容去分析。这里先探一下前 4KB，直接说清楚是什么。
+                if (Test-AiFileBinary $full) {
+                    $fi = $null
+                    try { $fi = Get-Item -LiteralPath $full } catch { }
+                    $bt = $(if ($fi) { Get-SizeText $fi.Length } else { '未知大小' })
+                    $ext2 = [IO.Path]::GetExtension($full).ToLower()
+                    $kind = switch -Wildcard ($ext2) {
+                        '.png' { 'PNG 图片' } '.jpg' { 'JPEG 图片' } '.jpeg' { 'JPEG 图片' }
+                        '.gif' { 'GIF 图片' } '.webp' { 'WebP 图片' } '.ico' { '图标' }
+                        '.exe' { '可执行文件' } '.dll' { '动态库' } '.zip' { 'ZIP 压缩包' }
+                        '.7z' { '7z 压缩包' } '.rar' { 'RAR 压缩包' } '.pdf' { 'PDF 文档' }
+                        '.xlsx' { 'Excel 工作簿' } '.docx' { 'Word 文档' }
+                        default { '二进制文件' }
+                    }
+                    return ("$($Action.path) 是$kind（$bt），不是文本，read_file 读不出内容。" +
+                            "要看文件信息用 file_info；要看图片/视频本身，直接把路径给用户看，别当文本读。")
                 }
                 $text = Read-AiFileTextSafe $full
                 # 顺带给出统计，模型不用自己数。

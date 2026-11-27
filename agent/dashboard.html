@@ -3782,6 +3782,140 @@ header #btnModel,header #btnQueue,header #btnJobs,header #btnHist,header #btnSet
 .think-meta{margin-left:6px;font-size:10.5px;color:var(--faint);font-weight:400}
 [data-theme="su"] .step:not(.open) .think-block.live,
 [data-theme="mo"] .step:not(.open) .think-block.live{display:block}
+
+/* ============================================================
+   精修层：深色玻璃（只作用于 dark，其他主题一个字不动）
+   —— 全部是观感：背景、边线、阴影、圆角、焦点环。
+      没有新增结构、没有改尺寸，所以不会挤乱任何既有面板。
+   ============================================================ */
+html[data-theme="dark"] body{
+  background:
+    radial-gradient(1200px 680px at 6% -14%, rgba(88,124,255,.115) 0%, rgba(88,124,255,0) 62%),
+    radial-gradient(1000px 560px at 104% 114%, rgba(150,92,255,.105) 0%, rgba(150,92,255,0) 62%),
+    radial-gradient(140% 108% at 50% 0%, rgba(0,0,0,0) 54%, rgba(0,0,0,.40) 100%),
+    linear-gradient(180deg,#0a0b0f 0%,#0b0d13 55%,#08090d 100%);
+  background-attachment:fixed;
+}
+
+html[data-theme="dark"] header{
+  background:linear-gradient(180deg,rgba(21,24,32,.88),rgba(14,16,21,.70));
+  border-bottom:1px solid rgba(255,255,255,.055);
+  backdrop-filter:blur(18px) saturate(1.05);-webkit-backdrop-filter:blur(18px) saturate(1.05);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.045), 0 8px 22px rgba(0,0,0,.30);
+}
+
+/* 顶栏按钮：默认几乎透明，悬停才浮起一层。原来是一圈实线框，看着硬 */
+html[data-theme="dark"] header button.ghost,
+html[data-theme="dark"] header .mode-pill{
+  background:rgba(255,255,255,.035);
+  border:1px solid rgba(255,255,255,.06);
+  border-radius:9px;
+  transition:transform .16s cubic-bezier(.34,1.3,.64,1), background .16s, border-color .16s, color .16s;
+}
+html[data-theme="dark"] header button.ghost:hover,
+html[data-theme="dark"] header .mode-pill:hover{
+  background:rgba(255,255,255,.075);border-color:rgba(255,255,255,.15);color:var(--fg);
+  transform:translateY(-1px);
+}
+html[data-theme="dark"] header button.ghost:active,
+html[data-theme="dark"] header .mode-pill:active{transform:translateY(0) scale(.97)}
+
+html[data-theme="dark"] .brand{filter:drop-shadow(0 0 12px rgba(110,168,254,.14))}
+
+html[data-theme="dark"] .hbar-live{
+  background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.025));
+  border-color:rgba(255,255,255,.07);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06);
+}
+
+/* 底部输入区：和顶栏同一套玻璃，上下呼应 */
+html[data-theme="dark"] .composer{
+  background:linear-gradient(180deg,rgba(17,19,25,.84),rgba(11,13,17,.90));
+  border-top:1px solid rgba(255,255,255,.055);
+  backdrop-filter:blur(18px) saturate(1.04);-webkit-backdrop-filter:blur(18px) saturate(1.04);
+  box-shadow:0 -12px 30px rgba(0,0,0,.26);
+}
+html[data-theme="dark"] textarea{
+  border-radius:14px;border-color:rgba(255,255,255,.07);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.03);
+}
+html[data-theme="dark"] textarea:focus{
+  border-color:rgba(110,168,254,.45);
+  box-shadow:0 0 0 3px rgba(110,168,254,.10), inset 0 1px 0 rgba(255,255,255,.04);
+}
+
+/* 气泡：圆角统一 15px，一层很淡的顶光 + 软投影 */
+html[data-theme="dark"] .msg .bubble{
+  border-radius:15px;
+  box-shadow:0 2px 12px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.035);
+}
+html[data-theme="dark"] .msg.user .bubble{
+  background:linear-gradient(180deg,#1d3a5c,#1a3151);
+  border-color:#2b4d78;
+  box-shadow:0 3px 16px rgba(28,66,132,.30), inset 0 1px 0 rgba(255,255,255,.07);
+}
+html[data-theme="dark"] .msg.assistant .bubble{
+  background:linear-gradient(180deg,rgba(26,29,37,.96),rgba(22,25,32,.96));
+}
+
+/* 推荐提示块 */
+html[data-theme="dark"] .chip{
+  background:rgba(255,255,255,.03);border-color:rgba(255,255,255,.085);border-radius:999px;
+}
+html[data-theme="dark"] .chip:hover{
+  border-color:rgba(110,168,254,.42);
+  box-shadow:0 0 0 3px rgba(110,168,254,.08);
+  transform:translateY(-1px);
+}
+
+/* 滚动条：细、半透明、悬停才显形 */
+html[data-theme="dark"] ::-webkit-scrollbar{width:9px;height:9px}
+html[data-theme="dark"] ::-webkit-scrollbar-track{background:transparent}
+html[data-theme="dark"] ::-webkit-scrollbar-thumb{
+  background:rgba(255,255,255,.09);border-radius:99px;
+  border:2px solid transparent;background-clip:content-box;
+}
+html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.17);background-clip:content-box}
+
+/* ============================================================
+   彩蛋游戏：连点 Logo 5 次（2.6 秒内）弹出
+   ============================================================ */
+.egg-game{position:fixed;inset:0;z-index:9000;display:none;align-items:center;justify-content:center;
+  background:rgba(6,7,10,.62);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  animation:eggFade .22s ease both}
+.egg-game.on{display:flex}
+@keyframes eggFade{from{opacity:0}to{opacity:1}}
+.eg-card{width:min(760px,94vw);border-radius:20px;overflow:hidden;
+  background:linear-gradient(180deg,rgba(24,27,35,.96),rgba(15,17,22,.98));
+  border:1px solid rgba(255,255,255,.09);
+  box-shadow:0 40px 90px rgba(0,0,0,.62), 0 0 0 1px rgba(110,168,254,.08), inset 0 1px 0 rgba(255,255,255,.06);
+  animation:eggPop .3s cubic-bezier(.28,1.35,.56,1) both}
+@keyframes eggPop{from{transform:scale(.9) translateY(12px);opacity:0}to{transform:none;opacity:1}}
+.eg-head{display:flex;align-items:center;gap:12px;padding:13px 16px;
+  border-bottom:1px solid rgba(255,255,255,.06)}
+.eg-title{font-size:13px;font-weight:600;letter-spacing:.4px;
+  background:linear-gradient(90deg,#7fb4ff,#c9a3ff);-webkit-background-clip:text;background-clip:text;color:transparent}
+.eg-score{margin-left:auto;font-size:11.5px;color:#9aa3b2;font-variant-numeric:tabular-nums}
+.eg-score b{color:#e8eaf0;font-size:14px;font-weight:600;margin-left:4px}
+.eg-close{width:26px;height:26px;border-radius:8px;border:1px solid rgba(255,255,255,.08);
+  background:rgba(255,255,255,.04);color:#9aa3b2;cursor:pointer;font-size:15px;line-height:1;
+  transition:.16s}
+.eg-close:hover{color:#fff;background:rgba(255,255,255,.10);border-color:rgba(255,255,255,.18)}
+.eg-stage{position:relative;background:
+  radial-gradient(700px 340px at 50% 0%, rgba(110,168,254,.10), transparent 70%),
+  #0a0c11}
+#egCanvas{display:block;width:100%;height:auto;touch-action:none}
+.eg-over{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;
+  gap:14px;background:rgba(8,10,14,.72);backdrop-filter:blur(3px)}
+.eg-over.on{display:flex}
+.eg-msg{font-size:14px;color:#e8eaf0;line-height:1.8;text-align:center;white-space:pre-line}
+.eg-btn{padding:9px 20px;border-radius:10px;font-size:12.5px;cursor:pointer;
+  border:1px solid rgba(110,168,254,.45);background:rgba(110,168,254,.16);color:#cfe2ff;
+  transition:.16s}
+.eg-btn:hover{background:rgba(110,168,254,.26);transform:translateY(-1px)}
+.eg-foot{display:flex;gap:12px;padding:10px 16px;font-size:11px;color:#707a8c;
+  border-top:1px solid rgba(255,255,255,.05)}
+.eg-foot span:last-child{margin-left:auto;letter-spacing:2px;color:#e27474}
 </style>
 </head>
 <body>
@@ -8620,6 +8754,275 @@ loadFiles();
 tick();
 // 自主模式状态单独刷：它几秒才变一次，不用挤进主轮询
 setInterval(function(){ if (!document.hidden) refreshAutopilot(); }, 4000);
+</script>
+
+<!-- 彩蛋：连点 Logo 5 次（2.6 秒内）弹出的小游戏。
+     平时完全隐藏、不占位、不跑循环；关掉即停 rAF，不烧 CPU。
+     玩法：接住往下掉的 token，漏 3 个结束；越快接住越多，掉落越快。 -->
+<div class="egg-game" id="eggGame">
+  <div class="eg-card">
+    <div class="eg-head">
+      <span class="eg-title">✦ 接住星星</span>
+      <span class="eg-score">得分<b id="egScore">0</b></span>
+      <button class="eg-close" id="egClose" title="关闭（Esc）">×</button>
+    </div>
+    <div class="eg-stage">
+      <canvas id="egCanvas"></canvas>
+      <div class="eg-over" id="egOver">
+        <div class="eg-msg" id="egMsg">按 Enter 或点下面按钮开始</div>
+        <button class="eg-btn" id="egAgain">开玩</button>
+      </div>
+    </div>
+    <div class="eg-foot"><span>鼠标移动 / ← → 控制挡板，Esc 退出</span><span id="egLife">♥♥♥</span></div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   彩蛋游戏：连点 Logo 5 次触发
+   —— 独立 IIFE，不碰面板任何全局状态；关闭时立即取消 rAF。
+   ============================================================ */
+(function(){
+  var brand = document.getElementById('brandEgg');
+  var wrap  = document.getElementById('eggGame');
+  var cv    = document.getElementById('egCanvas');
+  if (!brand || !wrap || !cv) return;
+  var ctx = cv.getContext('2d');
+  var scoreEl = document.getElementById('egScore');
+  var lifeEl  = document.getElementById('egLife');
+  var overEl  = document.getElementById('egOver');
+  var msgEl   = document.getElementById('egMsg');
+  var btnAgain= document.getElementById('egAgain');
+  var btnClose= document.getElementById('egClose');
+
+  var clicks = [];
+  var open = false, playing = false, raf = 0, last = 0;
+  var W = 720, H = 410;
+  var st = null;
+
+  function rand(a, b) { return a + Math.random() * (b - a); }
+
+  function reset() {
+    st = {
+      paddle: { x: W / 2, w: Math.max(74, Math.min(124, W * 0.15)), h: 12, target: W / 2 },
+      orbs: [],
+      score: 0, lives: 3, spawnAt: 600, t: 0, shake: 0
+    };
+    scoreEl.textContent = '0';
+    lifeEl.textContent = '♥♥♥';
+    lifeEl.style.color = '#e27474';
+  }
+
+  function resize() {
+    var w = cv.parentNode.clientWidth || 720;
+    W = w;
+    H = Math.round(Math.min(430, Math.max(320, w * 0.56)));
+    var dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    cv.width = Math.round(W * dpr);
+    cv.height = Math.round(H * dpr);
+    cv.style.height = H + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (st) st.paddle.w = Math.max(74, Math.min(124, W * 0.15));
+  }
+
+  var COLORS = ['#6ea8fe', '#a78bfa', '#38bdf8', '#4ade80', '#fbbf24', '#f472b6'];
+
+  function spawn() {
+    var r = rand(9, 15);
+    st.orbs.push({
+      x: rand(r + 8, W - r - 8),
+      y: -r - 6,
+      r: r,
+      vy: 120 + Math.min(210, st.score * 7) * rand(0.85, 1.2),
+      vx: rand(-18, 18),
+      c: COLORS[Math.floor(Math.random() * COLORS.length)],
+      rot: rand(0, Math.PI * 2),
+      sp: rand(-2.2, 2.2)
+    });
+  }
+
+  function draw(now) {
+    ctx.clearRect(0, 0, W, H);
+
+    // 底部一条极淡的轨道线，给挡板一个落脚参照
+    ctx.fillStyle = 'rgba(255,255,255,.045)';
+    ctx.fillRect(0, H - 2, W, 1);
+
+    for (var i = 0; i < st.orbs.length; i++) {
+      var o = st.orbs[i];
+      // 发光靠 shadowBlur，不再画一个大圆当光晕 —— 那圈半透明圆在深色底上
+      // 会变成一块灰雾，看着像"脏点"。
+      var ig = ctx.createRadialGradient(o.x - o.r * .32, o.y - o.r * .38, o.r * .12, o.x, o.y, o.r);
+      ig.addColorStop(0, '#ffffff');
+      ig.addColorStop(.42, o.c);
+      ig.addColorStop(1, o.c);
+      ctx.save();
+      ctx.shadowColor = o.c;
+      ctx.shadowBlur = 15;
+      ctx.fillStyle = ig;
+      ctx.beginPath(); ctx.arc(o.x, o.y, o.r, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      // 极细一圈亮边，让球从背景里"立"起来
+      ctx.strokeStyle = 'rgba(255,255,255,.35)';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(o.x, o.y, o.r - .5, 0, Math.PI * 2); ctx.stroke();
+    }
+
+    // 挡板：中间亮、两端渐隐，像一块被光打亮的玻璃板
+    var p = st.paddle;
+    var lg = ctx.createLinearGradient(p.x - p.w / 2, 0, p.x + p.w / 2, 0);
+    lg.addColorStop(0, 'rgba(110,168,254,0)');
+    lg.addColorStop(0.18, 'rgba(110,168,254,.55)');
+    lg.addColorStop(0.5, 'rgba(180,210,255,.98)');
+    lg.addColorStop(0.82, 'rgba(167,139,250,.55)');
+    lg.addColorStop(1, 'rgba(167,139,250,0)');
+    var y = H - 30;
+    ctx.shadowColor = 'rgba(110,168,254,.55)';
+    ctx.shadowBlur = 18;
+    ctx.fillStyle = lg;
+    ctx.beginPath();
+    if (ctx.roundRect) { ctx.roundRect(p.x - p.w / 2, y, p.w, p.h, 6); }
+    else { ctx.rect(p.x - p.w / 2, y, p.w, p.h); }
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  function tick(now) {
+    if (!playing) return;
+    if (!last) last = now;
+    var dt = Math.min(48, now - last) / 1000;
+    last = now;
+    st.t += dt;
+    st.spawnAt -= dt * 1000;
+    if (st.spawnAt <= 0) {
+      spawn();
+      st.spawnAt = Math.max(380, 1100 - st.score * 26) + rand(-80, 120);
+    }
+
+    st.paddle.x += (st.paddle.target - st.paddle.x) * Math.min(1, dt * 12);
+    var left = st.paddle.w / 2, right = W - st.paddle.w / 2;
+    st.paddle.x = Math.max(left, Math.min(right, st.paddle.x));
+
+    for (var i = st.orbs.length - 1; i >= 0; i--) {
+      var o = st.orbs[i];
+      o.y += o.vy * dt;
+      o.x += o.vx * dt;
+      if (o.x < o.r) { o.x = o.r; o.vx = -o.vx; }
+      if (o.x > W - o.r) { o.x = W - o.r; o.vx = -o.vx; }
+      o.rot += o.sp * dt;
+
+      var py = H - 30;
+      if (o.y + o.r >= py && o.y + o.r <= py + 18 &&
+          Math.abs(o.x - st.paddle.x) <= st.paddle.w / 2 + o.r * 0.7) {
+        st.orbs.splice(i, 1);
+        st.score++;
+        scoreEl.textContent = String(st.score);
+        continue;
+      }
+      if (o.y - o.r > H) {
+        st.orbs.splice(i, 1);
+        st.lives--;
+        lifeEl.textContent = '♥♥♥'.slice(0, Math.max(0, st.lives)) || '—';
+        if (st.lives <= 0) { gameOver(); return; }
+      }
+    }
+
+    draw(now);
+    raf = requestAnimationFrame(tick);
+  }
+
+  function gameOver() {
+    playing = false;
+    cancelAnimationFrame(raf);
+    var best = 0;
+    try { best = parseInt(localStorage.getItem('nafx-egg-best') || '0', 10) || 0; } catch(e){}
+    var isBest = st.score > best;
+    if (isBest) { try { localStorage.setItem('nafx-egg-best', String(st.score)); } catch(e){} }
+    msgEl.textContent = '接到 ' + st.score + ' 个星星\n' +
+      (isBest ? '新纪录！' : '历史最好 ' + best + ' 个');
+    btnAgain.textContent = '再来一局';
+    overEl.classList.add('on');
+    draw(performance.now());
+  }
+
+  function start() {
+    resize();
+    reset();
+    overEl.classList.remove('on');
+    playing = true;
+    last = 0;
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(tick);
+  }
+
+  function show() {
+    open = true;
+    wrap.classList.add('on');
+    resize();
+    reset();
+    playing = false;
+    overEl.classList.add('on');
+    msgEl.textContent = '接住往下掉的星星，漏 3 个结束\n鼠标移动或按 ← → 控制挡板';
+    btnAgain.textContent = '开玩';
+    draw(performance.now());
+  }
+
+  function hide() {
+    open = false;
+    playing = false;
+    cancelAnimationFrame(raf);
+    wrap.classList.remove('on');
+  }
+
+  // 触发：2.6 秒内连点 5 次
+  brand.addEventListener('click', function(){
+    var now = Date.now();
+    clicks.push(now);
+    clicks = clicks.filter(function(t){ return now - t < 2600; });
+    if (clicks.length >= 5) {
+      clicks = [];
+      // 顺手把连点时冒出的气泡收掉，别和游戏叠在一起
+      var bub = document.querySelector('.egg-bubble');
+      if (bub) bub.className = 'egg-bubble';
+      if (!open) show();
+    }
+  });
+
+  btnClose.addEventListener('click', hide);
+  wrap.addEventListener('click', function(e){ if (e.target === wrap) hide(); });
+  btnAgain.addEventListener('click', start);
+
+  document.addEventListener('keydown', function(e){
+    if (!open) return;
+    if (e.key === 'Escape') { hide(); return; }
+    if (!playing && (e.key === 'Enter' || e.key === ' ')) { start(); e.preventDefault(); return; }
+    if (e.key === 'ArrowLeft')  { st.paddle.target -= 46; e.preventDefault(); }
+    if (e.key === 'ArrowRight') { st.paddle.target += 46; e.preventDefault(); }
+  });
+
+  function moveTo(clientX) {
+    var rect = cv.getBoundingClientRect();
+    var x = ((clientX - rect.left) / rect.width) * W;
+    st.paddle.target = x;
+  }
+  cv.addEventListener('pointermove', function(e){
+    if (!open || !st) return;
+    moveTo(e.clientX);
+  });
+  cv.addEventListener('pointerdown', function(e){
+    if (!open || !st) return;
+    moveTo(e.clientX);
+    if (!playing) { start(); }
+  });
+  window.addEventListener('resize', function(){ if (open) { resize(); draw(performance.now()); } });
+
+  // 留一个极小的调试口：只读状态 + 手动放星星，方便排查渲染问题（不参与玩法）
+  window.__egg = {
+    open: show,
+    spawn: function(n){ if (!st) reset(); for (var i = 0; i < (n || 1); i++) spawn(); },
+    state: function(){ return st; }
+  };
+})();
 </script>
 </body>
 </html>
