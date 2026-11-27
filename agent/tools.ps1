@@ -613,6 +613,33 @@ function Get-FileLineCountFast {
     } finally { $fs.Close() }
 }
 
+function Get-AiDirSizeFast {
+    # 目录体积 / 文件数快速统计：栈遍历 + DirectoryInfo 枚举。
+    # 关键点：DirectoryInfo.EnumerateFiles 返回的 FileInfo 自带长度（Windows 上是
+    # find data 里带的），不用对每个文件单独 stat —— E:\Nafx 全仓 136ms → 17ms。
+    # 单目录无权限就跳过，不中断整次统计。
+    param([string]$FullPath)
+    $count = 0
+    $bytes = 0L
+    $stack = New-Object System.Collections.Stack
+    $stack.Push($FullPath)
+    while ($stack.Count -gt 0) {
+        $dir = [string]$stack.Pop()
+        try {
+            $di = [IO.DirectoryInfo]::new($dir)
+            foreach ($f in $di.EnumerateFiles()) {
+                $count++
+                try { $bytes += $f.Length } catch { }
+            }
+        } catch { }
+        try {
+            $di = [IO.DirectoryInfo]::new($dir)
+            foreach ($sd in $di.EnumerateDirectories()) { $stack.Push($sd.FullName) }
+        } catch { }
+    }
+    return @{ Count = $count; Bytes = $bytes }
+}
+
 function Read-AiFilePreview {
     # 一次读完拿两样东西：开头 N 行 + 总行数。
     # read_file 的大文件分支原来分两趟（Read-AiFileHead 读一遍、Get-FileLineCountFast 再读一遍），
@@ -1161,24 +1188,9 @@ function Invoke-AiTool {
                 if ($it.PSIsContainer) {
                     # 目录体积别再走 Get-ChildItem -Recurse —— 每个文件都要造一个
                     # FileInfo 对象，几千个文件的目录要好几秒。
-                    # 这里用 .NET 枚举 + 栈，只累加长度，单目录失败也不中断。
-                    $n = 0
-                    $sum = 0L
-                    $stack = New-Object System.Collections.Stack
-                    $stack.Push($full)
-                    while ($stack.Count -gt 0) {
-                        $d = [string]$stack.Pop()
-                        try {
-                            foreach ($fp in [IO.Directory]::EnumerateFiles($d)) {
-                                $n++
-                                try { $sum += (New-Object IO.FileInfo $fp).Length } catch { }
-                            }
-                        } catch { }
-                        try {
-                            foreach ($sd in [IO.Directory]::EnumerateDirectories($d)) { $stack.Push($sd) }
-                        } catch { }
-                    }
-                    return "$($Action.path) 是目录：$n 个文件，共 $(Get-SizeText $sum)"
+                    # 统一走 Get-AiDirSizeFast（DirectoryInfo 枚举，长度自带）。
+                    $stat = Get-AiDirSizeFast $full
+                    return "$($Action.path) 是目录：$($stat.Count) 个文件，共 $(Get-SizeText $stat.Bytes)"
                 }
                 $sz = Get-SizeText $it.Length
                 $ro = if ($it.IsReadOnly) { '，只读' } else { '' }
@@ -2413,16 +2425,58 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                 if ([string]::IsNullOrWhiteSpace($target)) { $target = '.' }
                 $full = Resolve-AiPath $target
                 if (-not (Test-Path $full)) { throw "目录不存在：$target" }
-                $items = Get-ChildItem -LiteralPath $full -Force | Sort-Object PSIsContainer, Name
-                if (-not $items) { return "目录 $target 是空的（0 个文件、0 个目录）" }
-                $fileCount = @($items | Where-Object { -not $_.PSIsContainer }).Count
-                $dirCount  = @($items | Where-Object { $_.PSIsContainer }).Count
-                $lines = $items | ForEach-Object {
-                    if ($_.PSIsContainer) { "[目录] $($_.Name)/" }
-                    else { "[文件] $($_.Name)  $(Get-SizeText $_.Length)" }
+                # 用 .NET 直接枚举，不再 Get-ChildItem 造对象再 Sort-Object。
+                # DirectoryInfo 枚举出来的 FileInfo 自带长度（Windows 上是 find data），
+                # 不用再对每个文件单独 stat —— logs 目录 210 个文件，73ms → 十几毫秒。
+                $di = New-Object System.IO.DirectoryInfo $full
+                $dirNames = New-Object System.Collections.ArrayList
+                $fileInfos = New-Object System.Collections.ArrayList
+                try {
+                    foreach ($d in $di.EnumerateDirectories()) {
+                        [void]$dirNames.Add($d.Name)
+                    }
+                } catch { }
+                try {
+                    foreach ($f in $di.EnumerateFiles()) {
+                        [void]$fileInfos.Add($f)
+                    }
+                } catch { }
+                if ($dirNames.Count -eq 0 -and $fileInfos.Count -eq 0) {
+                    return "目录 $target 是空的（0 个文件、0 个目录）"
+                }
+                $dArr = [string[]]@($dirNames)
+                if ($dArr.Length -gt 1) { [Array]::Sort($dArr, [StringComparer]::OrdinalIgnoreCase) }
+                $fArr = [System.IO.FileInfo[]]@($fileInfos)
+                if ($fArr.Length -gt 1) {
+                    [Array]::Sort($fArr, [Comparison[System.IO.FileInfo]] { param($x, $y) [string]::Compare($x.Name, $y.Name, [StringComparison]::OrdinalIgnoreCase) })
+                }
+
+                # 大目录不整屏倒给模型：logs 有 200 多个日志，全列出来会把观察窗口挤爆，
+                # 而且模型真正想看的那几个多半在后面。超过 80 条就只给前 60 条 + 指路。
+                $cap = 60
+                $total = $dArr.Length + $fArr.Length
+                $shown = 0
+                $lines = New-Object System.Collections.ArrayList
+                foreach ($d in $dArr) {
+                    if ($shown -ge $cap) { break }
+                    [void]$lines.Add("[目录] $d/"); $shown++
+                }
+                # 大小格式就地算，不再每个文件跑一次 Get-SizeText
+                foreach ($f in $fArr) {
+                    if ($shown -ge $cap) { break }
+                    $sz = 0
+                    try { $sz = $f.Length } catch { }
+                    $szText = if ($sz -lt 1024) { ([int]$sz).ToString() + ' B' }
+                    elseif ($sz -lt 1MB) { ([math]::Round($sz/1KB,1)).ToString() + ' KB' }
+                    elseif ($sz -lt 1GB) { ([math]::Round($sz/1MB,1)).ToString() + ' MB' }
+                    else { ([math]::Round($sz/1GB,2)).ToString() + ' GB' }
+                    [void]$lines.Add("[文件] $($f.Name)  $szText"); $shown++
                 }
                 # 直接把统计结论写出来：4B 自己数容易错，也容易反复查
-                $summary = "`n`n（共 $fileCount 个文件、$dirCount 个目录）"
+                $summary = "`n`n（共 $($fArr.Length) 个文件、$($dArr.Length) 个目录）"
+                if ($total -gt $cap) {
+                    $summary += "`n（目录里东西太多，只列了 $shown 条；找具体文件用 find_files，pattern 写成 *关键词*；查内容用 grep_file，path 直接给目录）"
+                }
                 return Trim-AiText ("目录 $target 的内容：`n" + ($lines -join "`n") + $summary)
             }
 
@@ -2438,8 +2492,7 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                 try {
                     $itm = Get-Item -LiteralPath $full
                     $sizeSum = if ($itm.PSIsContainer) {
-                        (Get-ChildItem -LiteralPath $full -File -Recurse -ErrorAction SilentlyContinue |
-                         Measure-Object Length -Sum).Sum
+                        (Get-AiDirSizeFast $full).Bytes
                     } else { $itm.Length }
                     if ($sizeSum -lt 200MB) {
                         $bkDir = Join-Path $script:AiRoot '.backup'
@@ -2870,7 +2923,7 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                     throw ("解压失败：" + $_.Exception.Message)
                 }
 
-                $n = @(Get-ChildItem -LiteralPath $destFull -Recurse -File -ErrorAction SilentlyContinue).Count
+                $n = (Get-AiDirSizeFast $destFull).Count
                 return "已解压到 $destRel，共 $n 个文件"
             }
 
@@ -2998,7 +3051,14 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                     $schemaPath = Join-Path $script:ToolDir 'tools-schema.json'
                     if (Test-Path $schemaPath) {
                         try {
-                            $schemas = Get-Content $schemaPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                            # schema 51KB，ConvertFrom-Json 每次 180ms 左右 —— 模型查手册
+                            # 往往连着查好几个工具，第一次付钱、后面直接读缓存。
+                            if (-not $script:ToolSchemaCache) {
+                                $script:ToolSchemaCache = @(Get-Content $schemaPath -Raw -Encoding UTF8 | ConvertFrom-Json)
+                            }
+                            $schemas = $script:ToolSchemaCache
+                            if (-not $script:HelpTextCache) { $script:HelpTextCache = @{} }
+                            if ($script:HelpTextCache.ContainsKey($topic)) { return $script:HelpTextCache[$topic] }
                             foreach ($s in @($schemas)) {
                                 if ($s.function.name -eq $topic) {
                                     $f = $s.function
@@ -3017,7 +3077,9 @@ print(json.dumps({"pages": n, "shown": shown, "text": "\n".join(out), "cut": cut
                                             [void]$sb1.AppendLine(("  - {0}（{1}）{2}" -f $p.Name, $mark, $desc))
                                         }
                                     }
-                                    return $sb1.ToString()
+                                    $hn = $sb1.ToString()
+                                    $script:HelpTextCache[$topic] = $hn
+                                    return $hn
                                 }
                             }
                         } catch { }

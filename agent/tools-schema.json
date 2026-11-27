@@ -159,7 +159,7 @@
     "type": "function",
     "function": {
       "name": "list_dir",
-      "description": "列出目录里有哪些文件和子目录。**列表就是答案，列完别再挨个 read_file 去确认存在。**",
+      "description": "列出目录里有哪些文件和子目录。**列表就是答案，列完别再挨个 read_file 去确认存在。** 超过 80 条只列前 60 条，末尾会写「目录里东西太多」——那时改用 find_files 找名字、grep_file（path 给目录）找内容。",
       "parameters": {
         "type": "object",
         "properties": {
