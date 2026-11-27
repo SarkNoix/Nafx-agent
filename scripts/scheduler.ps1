@@ -164,10 +164,13 @@ function Test-Probe {
     param([string]$Probe, [double]$Below = 3)
     switch ($Probe) {
         'panel' {
+            # 端口没监听时，BeginConnect 在 Windows 上会一直等到超时才返回，
+            # 每分钟白等 1.2 秒。降到 300ms：真的在启动的服务 300ms 内就能握手，
+            # 断了就是断了，不用陪它耗时间。
             try {
                 $c = New-Object System.Net.Sockets.TcpClient
                 $t = $c.BeginConnect('127.0.0.1', 8090, $null, $null)
-                $ok = $t.AsyncWaitHandle.WaitOne(1200)
+                $ok = $t.AsyncWaitHandle.WaitOne(300)
                 if ($ok -and $c.Connected) { $c.Close(); return [pscustomobject]@{ ok = $true; value = '8090 在监听' } }
                 $c.Close()
             } catch { }
@@ -188,11 +191,13 @@ function Test-Probe {
         }
         'disk' {
             try {
-                $drive = [IO.Path]::GetPathRoot($script:NafxSchedRoot).TrimEnd('\')
-                $d = Get-PSDrive -Name $drive.TrimEnd(':') -ErrorAction Stop
-                $freeGB = [math]::Round($d.Free / 1GB, 1)
+                # 原先是 Get-PSDrive —— 会顺带把 PowerShell 的 FileSystem 提供程序整个加载一遍，
+                # 实测 498ms，只为了读一个可用空间数字。DriveInfo 是纯 .NET，1ms 级。
+                $drive = [IO.Path]::GetPathRoot($script:NafxSchedRoot)
+                $di = New-Object System.IO.DriveInfo $drive
+                $freeGB = [math]::Round($di.AvailableFreeSpace / 1GB, 1)
                 $ok = ($freeGB -ge $Below)
-                return [pscustomobject]@{ ok = $ok; value = ("$drive 可用 " + $freeGB + ' GB（阈值 ' + $Below + ' GB）') }
+                return [pscustomobject]@{ ok = $ok; value = ($drive.TrimEnd('\') + ' 可用 ' + $freeGB + ' GB（阈值 ' + $Below + ' GB）') }
             } catch {
                 return [pscustomobject]@{ ok = $false; value = ('磁盘读不到：' + $_.Exception.Message) }
             }

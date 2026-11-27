@@ -69,11 +69,44 @@ try {
     if ($cfgW.port) { $ModelPort = [int]$cfgW.port }
 } catch { }
 
+# 可用内存：原来每 60 秒走一次 Get-CimInstance Win32_OperatingSystem（WMI，
+# 实测 200-400ms，偶尔还会被 WMI 服务拖住）。改成 P/Invoke GlobalMemoryStatusEx，
+# 一次调用 0.1ms 级，纯读内存里的系统状态，不碰 WMI。
+if (-not ('NafxMemStatus' -as [type])) {
+    Add-Type -Namespace Nafx -Name MemStatus -MemberDefinition @'
+[StructLayout(LayoutKind.Sequential)]
+public struct MEMORYSTATUSEX {
+    public uint dwLength;
+    public uint dwMemoryLoad;
+    public ulong ullTotalPhys;
+    public ulong ullAvailPhys;
+    public ulong ullTotalPageFile;
+    public ulong ullAvailPageFile;
+    public ulong ullTotalVirtual;
+    public ulong ullAvailVirtual;
+    public ulong ullAvailExtendedVirtual;
+}
+[System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+public static extern bool GlobalMemoryStatusEx(ref MEMORYSTATUSEX lpBuffer);
+'@
+}
+
+function Get-FreeMemMB {
+    try {
+        $st = New-Object Nafx.MemStatus+MEMORYSTATUSEX
+        $st.dwLength = [System.Runtime.InteropServices.Marshal]::SizeOf($st)
+        if ([Nafx.MemStatus]::GlobalMemoryStatusEx([ref]$st)) {
+            return [int]([math]::Round($st.ullAvailPhys / 1MB))
+        }
+    } catch { }
+    # 兜底：P/Invoke 不可用时退回 CIM（慢一点但不会瞎报）
+    try { return [int]([math]::Round((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory / 1024)) } catch { }
+    return 0
+}
+
 function Get-MemState {
     $m = [pscustomobject]@{ FreeMB = 0; LlamaMB = 0; LlamaCount = 0 }
-    try {
-        $m.FreeMB = [math]::Round((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory / 1024)
-    } catch { }
+    $m.FreeMB = Get-FreeMemMB
     $procs = @(Get-Process llama-server -ErrorAction SilentlyContinue)
     $m.LlamaCount = $procs.Count
     if ($procs.Count -gt 0) {
