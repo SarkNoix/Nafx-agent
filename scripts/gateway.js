@@ -30,6 +30,7 @@
 'use strict';
 
 const http = require('http');
+const https = require('https');
 const net = require('net');
 const fs = require('fs');
 const path = require('path');
@@ -66,11 +67,73 @@ const CONFIG = {
   slowRatioUp: 0.6,
 };
 
-// 路由：谁该接这个请求
-const MODEL_PREFIXES = ['/v1/', '/v1'];
-const MODEL_EXACT = ['/health', '/props', '/slots', '/metrics', '/tokenize', '/embedding'];
+// 模型到底在哪：config.json 的 modelMode 说了算
+//   local → 本地 llama-server（config.host:config.port，默认 8080）
+//   api   → 外部接口（config.apiBase，比如 https://open.bigmodel.cn/api/paas/v4）
+// 不跟着配置走的话，API 模式下网关会一直对着一个根本没起的 8080 探活。
+const CFG_FILE = path.join(ROOT, 'config.json');
+const KEY_FILE = path.join(ROOT, 'api-key.json');
 
+const runtime = {
+  mode: 'local',
+  label: '',
+  apiKey: '',
+  model: { protocol: 'http', host: '127.0.0.1', port: 8080, basePath: '', origin: 'http://127.0.0.1:8080' },
+  loadedAt: 0,
+};
+
+function loadRuntime() {
+  let cfg = null;
+  try { cfg = JSON.parse(fs.readFileSync(CFG_FILE, 'utf8')); } catch { }
+  if (!cfg) return false;
+
+  const mode = String(cfg.modelMode || 'local').toLowerCase() === 'api' ? 'api' : 'local';
+  const prevOrigin = runtime.model.origin;
+  runtime.mode = mode;
+
+  if (mode === 'api' && cfg.apiBase) {
+    let u = null;
+    try { u = new URL(String(cfg.apiBase).trim()); } catch { }
+    if (u) {
+      runtime.model = {
+        protocol: u.protocol.replace(':', '') || 'https',
+        host: u.hostname,
+        port: parseInt(u.port || (u.protocol === 'https:' ? '443' : '80'), 10),
+        basePath: u.pathname.replace(/\/+$/, ''),
+        origin: u.origin,
+      };
+      runtime.label = String(cfg.apiModel || 'api');
+    }
+  } else {
+    const h = String(cfg.host || '127.0.0.1');
+    const p = parseInt(cfg.port || 8080, 10);
+    runtime.model = { protocol: 'http', host: h, port: p, basePath: '', origin: 'http://' + h + ':' + p };
+    runtime.label = String(cfg.modelLabel || 'local');
+  }
+
+  // api-key.json 里带 # 注释（和 agent 的 Read-JsonFile 一个风格），
+  // 直接 JSON.parse 会失败，得先把注释行去掉。
+  try {
+    const raw = fs.readFileSync(KEY_FILE, 'utf8');
+    const clean = raw.split(/\r?\n/).filter((l) => !l.trimStart().startsWith('#')).join('\n');
+    const kj = JSON.parse(clean);
+    runtime.apiKey = String(kj.apiKey || '').trim();
+  } catch { runtime.apiKey = ''; }
+
+  runtime.loadedAt = Date.now();
+  if (runtime.model.origin !== prevOrigin) {
+    logLine({ t: nowStr(), ev: 'model-target', mode: runtime.mode, target: runtime.model.origin, label: runtime.label });
+  }
+  return true;
+}
+
+// 路由：谁该接这个请求
 function pickBackend(pathname) {
+  if (runtime.mode === 'api') {
+    // 接口模式没有 /props /slots /metrics 这些 llama 专有端点，
+    // 只把 /v1/* 送出去，其余交给面板（面板自己有 404）。
+    return (pathname === '/v1' || pathname.startsWith('/v1/')) ? 'model' : 'panel';
+  }
   for (const p of MODEL_PREFIXES) {
     if (pathname === p || pathname.startsWith(p)) return 'model';
   }
@@ -204,11 +267,20 @@ function checkPanel(b) {
 
 function checkModel(b) {
   return new Promise((resolve) => {
-    const req = http.request({
-      host: b.host, port: b.port, path: '/health', method: 'GET', timeout: 2500,
+    const m = runtime.model;
+    const mod = m.protocol === 'https' ? https : http;
+    // 接口模式探 apiBase 的 /models：401/403 也说明网络通了，只有连不上或 5xx 才算挂
+    const probePath = runtime.mode === 'api'
+      ? (m.basePath + '/models')
+      : '/health';
+    const headers = {};
+    if (runtime.mode === 'api' && runtime.apiKey) headers.Authorization = 'Bearer ' + runtime.apiKey;
+    const req = mod.request({
+      host: m.host, port: m.port, path: probePath, method: 'GET', timeout: 3000,
+      headers, servername: m.protocol === 'https' ? m.host : undefined,
     }, (res) => {
       res.resume();
-      resolve(res.statusCode >= 200 && res.statusCode < 500);
+      resolve(res.statusCode < 500);
     });
     req.on('timeout', () => { req.destroy(); resolve(false); });
     req.on('error', () => resolve(false));
@@ -217,12 +289,17 @@ function checkModel(b) {
 }
 
 async function healthLoop() {
+  loadRuntime(); // 跟着 config.json 走：面板里切 local/api，这里 30 秒内自动跟过去
+  if (runtime.mode === 'local') {
+    BACKENDS.model.host = runtime.model.host;
+    BACKENDS.model.port = runtime.model.port;
+  }
   for (const b of Object.values(BACKENDS)) {
     const was = b.alive;
     b.alive = b.name === 'panel' ? await checkPanel(b) : await checkModel(b);
     b.lastCheckAt = Date.now();
     if (was !== b.alive) {
-      logLine({ t: nowStr(), ev: b.alive ? 'backend-up' : 'backend-down', backend: b.name });
+      logLine({ t: nowStr(), ev: b.alive ? 'backend-up' : 'backend-down', backend: b.name, mode: runtime.mode });
     }
     if (!b.alive) drainQueue(b, 'backend_down');
   }
@@ -316,18 +393,48 @@ function cleanHeaders(raw) {
   return out;
 }
 
+function targetPathFor(b, req) {
+  if (b.name !== 'model' || runtime.mode !== 'api') return req.url;
+  // 接口模式下把 /v1/xxx 换成 apiBase + /xxx：
+  // apiBase = https://open.bigmodel.cn/api/paas/v4 时，
+  // /v1/chat/completions → /api/paas/v4/chat/completions
+  const q = req.url.indexOf('?');
+  const p = q >= 0 ? req.url.slice(0, q) : req.url;
+  const s = q >= 0 ? req.url.slice(q) : '';
+  let rel = p.replace(/^\/v1/, '');
+  if (!rel) rel = '';
+  return runtime.model.basePath + rel + s;
+}
+
+function isLoopback(req) {
+  const ra = req.socket.remoteAddress || '';
+  return ra === '127.0.0.1' || ra === '::1' || ra === '::ffff:127.0.0.1';
+}
+
 function forward(item, b) {
   const { req, res, pathname } = item;
   const t0 = Date.now();
   const startedInflight = b.inflight;
 
-  const proxyReq = http.request({
-    host: b.host,
-    port: b.port,
+  const m = b.name === 'model' ? runtime.model : null;
+  const mod = (m && m.protocol === 'https') ? https : http;
+  const headers = cleanHeaders(req.headers);
+  delete headers.host;
+  if (m) headers.host = m.port === 443 || m.port === 80 ? m.host : (m.host + ':' + m.port);
+  // 接口模式下，本机来的请求如果没带 key，就用 api-key.json 里的那把补上
+  // （浏览器直接打开 80 端口就能试模型）。局域网来的请求不代付，得自己带 key。
+  if (m && runtime.mode === 'api' && runtime.apiKey && !headers.authorization && isLoopback(req)) {
+    headers.authorization = 'Bearer ' + runtime.apiKey;
+  }
+
+  const proxyReq = mod.request({
+    host: m ? m.host : b.host,
+    port: m ? m.port : b.port,
     method: req.method,
-    path: req.url,
-    headers: cleanHeaders(req.headers),
+    path: targetPathFor(b, req),
+    headers,
     agent: false,
+    servername: (m && m.protocol === 'https') ? m.host : undefined,
   });
 
   b.inflight++;
@@ -432,6 +539,27 @@ function handle(req, res) {
     return;
   }
 
+  // 接口模式下没有 llama 的 /health，这里就地回一份网关+后端的聚合状态
+  if (pathname === '/health' && runtime.mode === 'api') {
+    const b = BACKENDS.model;
+    replyJson(res, 200, {
+      ok: true,
+      gateway: { port: CONFIG.port, uptimeSec: Math.round(process.uptime()) },
+      model: {
+        mode: 'api',
+        model: runtime.label,
+        target: runtime.model.origin,
+        alive: b.alive,
+        inflight: b.inflight,
+        limit: currentLimit(b),
+        ewmaMs: b.ewmaMs === null ? null : Math.round(b.ewmaMs),
+        lastError: b.lastError,
+      },
+      panel: { alive: BACKENDS.panel.alive, target: BACKENDS.panel.host + ':' + BACKENDS.panel.port },
+    });
+    return;
+  }
+
   const b = BACKENDS[pickBackend(pathname)];
   const item = { req, res, pathname };
 
@@ -466,6 +594,8 @@ function statsSnapshot() {
       totalMB: round(os.totalmem() / 1048576, 0),
       load1: round(os.loadavg()[0], 2),
     },
+    modelMode: runtime.mode,
+    modelLabel: runtime.label,
     backends: {},
   };
   for (const b of Object.values(BACKENDS)) {
@@ -484,7 +614,8 @@ function statsSnapshot() {
       bytesOut: b.bytesOut,
       breaker: Date.now() < b.breakerUntil,
       lastError: b.lastError,
-      target: b.host + ':' + b.port,
+      target: b.name === 'model' ? runtime.model.origin : (b.host + ':' + b.port),
+      model: b.name === 'model' ? runtime.label : undefined,
     };
   }
   return out;
@@ -510,9 +641,16 @@ function sampleLoop() {
 // ---------------- 启动 ----------------
 
 if (CONFIG.dry) {
-  console.log('路由：');
-  console.log('  /v1/*, /health, /props, /slots, /metrics → 8080（模型）');
-  console.log('  其余                                     → 8090（面板）');
+  loadRuntime();
+  console.log('路由（' + runtime.mode + ' 模式）：');
+  if (runtime.mode === 'api') {
+    console.log('  /v1/* → ' + runtime.model.origin + runtime.model.basePath + '（模型接口：' + runtime.label + '）');
+    console.log('  /、/api/*、静态 → ' + CONFIG.panel.host + ':' + CONFIG.panel.port + '（面板）');
+    console.log('  /health → 网关就地返回聚合状态');
+  } else {
+    console.log('  /v1/*, /health, /props, /slots, /metrics → ' + runtime.model.host + ':' + runtime.model.port + '（本地 llama）');
+    console.log('  其余 → ' + CONFIG.panel.host + ':' + CONFIG.panel.port + '（面板）');
+  }
   process.exit(0);
 }
 
@@ -553,9 +691,18 @@ server.on('error', (err) => {
 
 server.listen(CONFIG.port, CONFIG.bind, () => {
   ensureDir(LOG_DIR);
-  logLine({ t: nowStr(), ev: 'start', port: CONFIG.port, bind: CONFIG.bind, pid: process.pid });
+  loadRuntime();
+  logLine({
+    t: nowStr(), ev: 'start', port: CONFIG.port, bind: CONFIG.bind, pid: process.pid,
+    modelMode: runtime.mode, modelTarget: runtime.model.origin, model: runtime.label,
+  });
   console.log('Nafx 网关已启动：http://127.0.0.1:' + CONFIG.port + '  pid=' + process.pid);
-  console.log('  面板 → 8090 ；模型 → 8080 ；指标 → /__gateway/stats');
+  if (runtime.mode === 'api') {
+    console.log('  面板 → ' + CONFIG.panel.host + ':' + CONFIG.panel.port + ' ；模型接口 → ' + runtime.model.origin + '（' + runtime.label + '）');
+  } else {
+    console.log('  面板 → ' + CONFIG.panel.host + ':' + CONFIG.panel.port + ' ；本地模型 → ' + runtime.model.origin);
+  }
+  console.log('  指标 → /__gateway/stats');
   healthLoop().catch(() => { });
   setInterval(() => { healthLoop().catch(() => { }); }, CONFIG.healthIntervalMs).unref();
   setInterval(adapt, CONFIG.sampleIntervalMs).unref();

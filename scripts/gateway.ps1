@@ -149,7 +149,14 @@ for ($i = 0; $i -lt 40; $i++) {
 
 if ($up) {
     "网关已启动：http://127.0.0.1:$Port  pid=$($proc.Id)"
-    "  面板（/api/*、/）→ 8090 ；模型（/v1/*、/health）→ 8080"
+    $st = Get-Stats
+    if ($st) {
+        if ($st.modelMode -eq 'api') {
+            "  面板（/、/api/*）→ 8090 ；模型（/v1/*）→ $($st.backends.model.target)（$($st.modelLabel)）"
+        } else {
+            "  面板（/、/api/*）→ 8090 ；本地模型（/v1/*、/health）→ $($st.backends.model.target)"
+        }
+    }
     $statsUrl = 'http://127.0.0.1:' + $Port + '/__gateway/stats'
     "  指标：$statsUrl"
     "  日志：logs\gateway.jsonl（请求级）、logs\gateway-stats.json（每 10 秒汇总）"
